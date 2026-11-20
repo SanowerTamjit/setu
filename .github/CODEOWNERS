@@ -1,0 +1,8 @@
+# Default owner for everything
+*                         @SanowerTamjit
+
+# Security-sensitive paths: changes need a security owner's review
+/crates/setu-ssh/         @SanowerTamjit
+/crates/setu-vault/       @SanowerTamjit
+/SECURITY.md              @SanowerTamjit
+/.github/workflows/       @SanowerTamjit
