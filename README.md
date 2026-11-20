@@ -28,7 +28,7 @@ No account, no telemetry, no cloud required.
 
 ```
 apps/desktop      Tauri 2 desktop app (UI shell)              (Phase 1)
-crates/           Rust core: setu-core, setu-pty, setu-ssh, setu-hosts, setu-vault, ...
+crates/           Rust core: setu-core, setu-pty, setu-ssh, setu-hosts, setu-vault, setu-cli, ...
 packages/ui       TypeScript UI components (xterm.js terminal)  (Phase 1)
 plugins/          First-party plugins                            (Phase 2+)
 docs/             Documentation and architecture decision records (ADRs)
@@ -44,6 +44,8 @@ pnpm desktop            # run the desktop app with hot reload
 
 pnpm build:ui           # build the UI once (needed before plain cargo builds)
 cargo test --workspace
+
+cargo install --path crates/setu-cli   # the `setu` command (see docs/cli.md)
 ```
 
 ## Contributing

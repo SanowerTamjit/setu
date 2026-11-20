@@ -13,12 +13,14 @@
 //! - **Interactive shells** with a PTY, streamed to a callback like `setu-pty`.
 //! - **SFTP**: browse, create, rename and delete remote files, and copy files
 //!   or whole folders either way with progress and cancel ([`sftp`]).
+//! - Local checks on private keys and ssh-agent for `setu doctor` ([`keys`]).
 //!
 //! Secrets (passwords, key passphrases) are wrapped in [`zeroize::Zeroizing`]
 //! and are never logged or included in error messages.
 
 mod client;
 mod error;
+pub mod keys;
 pub mod known_hosts;
 pub mod sftp;
 mod shell;
