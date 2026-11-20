@@ -1,7 +1,8 @@
 // The "New SSH connection" dialog, including the host-key trust prompt.
 
 import { el, field } from "./dom";
-import { sshTrustHost, type AuthRequest, type ConnectFailure, type ConnectRequest } from "./ipc";
+import { sshTrustHost, vaultStatus, type AuthRequest, type ConnectFailure, type ConnectRequest, type VaultAvailability } from "./ipc";
+import { openVaultDialog } from "./vault-dialog";
 
 type Connect = (request: ConnectRequest) => Promise<void>;
 
@@ -55,10 +56,43 @@ export function openSshDialog(connect: Connect, options: DialogOptions = {}): Pr
     const keyPath = el("input", { value: start.keyPath, spellcheck: false });
     const passphrase = el("input", { type: "password", placeholder: "Only if the key is encrypted", autocomplete: "off" });
     const password = el("input", { type: "password", autocomplete: "off" });
+    const savePassphrase = el("input", { type: "checkbox" });
+    const savePassword = el("input", { type: "checkbox" });
+    let vault: VaultAvailability = "none";
+    // "Save in vault" needs an unlocked vault; offer to unlock or create one.
+    const saveRow = (box: HTMLInputElement) => {
+      const hint = el("button", { type: "button", className: "link-button" });
+      hint.onclick = async () => {
+        if (await openVaultDialog({ unlockOnly: true })) {
+          vault = "unlocked";
+          box.checked = true;
+        }
+        syncVault();
+      };
+      const row = el("label", { className: "check-row" }, box, el("span", {}, "Save in vault"), hint);
+      return { row, hint };
+    };
+    const passphraseSave = saveRow(savePassphrase);
+    const passwordSave = saveRow(savePassword);
+    const syncVault = () => {
+      for (const [box, s] of [[savePassphrase, passphraseSave], [savePassword, passwordSave]] as const) {
+        box.disabled = vault !== "unlocked";
+        if (box.disabled) box.checked = false;
+        s.hint.hidden = vault === "unlocked";
+        s.hint.textContent = vault === "locked" ? "Unlock vault" : "Set up vault";
+      }
+      const empty = vault === "unlocked" ? "Leave empty to use the saved one" : "";
+      password.placeholder = empty;
+      passphrase.placeholder = vault === "unlocked" ? "Leave empty to use the saved one, if any" : "Only if the key is encrypted";
+    };
+    void vaultStatus().then((s) => {
+      vault = s.unlocked ? "unlocked" : s.exists ? "locked" : "none";
+      syncVault();
+    });
     const jump = el("input", { value: start.jump, placeholder: "ops@bastion.example.com:22 (optional)", spellcheck: false });
 
-    const keyFields = el("div", { className: "group" }, field("Key file", keyPath), field("Passphrase", passphrase));
-    const passwordFields = el("div", { className: "group" }, field("Password", password, "Sent to the server only; not saved."));
+    const keyFields = el("div", { className: "group" }, field("Key file", keyPath), field("Passphrase", passphrase), passphraseSave.row);
+    const passwordFields = el("div", { className: "group" }, field("Password", password), passwordSave.row);
     const syncAuth = () => {
       keyFields.hidden = authKind.value !== "keyFile";
       passwordFields.hidden = authKind.value !== "password";
@@ -86,7 +120,7 @@ export function openSshDialog(connect: Connect, options: DialogOptions = {}): Pr
     );
     const overlay = el("div", { className: "overlay" }, form);
     // Auto-connect keeps the dialog out of sight unless the user is needed.
-    const auto = options.autoConnect === true && start.authKind !== "password";
+    const auto = options.autoConnect === true;
     overlay.hidden = auto;
     document.body.append(overlay);
     const focusFirst = () => {
@@ -102,7 +136,9 @@ export function openSshDialog(connect: Connect, options: DialogOptions = {}): Pr
       resolve();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !overlay.hidden) {
+      // Only the topmost dialog answers Escape.
+      const top = [...document.querySelectorAll(".overlay")].pop();
+      if (e.key === "Escape" && !overlay.hidden && top === overlay) {
         e.preventDefault();
         e.stopPropagation();
         close();
@@ -111,17 +147,34 @@ export function openSshDialog(connect: Connect, options: DialogOptions = {}): Pr
     document.addEventListener("keydown", onKey, true);
     cancelButton.onclick = close;
 
-    const showMessage = (text: string, kind: "error" | "info" = "error") => {
+    const showMessage = (text: string, kind: "error" | "info" = "error", action?: { label: string; run: () => void }) => {
       message.hidden = false;
       message.className = `dialog-message ${kind}`;
       message.textContent = text;
+      if (action) {
+        const button = el("button", { type: "button", className: "link-button" }, action.label);
+        button.onclick = action.run;
+        message.append(" ", button);
+      }
     };
+    /** Offers to unlock the vault, then retries with the saved secret. */
+    const unlockAndRetry = (what: string) => ({
+      label: "Unlock vault",
+      run: async () => {
+        if (await openVaultDialog({ unlockOnly: true, reason: `Unlock the vault to use the saved ${what}.` })) {
+          vault = "unlocked";
+          syncVault();
+          void attempt();
+        }
+      },
+    });
 
     const request = (): ConnectRequest => {
       let auth: AuthRequest = { kind: "default" };
       if (authKind.value === "agent") auth = { kind: "agent" };
-      if (authKind.value === "keyFile") auth = { kind: "keyFile", path: keyPath.value.trim(), passphrase: passphrase.value || null };
-      if (authKind.value === "password") auth = { kind: "password", password: password.value };
+      if (authKind.value === "keyFile")
+        auth = { kind: "keyFile", path: keyPath.value.trim(), passphrase: passphrase.value || null, save: savePassphrase.checked };
+      if (authKind.value === "password") auth = { kind: "password", password: password.value, save: savePassword.checked };
       return {
         host: host.value.trim(),
         port: Number(port.value.trim() || "22"),
@@ -202,8 +255,28 @@ export function openSshDialog(connect: Connect, options: DialogOptions = {}): Pr
           authKind.value = "keyFile";
           keyPath.value = failure.path;
           syncAuth();
-          showMessage(`The key ${failure.path} is encrypted. Enter its passphrase.`, "info");
+          vault = failure.vault;
+          syncVault();
+          if (failure.vault === "locked") {
+            showMessage(`The key ${failure.path} is encrypted. Enter its passphrase, or unlock the vault if you saved it there.`, "info", unlockAndRetry("passphrase"));
+          } else {
+            showMessage(`The key ${failure.path} is encrypted. Enter its passphrase.`, "info");
+          }
           passphrase.focus();
+          break;
+        case "needsPassword":
+          authKind.value = "password";
+          syncAuth();
+          vault = failure.vault;
+          syncVault();
+          if (failure.vault === "locked") {
+            showMessage("Enter the password, or unlock the vault if you saved it there.", "info", unlockAndRetry("password"));
+          } else if (failure.vault === "unlocked") {
+            showMessage("No password is saved for this host. Enter it, and tick Save in vault to keep it.", "info");
+          } else {
+            showMessage("Enter the password.", "info");
+          }
+          password.focus();
           break;
         case "error":
           showMessage(failure.message);

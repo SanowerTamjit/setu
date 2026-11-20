@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Encrypted vault (`setu-vault`): saves SSH passwords and key passphrases under a master password (Argon2id + XChaCha20-Poly1305), locks itself after 15 minutes idle, and fills them in when you connect, so saved hosts connect without asking. "Save in vault" in the connect dialog, a vault indicator in the status bar, and a vault dialog to remove secrets, lock, or change the master password. See `docs/vault.md`.
 - Saved hosts (`setu-hosts`): a hosts sidebar with folders, tags and search; double-click (or Enter) to connect; add, edit and delete hosts. Hosts are stored in a plain `hosts.toml` without secrets (see `docs/hosts.md`). **Import** brings in hosts from `~/.ssh/config`, following `Include` and OpenSSH's matching rules. Ctrl+Shift+H shows the sidebar and focuses search.
 - SSH connections accept a ProxyJump chain (`a,b`), and an empty user means your local user name, as in OpenSSH.
 - SSH connections (`setu-ssh`, built on russh): strict host-key checking against `~/.ssh/known_hosts` with a fingerprint trust prompt and a hard stop on changed keys; ssh-agent, default `~/.ssh` keys, key files with passphrase, and password auth; ProxyJump through a bastion; interactive shells with resize. The desktop app adds a "New SSH connection" dialog (Ctrl+Shift+O) and SSH tabs.
