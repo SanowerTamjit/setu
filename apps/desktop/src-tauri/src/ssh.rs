@@ -337,13 +337,7 @@ pub async fn ssh_connect(
         .await
         .map_err(ConnectFailure::from)?;
     state
-        .insert(
-            id,
-            Session::Ssh {
-                shell,
-                _client: client,
-            },
-        )
+        .insert(id, Session::Ssh { shell, client })
         .map_err(|message| ConnectFailure::Error { message })?;
     // Saving is best effort: the connection already works.
     let saved_to_vault = match to_save {

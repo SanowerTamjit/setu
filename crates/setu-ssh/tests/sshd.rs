@@ -4,9 +4,11 @@
 //! keys. Tests are skipped (with a message) when `sshd` or `ssh-keygen` is not
 //! installed, for example on Windows CI.
 
+use setu_ssh::sftp::EntryKind;
 use setu_ssh::{connect, known_hosts, Auth, ConnectOptions, ShellSize, SshError, Zeroizing};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -110,7 +112,7 @@ fn start_sshd() -> Option<Sshd> {
         "Port {port}\nListenAddress 127.0.0.1\nHostKey {host}\nAuthorizedKeysFile {auth}\n\
          PidFile {pid}\nStrictModes no\nUsePAM no\nPasswordAuthentication no\n\
          KbdInteractiveAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin yes\n\
-         AllowTcpForwarding yes\nLogLevel ERROR\n",
+         AllowTcpForwarding yes\nSubsystem sftp internal-sftp\nLogLevel ERROR\n",
         host = d.join("host_key").display(),
         auth = d.join("authorized_keys").display(),
         pid = d.join("sshd.pid").display(),
@@ -387,4 +389,74 @@ async fn ssh_agent_authentication() {
     let client = result.expect("connect with ssh-agent");
     let (out, _) = client.exec("echo agent-ok").await.expect("exec");
     assert_eq!(String::from_utf8_lossy(&out), "agent-ok\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sftp_browse_copy_rename_delete() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let client = connect(&sshd.opts()).await.expect("connect");
+    let sftp = client.sftp().await.expect("sftp");
+    assert!(sftp.home().await.expect("home").starts_with('/'));
+
+    // The server is local, so a temp folder doubles as the "remote" side.
+    let work = tempfile::tempdir().expect("tempdir");
+    let local = work.path().join("local");
+    let remote_root = work.path().join("remote");
+    let back = work.path().join("back");
+    for d in [&local, &remote_root, &back] {
+        std::fs::create_dir_all(d).expect("mkdir");
+    }
+    let site = local.join("site");
+    std::fs::create_dir_all(site.join("assets")).expect("mkdir");
+    std::fs::write(site.join("index.html"), b"<h1>setu</h1>").expect("write");
+    let big: Vec<u8> = (0..700_000u32).map(|i| (i % 251) as u8).collect();
+    std::fs::write(site.join("assets/blob.bin"), &big).expect("write");
+
+    let remote = remote_root.to_string_lossy().to_string();
+    let cancel = AtomicBool::new(false);
+    let mut updates = 0;
+    let done = sftp
+        .upload(&site, &remote, &cancel, |_| updates += 1)
+        .await
+        .expect("upload");
+    assert_eq!(done.files_done, 2);
+    assert_eq!(done.done_bytes, done.total_bytes);
+    assert_eq!(done.total_bytes, 13 + 700_000);
+    assert!(updates >= 3);
+
+    let listing = sftp.list(&format!("{remote}/site")).await.expect("list");
+    let names: Vec<_> = listing.iter().map(|e| (e.name.as_str(), e.kind)).collect();
+    assert_eq!(
+        names,
+        [("assets", EntryKind::Dir), ("index.html", EntryKind::File)]
+    );
+
+    sftp.download(&format!("{remote}/site"), &back, &cancel, |_| {})
+        .await
+        .expect("download");
+    assert_eq!(
+        std::fs::read(back.join("site/assets/blob.bin")).expect("read"),
+        big
+    );
+
+    sftp.mkdir(&format!("{remote}/new")).await.expect("mkdir");
+    sftp.rename(&format!("{remote}/new"), &format!("{remote}/renamed"))
+        .await
+        .expect("rename");
+    assert!(remote_root.join("renamed").is_dir());
+
+    sftp.remove(&format!("{remote}/site"))
+        .await
+        .expect("remove");
+    assert!(!remote_root.join("site").exists());
+
+    // A cancelled copy fails and leaves no partial file behind.
+    let cancelled = AtomicBool::new(true);
+    let err = sftp
+        .upload(&site.join("assets/blob.bin"), &remote, &cancelled, |_| {})
+        .await
+        .expect_err("cancelled");
+    assert!(matches!(err, SshError::Cancelled));
+    assert!(!remote_root.join("blob.bin").exists());
 }

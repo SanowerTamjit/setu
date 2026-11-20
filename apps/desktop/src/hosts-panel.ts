@@ -77,7 +77,7 @@ export class HostsPanel {
 
   constructor(
     root: HTMLElement,
-    private readonly actions: { connect: (host: Host) => void; defaultUser: () => string },
+    private readonly actions: { connect: (host: Host) => void; files: (host: Host) => void; defaultUser: () => string },
   ) {
     const add = el("button", { className: "icon-button", title: "Add host", ariaLabel: "Add host" }, "+");
     add.onclick = () => void this.edit(null);
@@ -234,6 +234,11 @@ export class HostsPanel {
       e.stopPropagation();
       this.actions.connect(host);
     };
+    const files = el("button", { className: "row-button", title: `Files on ${host.name} (SFTP)`, ariaLabel: `Files on ${host.name}` }, "⇅");
+    files.onclick = (e) => {
+      e.stopPropagation();
+      this.actions.files(host);
+    };
     const row = el("div", { className: "host-row" + (this.selected === host.name ? " selected" : ""), tabIndex: 0, role: "treeitem" },
       el("span", { className: "host-icon" }, host.jump ? "⇢" : "●"),
       el("span", { className: "host-text" },
@@ -241,7 +246,7 @@ export class HostsPanel {
         el("span", { className: "host-detail muted" }, host.jump ? `${detail} via ${host.jump}` : detail),
         ...(host.tags?.length ? [el("span", { className: "tags" }, ...host.tags.map((t) => el("span", { className: "tag" }, t)))] : []),
       ),
-      el("span", { className: "row-actions" }, edit, connect),
+      el("span", { className: "row-actions" }, edit, files, connect),
     );
     row.style.paddingLeft = `${8 + depth * 14}px`;
     row.title = host.notes ? `${host.name}\n${host.notes}` : `Double-click to connect to ${host.name}`;

@@ -21,7 +21,7 @@ pub enum Session {
     Ssh {
         shell: SshShell,
         /// Keeps the connection (and any jump hosts) open while the tab lives.
-        _client: Arc<SshClient>,
+        client: Arc<SshClient>,
     },
 }
 
@@ -71,6 +71,15 @@ impl std::fmt::Debug for Terminals {
 }
 
 impl Terminals {
+    /// The SSH connection behind a tab, for opening SFTP on it.
+    pub(crate) fn ssh_client(&self, id: u32) -> Option<Arc<SshClient>> {
+        let sessions = self.sessions.lock().ok()?;
+        match sessions.get(&id)?.as_ref() {
+            Session::Ssh { client, .. } => Some(Arc::clone(client)),
+            Session::Local(_) => None,
+        }
+    }
+
     pub(crate) fn next_id(&self) -> u32 {
         self.next_id.fetch_add(1, Ordering::Relaxed) + 1
     }
