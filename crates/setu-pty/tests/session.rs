@@ -1,6 +1,6 @@
 //! Integration tests that run real programs in a real PTY on each OS.
 
-use setu_pty::{PtySession, SpawnOptions};
+use setu_pty::{PtySession, SpawnOptions, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -16,12 +16,20 @@ fn spawn(opts: SpawnOptions) -> (PtySession, mpsc::Receiver<Vec<u8>>) {
     (session, rx)
 }
 
-/// Collects output until it contains `needle` or the timeout passes.
-fn read_until(rx: &mpsc::Receiver<Vec<u8>>, needle: &str) -> String {
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+/// Collects output until it contains `needle` or the timeout passes, acting
+/// like a terminal: cursor position requests (sent by ConPTY) are answered.
+fn read_until(session: &PtySession, rx: &mpsc::Receiver<Vec<u8>>, needle: &str) -> String {
     let deadline = Instant::now() + TIMEOUT;
     let mut out = Vec::new();
     while Instant::now() < deadline {
         if let Ok(chunk) = rx.recv_timeout(Duration::from_millis(100)) {
+            if contains(&chunk, CURSOR_POSITION_REQUEST) {
+                session.write(CURSOR_POSITION_REPLY).expect("answer DSR");
+            }
             out.extend_from_slice(&chunk);
             if String::from_utf8_lossy(&out).contains(needle) {
                 break;
@@ -29,6 +37,34 @@ fn read_until(rx: &mpsc::Receiver<Vec<u8>>, needle: &str) -> String {
         }
     }
     String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Reads whatever output arrives within a short window, answering DSR queries.
+fn read_until_quiet(session: &PtySession, rx: &mpsc::Receiver<Vec<u8>>) -> usize {
+    let mut n = 0;
+    while let Ok(chunk) = rx.recv_timeout(Duration::from_millis(200)) {
+        if contains(&chunk, CURSOR_POSITION_REQUEST) {
+            session.write(CURSOR_POSITION_REPLY).expect("answer DSR");
+        }
+        n += chunk.len();
+    }
+    n
+}
+
+/// Drains output (answering DSR queries) until the program exits.
+fn wait_for_exit(session: &PtySession, rx: &mpsc::Receiver<Vec<u8>>) -> setu_pty::ExitStatus {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        if let Some(status) = session.try_wait().expect("try_wait") {
+            return status;
+        }
+        assert!(Instant::now() < deadline, "program did not exit in time");
+        if let Ok(chunk) = rx.recv_timeout(Duration::from_millis(50)) {
+            if contains(&chunk, CURSOR_POSITION_REQUEST) {
+                session.write(CURSOR_POSITION_REPLY).expect("answer DSR");
+            }
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -54,12 +90,9 @@ fn interactive_shell() -> SpawnOptions {
 #[test]
 fn runs_a_command_and_reads_its_output() {
     let (session, rx) = spawn(echo("hello-from-setu"));
-    let out = read_until(&rx, "hello-from-setu");
+    let out = read_until(&session, &rx, "hello-from-setu");
     assert!(out.contains("hello-from-setu"), "output was: {out:?}");
-    let status = session
-        .wait_timeout(TIMEOUT)
-        .expect("wait")
-        .expect("exited");
+    let status = wait_for_exit(&session, &rx);
     assert!(status.success());
 }
 
@@ -69,11 +102,8 @@ fn reports_a_failing_exit_code() {
     let opts = SpawnOptions::new("/bin/sh").args(["-c", "exit 3"]);
     #[cfg(windows)]
     let opts = SpawnOptions::new("cmd.exe").args(["/C", "exit 3"]);
-    let (session, _rx) = spawn(opts);
-    let status = session
-        .wait_timeout(TIMEOUT)
-        .expect("wait")
-        .expect("exited");
+    let (session, rx) = spawn(opts);
+    let status = wait_for_exit(&session, &rx);
     assert_eq!(status.code, 3);
 }
 
@@ -88,7 +118,7 @@ fn input_reaches_an_interactive_shell() {
     // cmd does not do arithmetic in echo; just check the text round-trips.
     #[cfg(windows)]
     let needle = "typed-$((40+2))";
-    let out = read_until(&rx, needle);
+    let out = read_until(&session, &rx, needle);
     assert!(out.contains(needle), "output was: {out:?}");
     session.kill().expect("kill");
 }
@@ -103,8 +133,8 @@ fn passes_extra_environment_and_term() {
     let opts = SpawnOptions::new("cmd.exe")
         .args(["/C", "echo %SETU_TEST_VAR%/%TERM%"])
         .env("SETU_TEST_VAR", "bridge");
-    let (_session, rx) = spawn(opts);
-    let out = read_until(&rx, "bridge/xterm-256color");
+    let (session, rx) = spawn(opts);
+    let out = read_until(&session, &rx, "bridge/xterm-256color");
     assert!(out.contains("bridge/xterm-256color"), "output was: {out:?}");
 }
 
@@ -119,17 +149,18 @@ fn resize_is_seen_by_the_program() {
     session.resize(size).expect("resize");
     assert_eq!(session.size(), size);
     session.write(b"stty size\n").expect("write");
-    let out = read_until(&rx, "33 111");
+    let out = read_until(&session, &rx, "33 111");
     assert!(out.contains("33 111"), "output was: {out:?}");
     session.kill().expect("kill");
 }
 
 #[test]
 fn kill_ends_a_running_program() {
-    let (session, _rx) = spawn(interactive_shell());
+    let (session, rx) = spawn(interactive_shell());
+    let _ = read_until_quiet(&session, &rx);
     assert_eq!(session.try_wait().expect("try_wait"), None);
     session.kill().expect("kill");
-    assert!(session.wait_timeout(TIMEOUT).expect("wait").is_some());
+    wait_for_exit(&session, &rx);
 }
 
 #[test]

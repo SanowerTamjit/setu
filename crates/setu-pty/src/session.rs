@@ -7,14 +7,26 @@
 //!
 //! Output is passed through as raw bytes: decoding escape sequences is the job
 //! of the terminal emulator (xterm.js in the desktop app).
+//!
+//! On Windows, ConPTY starts by asking the terminal for the cursor position
+//! (`ESC [ 6 n`) and holds back the program's output until it gets an answer.
+//! A real terminal emulator answers on its own. Headless callers (tests, the
+//! CLI) must answer too; [`CURSOR_POSITION_REQUEST`] and
+//! [`CURSOR_POSITION_REPLY`] are provided for that.
 
 use crate::shells::ShellProfile;
-use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+/// The Device Status Report a terminal sends to ask for the cursor position.
+pub const CURSOR_POSITION_REQUEST: &[u8] = b"\x1b[6n";
+
+/// A reply to [`CURSOR_POSITION_REQUEST`] saying the cursor is at row 1, column 1.
+pub const CURSOR_POSITION_REPLY: &[u8] = b"\x1b[1;1R";
 
 /// Errors from PTY sessions.
 #[derive(Debug, thiserror::Error)]
@@ -129,7 +141,6 @@ pub struct PtySession {
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
-    killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     reader: Option<JoinHandle<()>>,
     size: Mutex<PtySize>,
 }
@@ -184,7 +195,6 @@ impl PtySession {
         // stop the reader from seeing end-of-file when the child exits.
         drop(pair.slave);
 
-        let killer = child.clone_killer();
         let mut reader = pair
             .master
             .try_clone_reader()
@@ -213,7 +223,6 @@ impl PtySession {
             master: Mutex::new(pair.master),
             writer: Mutex::new(writer),
             child: Mutex::new(child),
-            killer: Mutex::new(killer),
             reader: Some(reader_thread),
             size: Mutex::new(opts.size),
         })
@@ -264,7 +273,9 @@ impl PtySession {
 
     /// Terminates the program.
     pub fn kill(&self) -> Result<(), PtyError> {
-        lock(&self.killer)?.kill()?;
+        // Kill through the child itself: on Windows a cloned killer handle can
+        // be rejected by TerminateProcess ("The handle is invalid").
+        lock(&self.child)?.kill()?;
         Ok(())
     }
 

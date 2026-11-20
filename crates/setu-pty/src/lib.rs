@@ -13,5 +13,8 @@
 pub mod session;
 pub mod shells;
 
-pub use session::{ExitStatus, PtyError, PtySession, PtySize, SpawnOptions};
+pub use session::{
+    ExitStatus, PtyError, PtySession, PtySize, SpawnOptions, CURSOR_POSITION_REPLY,
+    CURSOR_POSITION_REQUEST,
+};
 pub use shells::{default_shell, detect_shells, ShellKind, ShellProfile};
