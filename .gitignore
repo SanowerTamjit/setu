@@ -26,3 +26,6 @@ Thumbs.db
 *.key
 id_rsa*
 id_ed25519*
+
+# Release builds collected by scripts/release/collect.sh
+release-out/
