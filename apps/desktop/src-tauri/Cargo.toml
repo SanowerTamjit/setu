@@ -1,0 +1,27 @@
+[package]
+name = "setu-desktop"
+description = "Setu desktop app: the open-source ops IDE"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "setu_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+setu-core.workspace = true
+setu-pty.workspace = true
+serde.workspace = true
+tauri = { version = "2.11", features = [] }
+
+[lints]
+workspace = true

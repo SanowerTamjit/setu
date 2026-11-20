@@ -1,0 +1,14 @@
+{
+  "name": "setu-monorepo",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "desktop": "pnpm --filter @setu/desktop tauri dev",
+    "build:ui": "pnpm --filter @setu/desktop build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

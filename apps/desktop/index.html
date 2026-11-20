@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Setu</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="tabbar" role="tablist" aria-label="Terminal tabs">
+        <div id="tabs" class="tabs"></div>
+        <div class="new-tab">
+          <button id="new-tab" class="icon-button" title="New tab (Ctrl+Shift+T)" aria-label="New tab">+</button>
+          <button id="shell-menu-button" class="icon-button chevron" title="Choose a shell" aria-label="Choose a shell" aria-haspopup="menu" aria-expanded="false">▾</button>
+          <div id="shell-menu" class="menu" role="menu" hidden></div>
+        </div>
+      </header>
+      <main id="terminals" class="terminals"></main>
+      <footer class="statusbar">
+        <span id="status-shell"></span>
+        <span id="status-size"></span>
+        <span id="status-version" class="muted"></span>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
