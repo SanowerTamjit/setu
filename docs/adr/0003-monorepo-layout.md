@@ -19,7 +19,7 @@ plugins/        First-party plugins (Phase 2+)
 docs/           Documentation and ADRs
 ```
 
-- Rust: a Cargo workspace at the root, stable toolchain, MSRV 1.85, edition 2021, `unsafe_code` denied by default (a crate that needs it opts out with a justification).
+- Rust: a Cargo workspace at the root, stable toolchain, MSRV 1.85 (raised to 1.89 in PR 4 for russh 0.65, which fixes RUSTSEC-2026-0495), edition 2021, `unsafe_code` denied by default (a crate that needs it opts out with a justification).
 - TypeScript: a pnpm workspace (added with the desktop app).
 - `Cargo.lock` is committed, because the repository ships applications.
 - Dependencies are checked by `cargo-deny` for licenses compatible with Apache-2.0 and for security advisories.

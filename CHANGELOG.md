@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Minimum supported Rust version is now 1.89 (needed by russh 0.65, which fixes RUSTSEC-2026-0495).
 - The desktop app uses xterm's DOM renderer on Linux: the WebGL renderer showed new output one frame late under WebKitGTK.
 
 ### Added
