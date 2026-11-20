@@ -4018,10 +4018,21 @@ dependencies = [
  "serde",
  "serde_json",
  "setu-core",
+ "setu-hosts",
  "setu-pty",
  "setu-ssh",
  "tauri",
  "tauri-build",
+]
+
+[[package]]
+name = "setu-hosts"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml 1.2.1+spec-1.1.0",
 ]
 
 [[package]]

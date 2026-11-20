@@ -144,21 +144,39 @@ fn parse_jump(spec: &str, default_user: &str) -> Result<(String, String, u16), S
     Ok((user, host, port))
 }
 
+/// The local login name, which OpenSSH also uses when no user is given.
+pub fn local_user() -> String {
+    ["USER", "USERNAME", "LOGNAME"]
+        .iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()))
+        .unwrap_or_else(|| "root".into())
+}
+
+fn user_or_local(user: &str) -> String {
+    match user.trim() {
+        "" => local_user(),
+        u => u.to_string(),
+    }
+}
+
 fn build_options(req: ConnectRequest) -> Result<ConnectOptions, ConnectFailure> {
     let known = known_hosts_path()?;
     let auth = auth_methods(req.auth);
-    let mut opts = ConnectOptions::new(req.host.trim(), req.user.trim())
+    let user = user_or_local(&req.user);
+    let mut opts = ConnectOptions::new(req.host.trim(), user.as_str())
         .port(req.port.unwrap_or(22))
         .known_hosts(&known);
     opts.auth = auth.clone();
-    if let Some(jump) = req.jump.as_deref().filter(|j| !j.trim().is_empty()) {
-        let (user, host, port) =
-            parse_jump(jump, &opts.user).map_err(|message| ConnectFailure::Error { message })?;
-        let mut hop = ConnectOptions::new(host, user)
+    // ProxyJump takes a comma-separated chain, connected in order.
+    let hops = req.jump.as_deref().unwrap_or("");
+    for spec in hops.split(',').filter(|j| !j.trim().is_empty()) {
+        let (hop_user, host, port) =
+            parse_jump(spec, &user).map_err(|message| ConnectFailure::Error { message })?;
+        let mut hop = ConnectOptions::new(host, hop_user)
             .port(port)
             .known_hosts(&known);
-        // The jump host usually takes the same credentials (agent or key).
-        hop.auth = auth;
+        // Jump hosts usually take the same credentials (agent or key).
+        hop.auth = auth.clone();
         opts = opts.jump(hop);
     }
     Ok(opts)
@@ -179,7 +197,7 @@ pub async fn ssh_connect(
     on_output: Channel<InvokeResponseBody>,
     on_exit: Channel<u32>,
 ) -> Result<OpenedSsh, ConnectFailure> {
-    let title = format!("{}@{}", request.user.trim(), request.host.trim());
+    let title = format!("{}@{}", user_or_local(&request.user), request.host.trim());
     let opts = build_options(request)?;
     let client = Arc::new(setu_ssh::connect(&opts).await?);
 
@@ -234,6 +252,24 @@ mod tests {
         );
         assert!(parse_jump("bastion:notaport", "me").is_err());
         assert!(parse_jump("@", "me").is_err());
+    }
+
+    #[test]
+    fn jump_chains_and_default_user() {
+        let req: ConnectRequest = serde_json::from_str(
+            r#"{"host":"db","user":"","auth":{"kind":"agent"},"jump":"ops@a:2200, b"}"#,
+        )
+        .expect("parse");
+        let opts = build_options(req).expect("options");
+        assert_eq!(opts.user, local_user());
+        let hops: Vec<_> = opts
+            .jump
+            .iter()
+            .map(|h| (h.host.as_str(), h.port))
+            .collect();
+        assert_eq!(hops, [("a", 2200), ("b", 22)]);
+        assert_eq!(opts.jump[0].user, "ops");
+        assert_eq!(opts.jump[1].user, local_user());
     }
 
     #[test]

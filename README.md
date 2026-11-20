@@ -28,7 +28,7 @@ No account, no telemetry, no cloud required.
 
 ```
 apps/desktop      Tauri 2 desktop app (UI shell)              (Phase 1)
-crates/           Rust core: setu-core, setu-pty, setu-ssh, setu-vault, ...
+crates/           Rust core: setu-core, setu-pty, setu-ssh, setu-hosts, setu-vault, ...
 packages/ui       TypeScript UI components (xterm.js terminal)  (Phase 1)
 plugins/          First-party plugins                            (Phase 2+)
 docs/             Documentation and architecture decision records (ADRs)

@@ -15,6 +15,7 @@ authors = ["Setu contributors"]
 setu-core = { path = "crates/setu-core", version = "0.0.1" }
 setu-pty = { path = "crates/setu-pty", version = "0.0.1" }
 setu-ssh = { path = "crates/setu-ssh", version = "0.0.1" }
+setu-hosts = { path = "crates/setu-hosts", version = "0.0.1" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 

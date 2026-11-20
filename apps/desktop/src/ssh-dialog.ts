@@ -1,45 +1,61 @@
 // The "New SSH connection" dialog, including the host-key trust prompt.
 
+import { el, field } from "./dom";
 import { sshTrustHost, type AuthRequest, type ConnectFailure, type ConnectRequest } from "./ipc";
 
 type Connect = (request: ConnectRequest) => Promise<void>;
 
-/** Values from the last attempt, so a retry does not mean retyping. */
-let last = { host: "", port: "22", user: "", authKind: "default", keyPath: "~/.ssh/id_ed25519", jump: "" };
+export type AuthKind = "default" | "agent" | "keyFile" | "password";
 
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: Record<string, unknown> = {},
-  ...children: (Node | string)[]
-): HTMLElementTagNameMap[K] {
-  const node = Object.assign(document.createElement(tag), props);
-  node.append(...children);
-  return node;
+export interface DialogValues {
+  host: string;
+  port: string;
+  user: string;
+  authKind: AuthKind;
+  keyPath: string;
+  jump: string;
 }
 
-function field(label: string, input: HTMLElement, hint?: string) {
-  return el("label", { className: "field" }, el("span", {}, label), input, ...(hint ? [el("small", { className: "muted" }, hint)] : []));
+export interface DialogOptions {
+  /** Values to show instead of the last attempt's (for a saved host). */
+  prefill?: DialogValues;
+  title?: string;
+  /**
+   * Try to connect right away and only show the dialog when something needs
+   * the user: a new host key, a passphrase, a password, or an error.
+   */
+  autoConnect?: boolean;
+}
+
+/** Values from the last attempt, so a retry does not mean retyping. */
+let last: DialogValues = { host: "", port: "22", user: "", authKind: "default", keyPath: "~/.ssh/id_ed25519", jump: "" };
+
+/** The default user for new connections, set at startup. */
+export function setDefaultUser(user: string) {
+  if (!last.user) last.user = user;
 }
 
 function isFailure(err: unknown): err is ConnectFailure {
   return typeof err === "object" && err !== null && "kind" in err;
 }
 
-export function openSshDialog(connect: Connect): Promise<void> {
+export function openSshDialog(connect: Connect, options: DialogOptions = {}): Promise<void> {
+  const start = options.prefill ?? last;
   return new Promise((resolve) => {
-    const host = el("input", { value: last.host, placeholder: "server.example.com", required: true, autocomplete: "off", spellcheck: false });
-    const port = el("input", { value: last.port, inputMode: "numeric", autocomplete: "off" });
-    const user = el("input", { value: last.user, placeholder: "root", required: true, autocomplete: "off", spellcheck: false });
+    const host = el("input", { value: start.host, placeholder: "server.example.com", required: true, autocomplete: "off", spellcheck: false });
+    const port = el("input", { value: start.port, inputMode: "numeric", autocomplete: "off" });
+    const user = el("input", { value: start.user, placeholder: "root", required: true, autocomplete: "off", spellcheck: false });
     const authKind = el("select", {},
       el("option", { value: "default" }, "ssh-agent and keys in ~/.ssh"),
+      el("option", { value: "agent" }, "ssh-agent only"),
       el("option", { value: "keyFile" }, "Key file"),
       el("option", { value: "password" }, "Password"),
     );
-    authKind.value = last.authKind;
-    const keyPath = el("input", { value: last.keyPath, spellcheck: false });
+    authKind.value = start.authKind;
+    const keyPath = el("input", { value: start.keyPath, spellcheck: false });
     const passphrase = el("input", { type: "password", placeholder: "Only if the key is encrypted", autocomplete: "off" });
     const password = el("input", { type: "password", autocomplete: "off" });
-    const jump = el("input", { value: last.jump, placeholder: "ops@bastion.example.com:22 (optional)", spellcheck: false });
+    const jump = el("input", { value: start.jump, placeholder: "ops@bastion.example.com:22 (optional)", spellcheck: false });
 
     const keyFields = el("div", { className: "group" }, field("Key file", keyPath), field("Passphrase", passphrase));
     const passwordFields = el("div", { className: "group" }, field("Password", password, "Sent to the server only; not saved."));
@@ -57,7 +73,7 @@ export function openSshDialog(connect: Connect): Promise<void> {
 
     const mainActions = el("div", { className: "actions" }, cancelButton, connectButton);
     const form = el("form", { className: "dialog", noValidate: false },
-      el("h2", {}, "New SSH connection"),
+      el("h2", {}, options.title ?? "New SSH connection"),
       el("div", { className: "row" }, field("Host", host), field("Port", port)),
       field("User", user),
       field("Authentication", authKind),
@@ -69,9 +85,16 @@ export function openSshDialog(connect: Connect): Promise<void> {
       mainActions,
     );
     const overlay = el("div", { className: "overlay" }, form);
+    // Auto-connect keeps the dialog out of sight unless the user is needed.
+    const auto = options.autoConnect === true && start.authKind !== "password";
+    overlay.hidden = auto;
     document.body.append(overlay);
-    (last.host ? user : host).focus();
-    if (last.host && last.user) connectButton.focus();
+    const focusFirst = () => {
+      if (start.authKind === "password" && start.host) password.focus();
+      else if (start.host && start.user) connectButton.focus();
+      else (start.host ? user : host).focus();
+    };
+    focusFirst();
 
     const close = () => {
       overlay.remove();
@@ -79,7 +102,7 @@ export function openSshDialog(connect: Connect): Promise<void> {
       resolve();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !overlay.hidden) {
         e.preventDefault();
         e.stopPropagation();
         close();
@@ -96,6 +119,7 @@ export function openSshDialog(connect: Connect): Promise<void> {
 
     const request = (): ConnectRequest => {
       let auth: AuthRequest = { kind: "default" };
+      if (authKind.value === "agent") auth = { kind: "agent" };
       if (authKind.value === "keyFile") auth = { kind: "keyFile", path: keyPath.value.trim(), passphrase: passphrase.value || null };
       if (authKind.value === "password") auth = { kind: "password", password: password.value };
       return {
@@ -108,7 +132,7 @@ export function openSshDialog(connect: Connect): Promise<void> {
     };
 
     const attempt = async () => {
-      last = { host: host.value.trim(), port: port.value, user: user.value.trim(), authKind: authKind.value, keyPath: keyPath.value, jump: jump.value.trim() };
+      last = { host: host.value.trim(), port: port.value, user: user.value.trim(), authKind: authKind.value as AuthKind, keyPath: keyPath.value, jump: jump.value.trim() };
       message.hidden = true;
       trustPanel.hidden = true;
       trustPanel.classList.remove("danger-panel");
@@ -127,6 +151,10 @@ export function openSshDialog(connect: Connect): Promise<void> {
     };
 
     const handleFailure = (failure: ConnectFailure) => {
+      if (overlay.hidden) {
+        overlay.hidden = false;
+        focusFirst();
+      }
       switch (failure.kind) {
         case "unknownHostKey": {
           const { key } = failure;
@@ -197,5 +225,6 @@ export function openSshDialog(connect: Connect): Promise<void> {
       }
       void attempt();
     };
+    if (auto) void attempt();
   });
 }
