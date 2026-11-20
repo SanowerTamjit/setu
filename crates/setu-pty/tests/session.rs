@@ -1,6 +1,6 @@
 //! Integration tests that run real programs in a real PTY on each OS.
 
-use setu_pty::{PtySession, PtySize, SpawnOptions};
+use setu_pty::{PtySession, SpawnOptions};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -112,7 +112,7 @@ fn passes_extra_environment_and_term() {
 #[test]
 fn resize_is_seen_by_the_program() {
     let (session, rx) = spawn(interactive_shell());
-    let size = PtySize {
+    let size = setu_pty::PtySize {
         rows: 33,
         cols: 111,
     };
