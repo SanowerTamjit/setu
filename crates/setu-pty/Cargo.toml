@@ -1,0 +1,19 @@
+[package]
+name = "setu-pty"
+description = "Local shell sessions (pseudo-terminals) for Setu, the open-source ops IDE"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+portable-pty = "0.9"
+setu-core.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
