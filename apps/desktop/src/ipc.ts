@@ -67,3 +67,56 @@ export const resizeTerminal = (id: number, cols: number, rows: number) =>
   invoke<void>("resize_terminal", { id, cols, rows });
 
 export const closeTerminal = (id: number) => invoke<void>("close_terminal", { id });
+
+// ---- SSH ----
+
+export type AuthRequest =
+  | { kind: "default" }
+  | { kind: "agent" }
+  | { kind: "keyFile"; path: string; passphrase: string | null }
+  | { kind: "password"; password: string };
+
+export interface ConnectRequest {
+  host: string;
+  port: number | null;
+  user: string;
+  auth: AuthRequest;
+  jump: string | null;
+}
+
+export interface HostKeyInfo {
+  host: string;
+  port: number;
+  algorithm: string;
+  fingerprint: string;
+  openssh: string;
+}
+
+export type ConnectFailure =
+  | { kind: "unknownHostKey"; key: HostKeyInfo }
+  | { kind: "hostKeyChanged"; key: HostKeyInfo; knownHosts: string; line: number }
+  | { kind: "needsPassphrase"; path: string }
+  | { kind: "error"; message: string };
+
+export interface OpenedSsh {
+  id: number;
+  title: string;
+}
+
+/** Connects over SSH and opens a remote shell. Rejects with a `ConnectFailure`. */
+export function sshConnect(
+  request: ConnectRequest,
+  cols: number,
+  rows: number,
+  onOutput: (data: Uint8Array) => void,
+  onExit: (code: number) => void,
+): Promise<OpenedSsh> {
+  const output = new Channel<ArrayBuffer | number[]>();
+  output.onmessage = (msg) =>
+    onOutput(msg instanceof ArrayBuffer ? new Uint8Array(msg) : Uint8Array.from(msg));
+  const exit = new Channel<number>();
+  exit.onmessage = onExit;
+  return invoke<OpenedSsh>("ssh_connect", { request, cols, rows, onOutput: output, onExit: exit });
+}
+
+export const sshTrustHost = (key: HostKeyInfo) => invoke<void>("ssh_trust_host", { key });

@@ -7,7 +7,9 @@ import {
   closeTerminal,
   openTerminal,
   resizeTerminal,
+  sshConnect,
   writeTerminal,
+  type ConnectRequest,
   type ShellProfile,
 } from "./ipc";
 
@@ -49,6 +51,9 @@ export class TerminalTab {
   private exited = false;
   private resizeTimer: number | undefined;
   shell: ShellProfile | null = null;
+  /** Shown in the status bar: the shell program or `ssh user@host`. */
+  detail = "";
+  isRemote = false;
   title = "Terminal";
 
   constructor(
@@ -86,13 +91,15 @@ export class TerminalTab {
   private rendererLoaded = false;
 
   /**
-   * Uses the GPU renderer when WebGL is available, the DOM renderer otherwise.
-   * Loaded the first time the tab is visible: attaching WebGL to a hidden pane
-   * left the first prompt unpainted in testing.
+   * Uses the GPU (WebGL) renderer on macOS and Windows, and xterm's DOM
+   * renderer on Linux: under WebKitGTK the WebGL canvas was presented one
+   * frame late in testing, so the newest output stayed invisible until the
+   * next keypress. Loaded the first time the tab is visible.
    */
   private loadRenderer() {
     if (this.rendererLoaded) return;
     this.rendererLoaded = true;
+    if (/Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent)) return;
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => webgl.dispose());
@@ -113,9 +120,29 @@ export class TerminalTab {
     );
     this.id = id;
     this.shell = shell;
-
     this.title = shell.name;
+    this.detail = `${shell.name} · ${shell.program}`;
     this.events.onTitle(this);
+  }
+
+  /** Connects over SSH. Rejects with a ConnectFailure the caller can act on. */
+  async startSsh(request: ConnectRequest) {
+    this.fit.fit();
+    const { id, title } = await sshConnect(
+      request,
+      this.term.cols,
+      this.term.rows,
+      (data) => this.write(data),
+      (code) => this.handleExit(code),
+    );
+    this.id = id;
+    this.isRemote = true;
+    this.title = title;
+    const port = request.port && request.port !== 22 ? `:${request.port}` : "";
+    const via = request.jump ? ` via ${request.jump}` : "";
+    this.detail = `ssh ${title}${port}${via}`;
+    this.events.onTitle(this);
+    this.refit();
   }
 
   private firstOutput = true;
