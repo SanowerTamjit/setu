@@ -88,8 +88,13 @@ pub async fn agent_state() -> AgentState {
         use russh::keys::agent::client::AgentClient;
         match AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent").await {
             Ok(agent) => identities(agent.dynamic()).await,
+            // Connecting to Pageant succeeds even when it is not running;
+            // only a request tells, so a failed request means "no agent".
             Err(_) => match AgentClient::connect_pageant().await {
-                Ok(agent) => identities(agent.dynamic()).await,
+                Ok(agent) => match identities(agent.dynamic()).await {
+                    AgentState::Unreachable(_) => AgentState::NotConfigured,
+                    state => state,
+                },
                 Err(_) => AgentState::NotConfigured,
             },
         }
