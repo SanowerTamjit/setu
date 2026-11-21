@@ -2,6 +2,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import { appInfo, listShells, type ShellProfile } from "./ipc";
 import { TerminalTab } from "./terminal-tab";
+import { openSshDialog } from "./ssh-dialog";
 
 const tabsEl = document.getElementById("tabs")!;
 const terminalsEl = document.getElementById("terminals")!;
@@ -59,7 +60,7 @@ function renderStatus() {
     statusSize.textContent = "";
     return;
   }
-  statusShell.textContent = active.shell ? `${active.shell.name} · ${active.shell.program}` : "";
+  statusShell.textContent = active.detail;
   const { cols, rows } = active.size;
   statusSize.textContent = `${cols}×${rows}`;
 }
@@ -91,6 +92,35 @@ async function newTab(shellId: string | null = null) {
   renderStatus();
 }
 
+/** Asks for connection details, then connects in a new tab. */
+async function newSshTab() {
+  await openSshDialog(async (request) => {
+    const tab = new TerminalTab(terminalsEl, {
+      onTitle: () => renderTabs(),
+      onExit: () => renderTabs(),
+      onResize: (t) => {
+        if (t === active) renderStatus();
+      },
+    });
+    const previous = active;
+    tabs.push(tab);
+    activate(tab);
+    try {
+      await tab.startSsh(request);
+      renderTabs();
+      renderStatus();
+    } catch (err) {
+      // Remove the half-open tab; the dialog shows what went wrong.
+      tabs.splice(tabs.indexOf(tab), 1);
+      await tab.dispose();
+      active = null;
+      if (previous) activate(previous);
+      renderTabs();
+      throw err;
+    }
+  });
+}
+
 async function closeTab(tab: TerminalTab) {
   const i = tabs.indexOf(tab);
   if (i < 0) return;
@@ -114,7 +144,19 @@ function cycle(delta: number) {
 
 // Shell picker menu
 function renderMenu() {
+  const ssh = document.createElement("button");
+  ssh.className = "menu-item";
+  ssh.setAttribute("role", "menuitem");
+  ssh.innerHTML = `<span>New SSH connection…</span><span class="muted">Ctrl+Shift+O</span>`;
+  ssh.onclick = () => {
+    toggleMenu(false);
+    void newSshTab();
+  };
+  const separator = document.createElement("div");
+  separator.className = "menu-separator";
   menuEl.replaceChildren(
+    ssh,
+    separator,
     ...shells.map((shell) => {
       const item = document.createElement("button");
       item.className = "menu-item";
@@ -154,6 +196,9 @@ document.addEventListener(
     } else if (mod && e.code === "KeyW") {
       e.preventDefault();
       if (active) void closeTab(active);
+    } else if (mod && e.code === "KeyO") {
+      e.preventDefault();
+      void newSshTab();
     } else if (e.ctrlKey && e.code === "Tab") {
       e.preventDefault();
       cycle(e.shiftKey ? -1 : 1);

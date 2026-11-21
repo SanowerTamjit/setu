@@ -1,8 +1,9 @@
 //! The Setu desktop app: a Tauri 2 shell around the Rust core.
 //!
 //! The web view only renders. Shells, and later SSH sessions and the vault,
-//! run in Rust and talk to the UI through the commands in [`terminals`].
+//! run in Rust and talk to the UI through the commands in [`terminals`] and [`ssh`].
 
+mod ssh;
 mod terminals;
 
 use serde::Serialize;
@@ -33,6 +34,8 @@ pub fn run() {
             terminals::write_terminal,
             terminals::resize_terminal,
             terminals::close_terminal,
+            ssh::ssh_connect,
+            ssh::ssh_trust_host,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");
