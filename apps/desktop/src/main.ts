@@ -298,6 +298,9 @@ document.addEventListener(
       hostsPanel.focusSearch();
     } else if (mod && e.code === "KeyF") {
       e.preventDefault();
+      if (active instanceof TerminalTab) active.findBar.open();
+    } else if (mod && e.code === "KeyE") {
+      e.preventDefault();
       void openFiles();
     } else if (mod && e.code === "KeyO") {
       e.preventDefault();

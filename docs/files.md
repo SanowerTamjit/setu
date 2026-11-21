@@ -4,7 +4,7 @@ A Files tab shows your computer on the left and an SSH host on the right, and co
 
 ## Opening a Files tab
 
-- From an SSH tab: click **Files** in the status bar, or press **Ctrl+Shift+F**.
+- From an SSH tab: click **Files** in the status bar, or press **Ctrl+Shift+E**.
 - From the hosts sidebar: click **⇅** on a host. Setu connects first if needed, then opens the Files tab.
 
 The Files tab keeps the connection open even if you close its SSH tab.

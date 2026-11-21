@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import type { Tab } from "./tab";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { FindBar } from "./find-bar";
 import {
   closeTerminal,
   openTerminal,
@@ -48,6 +49,7 @@ export class TerminalTab implements Tab {
   readonly element: HTMLDivElement;
   readonly term: Terminal;
   private readonly fit = new FitAddon();
+  readonly findBar: FindBar;
   private id: number | null = null;
   private exited = false;
   private resizeTimer: number | undefined;
@@ -66,7 +68,9 @@ export class TerminalTab implements Tab {
     container.appendChild(this.element);
 
     this.term = new Terminal({
-      allowProposedApi: false,
+      // The search addon highlights and counts matches with decorations,
+      // which xterm 6 still treats as proposed API.
+      allowProposedApi: true,
       cursorBlink: true,
       fontFamily:
         '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
@@ -77,6 +81,7 @@ export class TerminalTab implements Tab {
     });
     this.term.loadAddon(this.fit);
     this.term.open(this.element);
+    this.findBar = new FindBar(this.element, this.term);
 
     this.term.onData((data) => {
       if (this.id !== null && !this.exited) void writeTerminal(this.id, data);
@@ -219,6 +224,7 @@ export class TerminalTab implements Tab {
 
   async dispose() {
     if (this.id !== null && !this.exited) await closeTerminal(this.id).catch(() => {});
+    this.findBar.dispose();
     this.term.dispose();
     this.element.remove();
   }
