@@ -1,6 +1,7 @@
 // One terminal tab: an xterm.js instance wired to a shell in the Rust core.
 
 import { Terminal } from "@xterm/xterm";
+import type { Tab } from "./tab";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import {
@@ -43,7 +44,7 @@ export interface TabEvents {
   onResize: (tab: TerminalTab) => void;
 }
 
-export class TerminalTab {
+export class TerminalTab implements Tab {
   readonly element: HTMLDivElement;
   readonly term: Terminal;
   private readonly fit = new FitAddon();
@@ -168,6 +169,23 @@ export class TerminalTab {
 
   get size() {
     return { cols: this.term.cols, rows: this.term.rows };
+  }
+
+  get sizeLabel() {
+    return `${this.term.cols}×${this.term.rows}`;
+  }
+
+  get tooltip() {
+    return this.shell?.program ?? this.title;
+  }
+
+  /** The backend session id, once connected (used to open Files on it). */
+  get sessionId() {
+    return this.id;
+  }
+
+  focus() {
+    this.term.focus();
   }
 
   get hasExited() {

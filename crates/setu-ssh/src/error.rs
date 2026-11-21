@@ -55,6 +55,13 @@ pub enum SshError {
 
     #[error("the SSH session is closed")]
     Closed,
+
+    /// A file operation failed; `path` is the local or remote path involved.
+    #[error("{path}: {reason}")]
+    Files { path: String, reason: String },
+
+    #[error("the transfer was cancelled")]
+    Cancelled,
 }
 
 impl From<russh::Error> for SshError {

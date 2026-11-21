@@ -429,6 +429,16 @@ impl SshClient {
     }
 
     /// Runs one command without a PTY and returns its stdout and exit code.
+    /// Opens a channel running a subsystem (such as `sftp`) as a byte stream.
+    pub(crate) async fn subsystem(
+        &self,
+        name: &str,
+    ) -> Result<russh::ChannelStream<client::Msg>, SshError> {
+        let channel = self.handle.channel_open_session().await?;
+        channel.request_subsystem(true, name).await?;
+        Ok(channel.into_stream())
+    }
+
     pub async fn exec(&self, command: &str) -> Result<(Vec<u8>, Option<u32>), SshError> {
         let mut channel = self.handle.channel_open_session().await?;
         channel.exec(true, command).await?;

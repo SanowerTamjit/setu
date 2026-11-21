@@ -2,6 +2,8 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import { appInfo, listShells, type ShellProfile } from "./ipc";
 import { TerminalTab } from "./terminal-tab";
+import { FilesTab } from "./files-tab";
+import type { Tab } from "./tab";
 import { openSshDialog, setDefaultUser, type DialogOptions } from "./ssh-dialog";
 import { HostsPanel } from "./hosts-panel";
 import { vaultStatus, type Host, type VaultStatus } from "./ipc";
@@ -19,9 +21,11 @@ const statusVersion = document.getElementById("status-version")!;
 const sidebarEl = document.getElementById("sidebar")!;
 const sidebarButton = document.getElementById("sidebar-button") as HTMLButtonElement;
 const statusVault = document.getElementById("status-vault") as HTMLButtonElement;
+const statusFiles = document.getElementById("status-files") as HTMLButtonElement;
+statusFiles.onclick = () => void openFiles();
 
-const tabs: TerminalTab[] = [];
-let active: TerminalTab | null = null;
+const tabs: Tab[] = [];
+let active: Tab | null = null;
 let shells: ShellProfile[] = [];
 let localUser = "";
 
@@ -32,7 +36,8 @@ function renderTabs() {
       el.className = "tab" + (tab === active ? " active" : "") + (tab.hasExited ? " exited" : "");
       el.setAttribute("role", "tab");
       el.setAttribute("aria-selected", String(tab === active));
-      el.title = tab.shell?.program ?? tab.title;
+      el.title = tab.tooltip;
+      if (tab instanceof FilesTab) el.classList.add("files");
       el.onclick = () => activate(tab);
       el.onauxclick = (e) => {
         if (e.button === 1) void closeTab(tab);
@@ -69,11 +74,11 @@ function renderStatus() {
     return;
   }
   statusShell.textContent = active.detail;
-  const { cols, rows } = active.size;
-  statusSize.textContent = `${cols}×${rows}`;
+  statusSize.textContent = active.sizeLabel;
+  statusFiles.hidden = !(active instanceof TerminalTab && active.isRemote && !active.hasExited);
 }
 
-function activate(tab: TerminalTab) {
+function activate(tab: Tab) {
   if (active && active !== tab) active.hide();
   active = tab;
   tab.show();
@@ -104,7 +109,7 @@ async function newTab(shellId: string | null = null) {
  * Asks for connection details (or uses a saved host's), then connects in a
  * new tab. `label` names the tab, for saved hosts.
  */
-async function newSshTab(options: DialogOptions = {}, label?: string) {
+async function newSshTab(options: DialogOptions = {}, label?: string, then?: (tab: TerminalTab) => void) {
   await openSshDialog(async (request) => {
     const tab = new TerminalTab(terminalsEl, {
       onTitle: () => renderTabs(),
@@ -121,6 +126,7 @@ async function newSshTab(options: DialogOptions = {}, label?: string) {
       if (label) tab.title = label;
       renderTabs();
       renderStatus();
+      then?.(tab);
     } catch (err) {
       // Remove the half-open tab; the dialog shows what went wrong.
       tabs.splice(tabs.indexOf(tab), 1);
@@ -132,11 +138,11 @@ async function newSshTab(options: DialogOptions = {}, label?: string) {
     }
   }, options);
   // The dialog took focus (even when hidden); give it back to the terminal.
-  active?.term.focus();
+  active?.focus();
 }
 
 /** Connects to a saved host, asking only for what the host file can't hold. */
-function connectHost(host: Host) {
+function connectHost(host: Host, then?: (tab: TerminalTab) => void) {
   const authKind = ({ auto: "default", agent: "agent", key: "keyFile", password: "password" } as const)[host.auth ?? "auto"];
   void newSshTab(
     {
@@ -152,10 +158,36 @@ function connectHost(host: Host) {
       },
     },
     host.name,
+    then,
   );
 }
 
-const hostsPanel = new HostsPanel(sidebarEl, { connect: connectHost, defaultUser: () => localUser });
+/** Opens a Files tab (SFTP) on an SSH tab's connection. */
+async function openFiles(from: Tab | null = active) {
+  if (!(from instanceof TerminalTab) || !from.isRemote || from.sessionId === null || from.hasExited) return;
+  const tab = new FilesTab(terminalsEl, from.sessionId, from.title, () => {
+    renderTabs();
+    renderStatus();
+  });
+  tabs.push(tab);
+  activate(tab);
+  try {
+    await tab.start();
+    tab.focus();
+  } catch (err) {
+    const message = document.createElement("div");
+    message.className = "files-error";
+    message.textContent = `Could not open files on ${from.title}: ${String(err)}`;
+    tab.element.replaceChildren(message);
+  }
+  renderStatus();
+}
+
+const hostsPanel = new HostsPanel(sidebarEl, {
+  connect: (host) => connectHost(host),
+  files: (host) => connectHost(host, (tab) => void openFiles(tab)),
+  defaultUser: () => localUser,
+});
 
 function renderVault(status: VaultStatus) {
   const state = status.unlocked ? "unlocked" : status.exists ? "locked" : "none";
@@ -168,7 +200,7 @@ function renderVault(status: VaultStatus) {
 onVaultChange(renderVault);
 statusVault.onclick = async () => {
   await openVaultDialog();
-  active?.term.focus();
+  active?.focus();
 };
 void listen<VaultStatus>("vault-status", (e) => renderVault(e.payload));
 
@@ -185,7 +217,7 @@ function setSidebar(open: boolean) {
 }
 sidebarButton.onclick = () => setSidebar(sidebarEl.hidden);
 
-async function closeTab(tab: TerminalTab) {
+async function closeTab(tab: Tab) {
   const i = tabs.indexOf(tab);
   if (i < 0) return;
   tabs.splice(i, 1);
@@ -264,6 +296,9 @@ document.addEventListener(
       e.preventDefault();
       if (sidebarEl.hidden) setSidebar(true);
       hostsPanel.focusSearch();
+    } else if (mod && e.code === "KeyF") {
+      e.preventDefault();
+      void openFiles();
     } else if (mod && e.code === "KeyO") {
       e.preventDefault();
       void newSshTab();

@@ -14,8 +14,9 @@ russh = { version = "0.65", default-features = false, features = ["ring", "rsa",
 setu-core.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net"] }
+tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net", "fs", "io-util"] }
 zeroize = "1"
+russh-sftp = "3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "fs"] }

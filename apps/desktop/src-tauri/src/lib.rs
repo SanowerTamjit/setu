@@ -2,8 +2,9 @@
 //!
 //! The web view only renders. Shells, SSH sessions, saved hosts and the
 //! vault run in Rust and talk to the UI through the commands in [`terminals`],
-//! [`ssh`], [`hosts`] and [`vault`].
+//! [`ssh`], [`files`], [`hosts`] and [`vault`].
 
+mod files;
 mod hosts;
 mod ssh;
 mod terminals;
@@ -35,6 +36,7 @@ pub fn run() {
         .manage(terminals::Terminals::default())
         .manage(hosts::Hosts::from_env())
         .manage(vault::VaultState::from_env())
+        .manage(files::Files::default())
         .setup(|app| {
             use tauri::Manager;
             let vault = app.state::<vault::VaultState>().inner().clone();
@@ -61,6 +63,15 @@ pub fn run() {
             vault::vault_lock,
             vault::vault_remove,
             vault::vault_change_password,
+            files::files_open,
+            files::files_close,
+            files::files_list,
+            files::files_mkdir,
+            files::files_rename,
+            files::files_remove,
+            files::local_list,
+            files::transfer,
+            files::transfer_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

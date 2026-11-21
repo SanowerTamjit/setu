@@ -11,6 +11,8 @@
 //!   default keys in `~/.ssh`, or an explicit key file or password.
 //! - **ProxyJump**: connect through one or more jump hosts.
 //! - **Interactive shells** with a PTY, streamed to a callback like `setu-pty`.
+//! - **SFTP**: browse, create, rename and delete remote files, and copy files
+//!   or whole folders either way with progress and cancel ([`sftp`]).
 //!
 //! Secrets (passwords, key passphrases) are wrapped in [`zeroize::Zeroizing`]
 //! and are never logged or included in error messages.
@@ -18,6 +20,7 @@
 mod client;
 mod error;
 pub mod known_hosts;
+pub mod sftp;
 mod shell;
 
 pub use client::{connect, Auth, ConnectOptions, SshClient};

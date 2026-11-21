@@ -207,3 +207,63 @@ export const vaultRemove = (kind: SecretKind, target: string) =>
   invoke<VaultStatus>("vault_remove", { kind, target });
 export const vaultChangePassword = (current: string, next: string) =>
   invoke<VaultStatus>("vault_change_password", { current, new: next });
+
+// ---- Files / SFTP (src-tauri/src/files.rs) ----
+
+export type EntryKind = "file" | "dir" | "symlink" | "other";
+
+export interface FileEntry {
+  name: string;
+  kind: EntryKind;
+  size: number;
+  modified: number | null;
+  permissions: number | null;
+}
+
+export interface Listing {
+  path: string;
+  parent: string | null;
+  entries: FileEntry[];
+}
+
+export interface TransferProgress {
+  doneBytes: number;
+  totalBytes: number;
+  filesDone: number;
+  filesTotal: number;
+  current: string;
+}
+
+export const filesOpen = (terminalId: number) =>
+  invoke<{ id: number; home: string }>("files_open", { terminalId });
+export const filesClose = (id: number) => invoke<void>("files_close", { id });
+export const filesList = (id: number, path: string) => invoke<Listing>("files_list", { id, path });
+export const filesMkdir = (id: number, dir: string, name: string) =>
+  invoke<void>("files_mkdir", { id, dir, name });
+export const filesRename = (id: number, dir: string, from: string, to: string) =>
+  invoke<void>("files_rename", { id, dir, from, to });
+export const filesRemove = (id: number, dir: string, name: string) =>
+  invoke<void>("files_remove", { id, dir, name });
+export const localList = (path: string) => invoke<Listing>("local_list", { path });
+
+export function transfer(
+  id: number,
+  transferId: number,
+  direction: "upload" | "download",
+  source: string,
+  targetDir: string,
+  onProgress: (p: TransferProgress) => void,
+): Promise<TransferProgress> {
+  const channel = new Channel<TransferProgress>();
+  channel.onmessage = onProgress;
+  return invoke<TransferProgress>("transfer", {
+    id,
+    transferId,
+    direction,
+    source,
+    targetDir,
+    onProgress: channel,
+  });
+}
+
+export const transferCancel = (transferId: number) => invoke<void>("transfer_cancel", { transferId });
