@@ -17,8 +17,11 @@
 
 mod error;
 mod file;
+pub mod keychain;
 mod vault;
 
 pub use error::VaultError;
-pub use vault::{EntryInfo, KdfParams, SecretKind, Vault, MIN_PASSWORD_CHARS, VAULT_FILE};
+pub use vault::{
+    EntryInfo, KdfParams, SecretKind, UnlockKey, Vault, MIN_PASSWORD_CHARS, VAULT_FILE,
+};
 pub use zeroize::Zeroizing;

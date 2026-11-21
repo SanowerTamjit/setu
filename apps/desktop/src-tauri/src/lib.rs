@@ -38,9 +38,16 @@ pub fn run() {
         .manage(vault::VaultState::from_env())
         .manage(files::Files::default())
         .setup(|app| {
-            use tauri::Manager;
+            use tauri::{Emitter, Manager};
             let vault = app.state::<vault::VaultState>().inner().clone();
             vault.spawn_auto_lock(app.handle().clone());
+            // Unlock from the OS keychain off the main thread (the keychain
+            // may be slow or show its own prompt), then tell the UI.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                vault.startup_unlock();
+                let _ = handle.emit(vault::STATUS_EVENT, vault.status());
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -61,6 +68,7 @@ pub fn run() {
             vault::vault_create,
             vault::vault_unlock,
             vault::vault_lock,
+            vault::vault_remember,
             vault::vault_remove,
             vault::vault_change_password,
             files::files_open,
