@@ -48,6 +48,8 @@ cargo test --workspace
 cargo install --path crates/setu-cli   # the `setu` command (see docs/cli.md)
 ```
 
+Nightly builds for macOS, Linux and Windows: see [docs/releasing.md](docs/releasing.md).
+
 ## Contributing
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and look for issues labelled `good first issue`. By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).

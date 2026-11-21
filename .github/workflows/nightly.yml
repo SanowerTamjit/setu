@@ -1,0 +1,294 @@
+name: Nightly
+
+# Builds the desktop app and the `setu` CLI for macOS, Linux and Windows
+# every night and publishes them as the rolling `nightly` pre-release.
+#
+# Signing switches on by itself when the secrets exist (see
+# docs/releasing.md). Without them the builds are still published:
+# unsigned on Windows, ad-hoc signed on macOS, and every file carries a
+# GitHub build-provenance attestation and a SHA-256 checksum.
+
+on:
+  schedule:
+    - cron: "17 2 * * *" # 02:17 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Publish even if nothing changed since the last nightly
+        type: boolean
+        default: false
+  # Build (but never publish) when the release pipeline itself changes.
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+      - scripts/release/**
+      - apps/desktop/src-tauri/tauri.conf.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Decide whether to build
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          version="nightly-$(date -u +%Y%m%d)-${SHA:0:7}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          build=true
+          if [ "${{ github.event_name }}" = schedule ]; then
+            last=$(gh api "repos/${{ github.repository }}/git/ref/tags/nightly" --jq .object.sha 2>/dev/null || true)
+            if [ "$last" = "$SHA" ]; then
+              echo "No new commits since the last nightly ($last); skipping."
+              build=false
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Version: $version, build: $build"
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            os: ubuntu-22.04 # oldest supported glibc for the widest reach
+            bundles: deb,rpm,appimage
+          - platform: macos-universal
+            os: macos-latest
+            bundles: app,dmg
+          - platform: windows-x86_64
+            os: windows-latest
+            bundles: msi,nsis
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      # Signing secrets. Empty when not configured; each signing step
+      # checks for them and is skipped otherwise.
+      MACOS_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      MACOS_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      MACOS_NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+      MACOS_NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      MACOS_NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: nightly-${{ matrix.platform }}
+
+      # ---- macOS signing (optional) -------------------------------------
+      - name: Import the Apple signing certificate
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        run: |
+          keychain="$RUNNER_TEMP/setu-signing.keychain-db"
+          keychain_pw=$(openssl rand -hex 24)
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$keychain_pw" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_pw" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_pw" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          echo "APPLE_SIGNING_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          if [ -n "$MACOS_NOTARY_APPLE_ID" ]; then
+            {
+              echo "APPLE_ID=$MACOS_NOTARY_APPLE_ID"
+              echo "APPLE_PASSWORD=$MACOS_NOTARY_PASSWORD"
+              echo "APPLE_TEAM_ID=$MACOS_NOTARY_TEAM_ID"
+            } >> "$GITHUB_ENV"
+          fi
+          echo "SIGNED=developer-id" >> "$GITHUB_ENV"
+
+      - name: Fall back to ad-hoc signing on macOS
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE == ''
+        run: |
+          # Ad-hoc signed apps open after a right-click > Open; unsigned ones
+          # are reported as "damaged" on Apple silicon.
+          echo '{"bundle":{"macOS":{"signingIdentity":"-"}}}' > "$RUNNER_TEMP/tauri-sign.json"
+          echo "TAURI_SIGN_CONFIG=$RUNNER_TEMP/tauri-sign.json" >> "$GITHUB_ENV"
+          echo "SIGNED=ad-hoc" >> "$GITHUB_ENV"
+
+      # ---- Windows signing (optional) -----------------------------------
+      - name: Import the Windows code-signing certificate
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $pw = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\My -Password $pw
+          Remove-Item $path
+          $config = @{ bundle = @{ windows = @{
+            certificateThumbprint = $cert.Thumbprint
+            digestAlgorithm = 'sha256'
+            timestampUrl = 'http://timestamp.digicert.com'
+          } } } | ConvertTo-Json -Depth 4
+          $configPath = Join-Path $env:RUNNER_TEMP 'tauri-sign.json'
+          Set-Content -Path $configPath -Value $config -Encoding utf8NoBOM
+          "TAURI_SIGN_CONFIG=$configPath" >> $env:GITHUB_ENV
+          "WINDOWS_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+          "SIGNED=authenticode" >> $env:GITHUB_ENV
+
+      # ---- Build ---------------------------------------------------------
+      - name: Build the desktop app
+        shell: bash
+        run: |
+          args=(--bundles "${{ matrix.bundles }}")
+          if [ "${{ runner.os }}" = macOS ]; then args+=(--target universal-apple-darwin); fi
+          if [ -n "${TAURI_SIGN_CONFIG:-}" ]; then args+=(--config "$TAURI_SIGN_CONFIG"); fi
+          pnpm --filter @setu/desktop exec tauri build "${args[@]}"
+
+      - name: Build the CLI
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = macOS ]; then
+            cargo build --release --locked -p setu-cli --target aarch64-apple-darwin
+            cargo build --release --locked -p setu-cli --target x86_64-apple-darwin
+            mkdir -p target/universal
+            lipo -create -output target/universal/setu \
+              target/aarch64-apple-darwin/release/setu target/x86_64-apple-darwin/release/setu
+            echo "CLI_BIN=target/universal/setu" >> "$GITHUB_ENV"
+          elif [ "${{ runner.os }}" = Windows ]; then
+            cargo build --release --locked -p setu-cli
+            echo "CLI_BIN=target/release/setu.exe" >> "$GITHUB_ENV"
+          else
+            cargo build --release --locked -p setu-cli
+            echo "CLI_BIN=target/release/setu" >> "$GITHUB_ENV"
+          fi
+
+      - name: Smoke-test the CLI
+        shell: bash
+        run: |
+          "$CLI_BIN" --version
+          "$CLI_BIN" doctor --json > /dev/null || [ $? -eq 1 ]
+
+      - name: Sign the CLI (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            codesign --force --options runtime --timestamp -s "$APPLE_SIGNING_IDENTITY" "$CLI_BIN"
+          else
+            codesign --force -s - "$CLI_BIN"
+          fi
+          codesign --verify --verbose "$CLI_BIN"
+
+      - name: Notarize the CLI (macOS)
+        if: runner.os == 'macOS' && env.APPLE_ID != ''
+        run: |
+          ditto -c -k "$CLI_BIN" "$RUNNER_TEMP/setu-notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/setu-notarize.zip" \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+
+      - name: Sign the CLI (Windows)
+        if: runner.os == 'Windows' && env.WINDOWS_THUMBPRINT != ''
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName | Select-Object -Last 1
+          & $signtool.FullName sign /sha1 $env:WINDOWS_THUMBPRINT /fd sha256 /tr http://timestamp.digicert.com /td sha256 $env:CLI_BIN
+          & $signtool.FullName verify /pa $env:CLI_BIN
+
+      - name: Collect the files
+        shell: bash
+        run: scripts/release/collect.sh "$VERSION" "${{ matrix.platform }}" "$CLI_BIN" release-out
+
+      - name: Record how this build was signed
+        shell: bash
+        run: |
+          echo "${{ matrix.platform }}: ${SIGNED:-unsigned}" > "release-out/signing-${{ matrix.platform }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setu-${{ matrix.platform }}
+          path: release-out/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish the nightly release
+    needs: [prepare, build]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the provenance attestation (keyless, via Sigstore)
+      attestations: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-out
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cat release-out/signing-*.txt > signing.txt
+          rm release-out/signing-*.txt
+          scripts/release/checksums.sh release-out
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release-out/*
+
+      - name: Replace the nightly release
+        run: |
+          {
+            echo "Nightly build of \`master\` at ${GITHUB_SHA:0:7}, built $(date -u '+%Y-%m-%d %H:%M UTC')."
+            echo
+            echo "**Not for production.** Nightlies are untested snapshots; they can break or lose settings."
+            echo
+            echo "Signing for this build:"
+            echo
+            sed 's/^/- /' signing.txt
+            echo
+            echo "Verify a download: \`sha256sum -c SHA256SUMS --ignore-missing\`, and"
+            echo "\`gh attestation verify <file> --repo ${{ github.repository }}\` to check it was built here."
+            echo "Install notes: docs/releasing.md."
+          } > notes.md
+          gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
+          gh release create nightly release-out/* \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Nightly $VERSION" --notes-file notes.md
