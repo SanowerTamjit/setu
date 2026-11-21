@@ -1,7 +1,8 @@
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import { appInfo, listShells, type ShellProfile } from "./ipc";
-import { TerminalTab } from "./terminal-tab";
+import type { TerminalTab } from "./terminal-tab";
+import { PaneTab, type Direction } from "./pane-tab";
 import { FilesTab } from "./files-tab";
 import type { Tab } from "./tab";
 import { openSshDialog, setDefaultUser, type DialogOptions } from "./ssh-dialog";
@@ -28,6 +29,23 @@ const tabs: Tab[] = [];
 let active: Tab | null = null;
 let shells: ShellProfile[] = [];
 let localUser = "";
+
+/** The terminal that keyboard actions apply to: the focused pane of a terminal tab. */
+function terminalOf(tab: Tab | null): TerminalTab | null {
+  return tab instanceof PaneTab ? tab.focused : null;
+}
+
+function createPaneTab() {
+  return new PaneTab(terminalsEl, {
+    onChange: () => {
+      renderTabs();
+      renderStatus();
+    },
+    onResize: (t) => {
+      if (t === active) renderStatus();
+    },
+  });
+}
 
 function renderTabs() {
   tabsEl.replaceChildren(
@@ -61,7 +79,16 @@ function renderTabs() {
         void closeTab(tab);
       };
 
-      el.append(index, label, close);
+      if (tab instanceof PaneTab && tab.paneCount > 1) {
+        const panes = document.createElement("span");
+        panes.className = "tab-panes";
+        panes.textContent = `⊞ ${tab.paneCount}`;
+        panes.title = `${tab.paneCount} panes`;
+        label.after(panes);
+        el.append(index, label, panes, close);
+      } else {
+        el.append(index, label, close);
+      }
       return el;
     }),
   );
@@ -75,7 +102,8 @@ function renderStatus() {
   }
   statusShell.textContent = active.detail;
   statusSize.textContent = active.sizeLabel;
-  statusFiles.hidden = !(active instanceof TerminalTab && active.isRemote && !active.hasExited);
+  const term = terminalOf(active);
+  statusFiles.hidden = !(term && term.isRemote && !term.hasExited);
 }
 
 function activate(tab: Tab) {
@@ -87,19 +115,13 @@ function activate(tab: Tab) {
 }
 
 async function newTab(shellId: string | null = null) {
-  const tab = new TerminalTab(terminalsEl, {
-    onTitle: () => renderTabs(),
-    onExit: () => renderTabs(),
-    onResize: (t) => {
-      if (t === active) renderStatus();
-    },
-  });
+  const tab = createPaneTab();
   tabs.push(tab);
   activate(tab);
   try {
-    await tab.start(shellId);
+    await tab.focused.start(shellId);
   } catch (err) {
-    tab.term.write(`\x1b[31mCould not start the shell: ${String(err)}\x1b[0m\r\n`);
+    tab.focused.term.write(`\x1b[31mCould not start the shell: ${String(err)}\x1b[0m\r\n`);
   }
   renderTabs();
   renderStatus();
@@ -111,22 +133,16 @@ async function newTab(shellId: string | null = null) {
  */
 async function newSshTab(options: DialogOptions = {}, label?: string, then?: (tab: TerminalTab) => void) {
   await openSshDialog(async (request) => {
-    const tab = new TerminalTab(terminalsEl, {
-      onTitle: () => renderTabs(),
-      onExit: () => renderTabs(),
-      onResize: (t) => {
-        if (t === active) renderStatus();
-      },
-    });
+    const tab = createPaneTab();
     const previous = active;
     tabs.push(tab);
     activate(tab);
     try {
-      await tab.startSsh(request);
+      await tab.focused.startSsh(request);
       if (label) tab.title = label;
       renderTabs();
       renderStatus();
-      then?.(tab);
+      then?.(tab.focused);
     } catch (err) {
       // Remove the half-open tab; the dialog shows what went wrong.
       tabs.splice(tabs.indexOf(tab), 1);
@@ -163,8 +179,8 @@ function connectHost(host: Host, then?: (tab: TerminalTab) => void) {
 }
 
 /** Opens a Files tab (SFTP) on an SSH tab's connection. */
-async function openFiles(from: Tab | null = active) {
-  if (!(from instanceof TerminalTab) || !from.isRemote || from.sessionId === null || from.hasExited) return;
+async function openFiles(from: TerminalTab | null = terminalOf(active)) {
+  if (!from || !from.isRemote || from.sessionId === null || from.hasExited) return;
   const tab = new FilesTab(terminalsEl, from.sessionId, from.title, () => {
     renderTabs();
     renderStatus();
@@ -232,6 +248,19 @@ async function closeTab(tab: Tab) {
   renderStatus();
 }
 
+/** Splits the active tab's focused pane. */
+async function splitActive(direction: Direction) {
+  if (!(active instanceof PaneTab)) return;
+  await active.split(direction);
+}
+
+/** Ctrl+Shift+W: closes the focused pane of a split, otherwise the tab. */
+async function closeActive() {
+  if (!active) return;
+  if (active instanceof PaneTab && (await active.closePane())) return;
+  await closeTab(active);
+}
+
 function cycle(delta: number) {
   if (!active || tabs.length < 2) return;
   const i = tabs.indexOf(active);
@@ -250,8 +279,26 @@ function renderMenu() {
   };
   const separator = document.createElement("div");
   separator.className = "menu-separator";
+  const splitItem = (label: string, keys: string, direction: Direction) => {
+    const item = document.createElement("button");
+    item.className = "menu-item";
+    item.setAttribute("role", "menuitem");
+    item.innerHTML = `<span></span><span class="muted"></span>`;
+    item.children[0].textContent = label;
+    item.children[1].textContent = keys;
+    item.onclick = () => {
+      toggleMenu(false);
+      void splitActive(direction);
+    };
+    return item;
+  };
+  const separator2 = document.createElement("div");
+  separator2.className = "menu-separator";
   menuEl.replaceChildren(
     ssh,
+    separator2,
+    splitItem("Split right", "Ctrl+Shift+D", "right"),
+    splitItem("Split down", "Ctrl+Alt+Shift+D", "down"),
     separator,
     ...shells.map((shell) => {
       const item = document.createElement("button");
@@ -291,14 +338,22 @@ document.addEventListener(
       void newTab();
     } else if (mod && e.code === "KeyW") {
       e.preventDefault();
-      if (active) void closeTab(active);
+      void closeActive();
+    } else if (mod && e.code === "KeyD") {
+      e.preventDefault();
+      void splitActive(e.altKey ? "down" : "right");
+    } else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code.startsWith("Arrow") && active instanceof PaneTab && active.paneCount > 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      const [dx, dy] = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.code] ?? [0, 0];
+      active.focusNeighbour(dx, dy);
     } else if (mod && e.code === "KeyH") {
       e.preventDefault();
       if (sidebarEl.hidden) setSidebar(true);
       hostsPanel.focusSearch();
     } else if (mod && e.code === "KeyF") {
       e.preventDefault();
-      if (active instanceof TerminalTab) active.findBar.open();
+      terminalOf(active)?.findBar.open();
     } else if (mod && e.code === "KeyE") {
       e.preventDefault();
       void openFiles();

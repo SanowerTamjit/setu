@@ -318,8 +318,38 @@ pub async fn ssh_connect(
         }
         Err(e) => return Err(e.into()),
     };
-    let client = Arc::new(client);
+    let id = open_shell(&state, Arc::new(client), cols, rows, on_output, on_exit)
+        .await
+        .map_err(|e| match e {
+            ShellError::Ssh(e) => ConnectFailure::from(e),
+            ShellError::State(message) => ConnectFailure::Error { message },
+        })?;
+    // Saving is best effort: the connection already works.
+    let saved_to_vault = match to_save {
+        Some((kind, target, secret)) => vault.save(kind, &target, secret).unwrap_or(false),
+        None => false,
+    };
+    Ok(OpenedSsh {
+        id,
+        title,
+        saved_to_vault,
+    })
+}
 
+enum ShellError {
+    Ssh(SshError),
+    State(String),
+}
+
+/// Opens an interactive shell on `client` and registers it as terminal session.
+async fn open_shell(
+    state: &Terminals,
+    client: Arc<setu_ssh::SshClient>,
+    cols: u16,
+    rows: u16,
+    on_output: Channel<InvokeResponseBody>,
+    on_exit: Channel<u32>,
+) -> Result<u32, ShellError> {
     let id = state.next_id();
     let sessions = Arc::clone(&state.sessions);
     let shell = client
@@ -335,20 +365,33 @@ pub async fn ssh_connect(
             },
         )
         .await
-        .map_err(ConnectFailure::from)?;
+        .map_err(ShellError::Ssh)?;
     state
         .insert(id, Session::Ssh { shell, client })
-        .map_err(|message| ConnectFailure::Error { message })?;
-    // Saving is best effort: the connection already works.
-    let saved_to_vault = match to_save {
-        Some((kind, target, secret)) => vault.save(kind, &target, secret).unwrap_or(false),
-        None => false,
-    };
-    Ok(OpenedSsh {
-        id,
-        title,
-        saved_to_vault,
-    })
+        .map_err(ShellError::State)?;
+    Ok(id)
+}
+
+/// Opens another shell on the connection of SSH terminal `terminal_id`, for a
+/// split pane: no new login, and it shares the connection's jump hosts.
+#[tauri::command]
+pub async fn ssh_open_shell(
+    state: State<'_, Terminals>,
+    terminal_id: u32,
+    cols: u16,
+    rows: u16,
+    on_output: Channel<InvokeResponseBody>,
+    on_exit: Channel<u32>,
+) -> Result<u32, String> {
+    let client = state
+        .ssh_client(terminal_id)
+        .ok_or("that pane is not an open SSH connection")?;
+    open_shell(&state, client, cols, rows, on_output, on_exit)
+        .await
+        .map_err(|e| match e {
+            ShellError::Ssh(e) => e.to_string(),
+            ShellError::State(message) => message,
+        })
 }
 
 /// Records a host key the user explicitly accepted in the trust prompt.

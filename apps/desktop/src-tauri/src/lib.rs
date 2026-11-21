@@ -58,6 +58,7 @@ pub fn run() {
             terminals::resize_terminal,
             terminals::close_terminal,
             ssh::ssh_connect,
+            ssh::ssh_open_shell,
             ssh::ssh_trust_host,
             hosts::hosts_list,
             hosts::host_save,
