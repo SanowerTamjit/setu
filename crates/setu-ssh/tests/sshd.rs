@@ -1,0 +1,390 @@
+//! Integration tests against a real OpenSSH server.
+//!
+//! Each test starts its own `sshd` on a free localhost port with throwaway
+//! keys. Tests are skipped (with a message) when `sshd` or `ssh-keygen` is not
+//! installed, for example on Windows CI.
+
+use setu_ssh::{connect, known_hosts, Auth, ConnectOptions, ShellSize, SshError, Zeroizing};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+struct Sshd {
+    child: Child,
+    dir: tempfile::TempDir,
+    port: u16,
+    user: String,
+}
+
+impl Drop for Sshd {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn find(candidates: &[&str]) -> Option<PathBuf> {
+    candidates.iter().map(PathBuf::from).find(|p| p.is_file())
+}
+
+fn keygen(path: &Path, passphrase: &str) {
+    let status = Command::new("ssh-keygen")
+        .args([
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            passphrase,
+            "-C",
+            "setu-test",
+            "-f",
+        ])
+        .arg(path)
+        .status()
+        .expect("run ssh-keygen");
+    assert!(status.success(), "ssh-keygen failed");
+}
+
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .expect("free port")
+}
+
+fn current_user() -> String {
+    std::env::var("USER")
+        .ok()
+        .filter(|u| !u.is_empty())
+        .or_else(|| {
+            Command::new("whoami")
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        })
+        .expect("current user")
+}
+
+/// Whether CI requires these tests to run (set `SETU_REQUIRE_SSHD=1`).
+fn required() -> bool {
+    std::env::var("SETU_REQUIRE_SSHD").is_ok_and(|v| v == "1")
+}
+
+/// Skips the test with a message, or fails it when CI requires sshd.
+fn skip(reason: &str) -> Option<Sshd> {
+    assert!(!required(), "SETU_REQUIRE_SSHD=1 but {reason}");
+    eprintln!("skipping: {reason}");
+    None
+}
+
+/// Starts sshd, or returns None (skip) when OpenSSH is not available.
+fn start_sshd() -> Option<Sshd> {
+    if cfg!(windows) {
+        return skip("sshd tests do not run on Windows");
+    }
+    let Some(sshd) = find(&["/usr/sbin/sshd", "/usr/bin/sshd", "/usr/local/sbin/sshd"]) else {
+        return skip("sshd is not installed");
+    };
+    if Command::new("ssh-keygen").arg("-?").output().is_err() {
+        return skip("ssh-keygen is not installed");
+    }
+    // Running as root needs the privilege separation directory.
+    let _ = std::fs::create_dir_all("/run/sshd");
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    keygen(&d.join("host_key"), "");
+    keygen(&d.join("user_key"), "");
+    keygen(&d.join("encrypted_key"), "s3cret");
+    keygen(&d.join("other_key"), "");
+    let authorized = [
+        std::fs::read_to_string(d.join("user_key.pub")).expect("pub"),
+        std::fs::read_to_string(d.join("encrypted_key.pub")).expect("pub"),
+    ]
+    .concat();
+    std::fs::write(d.join("authorized_keys"), authorized).expect("authorized_keys");
+
+    let port = free_port();
+    let config = format!(
+        "Port {port}\nListenAddress 127.0.0.1\nHostKey {host}\nAuthorizedKeysFile {auth}\n\
+         PidFile {pid}\nStrictModes no\nUsePAM no\nPasswordAuthentication no\n\
+         KbdInteractiveAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin yes\n\
+         AllowTcpForwarding yes\nLogLevel ERROR\n",
+        host = d.join("host_key").display(),
+        auth = d.join("authorized_keys").display(),
+        pid = d.join("sshd.pid").display(),
+    );
+    std::fs::write(d.join("sshd_config"), config).expect("config");
+
+    let mut child = Command::new(sshd)
+        .arg("-D")
+        .arg("-e")
+        .arg("-f")
+        .arg(d.join("sshd_config"))
+        .stdin(Stdio::null())
+        .spawn()
+        .expect("start sshd");
+
+    // sshd may refuse to run unprivileged on some systems (for example macOS).
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
+        if Instant::now() >= deadline || matches!(child.try_wait(), Ok(Some(_))) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return skip("sshd could not be started here");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Some(Sshd {
+        child,
+        dir,
+        port,
+        user: current_user(),
+    })
+}
+
+impl Sshd {
+    fn path(&self, name: &str) -> PathBuf {
+        self.dir.path().join(name)
+    }
+
+    fn opts(&self) -> ConnectOptions {
+        ConnectOptions::new("127.0.0.1", self.user.clone())
+            .port(self.port)
+            .known_hosts(self.path("known_hosts"))
+            .auth(Auth::KeyFile {
+                path: self.path("user_key"),
+                passphrase: None,
+            })
+    }
+
+    /// The host key fingerprint as ssh-keygen prints it.
+    fn fingerprint(&self) -> String {
+        let out = Command::new("ssh-keygen")
+            .arg("-lf")
+            .arg(self.path("host_key.pub"))
+            .output()
+            .expect("ssh-keygen -l");
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .nth(1)
+            .expect("fingerprint")
+            .to_string()
+    }
+
+    /// Accepts the host key, like a user clicking "Trust".
+    async fn trust(&self) {
+        match connect(&self.opts()).await {
+            Err(SshError::UnknownHostKey { key }) => {
+                known_hosts::trust(&self.path("known_hosts"), &key).expect("trust")
+            }
+            other => panic!("expected an unknown host key, got {other:?}"),
+        }
+    }
+}
+
+macro_rules! sshd_or_skip {
+    () => {
+        match start_sshd() {
+            Some(s) => s,
+            None => return,
+        }
+    };
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unknown_host_key_is_refused_with_its_fingerprint() {
+    let sshd = sshd_or_skip!();
+    match connect(&sshd.opts()).await {
+        Err(SshError::UnknownHostKey { key }) => {
+            assert_eq!(key.fingerprint, sshd.fingerprint());
+            assert_eq!(key.algorithm, "ssh-ed25519");
+            assert_eq!(key.port, sshd.port);
+        }
+        other => panic!("expected UnknownHostKey, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trusted_host_with_key_file_runs_a_command() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let client = connect(&sshd.opts()).await.expect("connect");
+    let (out, code) = client.exec("echo setu-over-ssh").await.expect("exec");
+    assert_eq!(String::from_utf8_lossy(&out), "setu-over-ssh\n");
+    assert_eq!(code, Some(0));
+    client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn changed_host_key_is_refused() {
+    let sshd = sshd_or_skip!();
+    // Record a different ed25519 key for this host:port.
+    let other = std::fs::read_to_string(sshd.path("other_key.pub")).expect("pub");
+    let other = other
+        .split_whitespace()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ");
+    std::fs::write(
+        sshd.path("known_hosts"),
+        format!("[127.0.0.1]:{} {other}\n", sshd.port),
+    )
+    .expect("write known_hosts");
+    match connect(&sshd.opts()).await {
+        Err(SshError::HostKeyChanged { key, line, .. }) => {
+            assert_eq!(key.fingerprint, sshd.fingerprint());
+            assert_eq!(line, 1);
+        }
+        other => panic!("expected HostKeyChanged, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn wrong_key_fails_authentication() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let mut opts = sshd.opts();
+    opts.auth = vec![Auth::KeyFile {
+        path: sshd.path("other_key"),
+        passphrase: None,
+    }];
+    match connect(&opts).await {
+        Err(SshError::AuthFailed { tried, .. }) => assert_eq!(tried.len(), 1),
+        other => panic!("expected AuthFailed, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn encrypted_key_asks_for_a_passphrase_then_works() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let mut opts = sshd.opts();
+    opts.auth = vec![Auth::KeyFile {
+        path: sshd.path("encrypted_key"),
+        passphrase: None,
+    }];
+    assert!(matches!(
+        connect(&opts).await,
+        Err(SshError::KeyNeedsPassphrase { .. })
+    ));
+    opts.auth = vec![Auth::KeyFile {
+        path: sshd.path("encrypted_key"),
+        passphrase: Some(Zeroizing::new("s3cret".to_string())),
+    }];
+    let client = connect(&opts).await.expect("connect with passphrase");
+    let (out, _) = client.exec("echo ok").await.expect("exec");
+    assert_eq!(String::from_utf8_lossy(&out), "ok\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn interactive_shell_echoes_and_resizes() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let client = connect(&sshd.opts()).await.expect("connect");
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    let (exit_tx, exit_rx) = mpsc::channel::<Option<u32>>();
+    let shell = client
+        .open_shell(
+            ShellSize {
+                cols: 100,
+                rows: 30,
+            },
+            move |b| {
+                let _ = tx.send(b.to_vec());
+            },
+            move |code| {
+                let _ = exit_tx.send(code);
+            },
+        )
+        .await
+        .expect("shell");
+
+    let read_until = |needle: &str| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut out = Vec::new();
+        while Instant::now() < deadline {
+            if let Ok(chunk) = rx.recv_timeout(Duration::from_millis(100)) {
+                out.extend_from_slice(&chunk);
+                if String::from_utf8_lossy(&out).contains(needle) {
+                    break;
+                }
+            }
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    };
+
+    shell.write(b"echo answer-$((6*7))\n").expect("write");
+    let out = read_until("answer-42");
+    assert!(out.contains("answer-42"), "output was: {out:?}");
+
+    shell
+        .resize(ShellSize {
+            cols: 111,
+            rows: 33,
+        })
+        .expect("resize");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    shell.write(b"stty size\n").expect("write");
+    let out = read_until("33 111");
+    assert!(out.contains("33 111"), "output was: {out:?}");
+
+    shell.write(b"exit 5\n").expect("write");
+    let code = exit_rx.recv_timeout(Duration::from_secs(10)).expect("exit");
+    assert_eq!(code, Some(5));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proxy_jump_through_a_bastion() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    // Jump through the server to itself: the inner session runs inside a
+    // direct-tcpip channel opened by the outer one.
+    let opts = sshd.opts().jump(sshd.opts());
+    let client = connect(&opts).await.expect("connect via jump host");
+    let (out, code) = client.exec("echo via-jump").await.expect("exec");
+    assert_eq!(String::from_utf8_lossy(&out), "via-jump\n");
+    assert_eq!(code, Some(0));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ssh_agent_authentication() {
+    let sshd = sshd_or_skip!();
+    if Command::new("ssh-agent").arg("-h").output().is_err() {
+        eprintln!("skipping: ssh-agent is not installed");
+        return;
+    }
+    sshd.trust().await;
+    let sock = sshd.path("agent.sock");
+    let mut agent = Command::new("ssh-agent")
+        .arg("-D")
+        .arg("-a")
+        .arg(&sock)
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("start ssh-agent");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !sock.exists() {
+        assert!(Instant::now() < deadline, "ssh-agent did not start");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let added = Command::new("ssh-add")
+        .arg(sshd.path("user_key"))
+        .env("SSH_AUTH_SOCK", &sock)
+        .stderr(Stdio::null())
+        .status()
+        .expect("ssh-add");
+    assert!(added.success());
+
+    // Only this test reads SSH_AUTH_SOCK; the others name a key file explicitly.
+    std::env::set_var("SSH_AUTH_SOCK", &sock);
+    let mut opts = sshd.opts();
+    opts.auth = vec![Auth::Agent];
+    let result = connect(&opts).await;
+    let _ = agent.kill();
+    let _ = agent.wait();
+    let client = result.expect("connect with ssh-agent");
+    let (out, _) = client.exec("echo agent-ok").await.expect("exec");
+    assert_eq!(String::from_utf8_lossy(&out), "agent-ok\n");
+}

@@ -287,10 +287,8 @@ pub fn detect_windows(sys: &impl System) -> Vec<ShellProfile> {
 pub fn parse_wsl_list(raw: &[u8]) -> Vec<String> {
     let looks_utf16 = raw.len() >= 2 && (raw.starts_with(&[0xFF, 0xFE]) || raw[1] == 0);
     let text = if looks_utf16 {
-        let units: Vec<u16> = raw
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
+        let (pairs, _) = raw.as_chunks::<2>();
+        let units: Vec<u16> = pairs.iter().map(|&pair| u16::from_le_bytes(pair)).collect();
         String::from_utf16_lossy(&units)
     } else {
         String::from_utf8_lossy(raw).into_owned()

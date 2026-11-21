@@ -1,0 +1,178 @@
+//! Host-key verification against an OpenSSH `known_hosts` file.
+//!
+//! Setu shares `~/.ssh/known_hosts` with OpenSSH, so a host trusted in one is
+//! trusted in the other and nobody has to re-verify their fleet.
+
+use crate::SshError;
+use russh::keys::{HashAlg, PublicKey};
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+/// A server's public key, in a form that is safe to show and to send to the UI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostKeyInfo {
+    pub host: String,
+    pub port: u16,
+    /// For example `ssh-ed25519`.
+    pub algorithm: String,
+    /// `SHA256:...`, as printed by `ssh-keygen -lf`.
+    pub fingerprint: String,
+    /// The key in OpenSSH format (`ssh-ed25519 AAAA...`), used by [`trust`].
+    pub openssh: String,
+}
+
+impl HostKeyInfo {
+    pub(crate) fn new(host: &str, port: u16, key: &PublicKey) -> Self {
+        HostKeyInfo {
+            host: host.to_string(),
+            port,
+            algorithm: key.algorithm().as_str().to_string(),
+            fingerprint: key.fingerprint(HashAlg::Sha256).to_string(),
+            openssh: key.to_openssh().unwrap_or_default(),
+        }
+    }
+
+    /// `host` for port 22, `[host]:port` otherwise, as OpenSSH writes it.
+    pub fn host_label(&self) -> String {
+        if self.port == 22 {
+            self.host.clone()
+        } else {
+            format!("[{}]:{}", self.host, self.port)
+        }
+    }
+}
+
+/// The result of checking a key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    Trusted,
+    Unknown,
+    Changed { line: usize },
+}
+
+/// The default `known_hosts` path (`~/.ssh/known_hosts`).
+pub fn default_path() -> Option<PathBuf> {
+    setu_core::paths::ssh_dir(
+        &setu_core::paths::ProcessEnv,
+        setu_core::paths::Os::current(),
+    )
+    .ok()
+    .map(|d| d.join("known_hosts"))
+}
+
+/// Checks `key` for `host:port` against the file at `path`. A missing file
+/// means every host is unknown.
+pub fn check(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<Verdict, SshError> {
+    if !path.exists() {
+        return Ok(Verdict::Unknown);
+    }
+    match russh::keys::check_known_hosts_path(host, port, key, path) {
+        Ok(true) => Ok(Verdict::Trusted),
+        Ok(false) => Ok(Verdict::Unknown),
+        Err(russh::keys::Error::KeyChanged { line }) => Ok(Verdict::Changed { line }),
+        Err(e) => Err(SshError::KnownHosts(e.to_string())),
+    }
+}
+
+/// Records a key the user has explicitly accepted. Refuses to overwrite a
+/// different key already recorded for the host: that must be fixed by hand.
+pub fn trust(path: &Path, info: &HostKeyInfo) -> Result<(), SshError> {
+    let key = PublicKey::from_openssh(&info.openssh)
+        .map_err(|e| SshError::KnownHosts(format!("invalid host key: {e}")))?;
+    match check(path, &info.host, info.port, &key)? {
+        Verdict::Trusted => Ok(()),
+        Verdict::Changed { line } => Err(SshError::HostKeyChanged {
+            key: Box::new(info.clone()),
+            known_hosts: path.to_path_buf(),
+            line,
+        }),
+        Verdict::Unknown => append(path, info).map_err(|e| SshError::KnownHosts(e.to_string())),
+    }
+}
+
+/// Appends `[host]:port key` in OpenSSH's format, creating the file (0600 on
+/// Unix) and its directory if needed.
+fn append(path: &Path, info: &HostKeyInfo) -> std::io::Result<()> {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let existing = std::fs::read(path).unwrap_or_default();
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(path)?;
+    if !existing.is_empty() && !existing.ends_with(b"\n") {
+        file.write_all(b"\n")?;
+    }
+    writeln!(file, "{} {}", info.host_label(), info.openssh)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEY_A: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEnkv1WOdhQAC3pJI7A9/J86Oa07kSFN1vnFpLy8TsQt";
+    const KEY_B: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINA/cLkKiSDVS2J0xog1wqk5C2Sck9dRPbPK21+RUqnZ";
+
+    fn key(s: &str) -> PublicKey {
+        PublicKey::from_openssh(s).expect("valid key")
+    }
+
+    #[test]
+    fn missing_file_means_unknown() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("known_hosts");
+        assert_eq!(
+            check(&path, "h", 22, &key(KEY_A)).ok(),
+            Some(Verdict::Unknown)
+        );
+    }
+
+    #[test]
+    fn trust_then_check_and_detect_change() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("ssh").join("known_hosts");
+        let info = HostKeyInfo::new("server.example", 2222, &key(KEY_A));
+        assert_eq!(info.host_label(), "[server.example]:2222");
+        assert!(info.fingerprint.starts_with("SHA256:"));
+
+        trust(&path, &info).expect("trust");
+        assert_eq!(
+            check(&path, "server.example", 2222, &key(KEY_A)).ok(),
+            Some(Verdict::Trusted)
+        );
+        // Same host on another port is a different entry.
+        assert_eq!(
+            check(&path, "server.example", 22, &key(KEY_A)).ok(),
+            Some(Verdict::Unknown)
+        );
+        // A different key of the same type is a change, and trust refuses it.
+        assert!(matches!(
+            check(&path, "server.example", 2222, &key(KEY_B)),
+            Ok(Verdict::Changed { .. })
+        ));
+        let other = HostKeyInfo::new("server.example", 2222, &key(KEY_B));
+        assert!(matches!(
+            trust(&path, &other),
+            Err(SshError::HostKeyChanged { .. })
+        ));
+    }
+
+    #[test]
+    fn trusting_twice_is_harmless() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("known_hosts");
+        let info = HostKeyInfo::new("h", 22, &key(KEY_A));
+        trust(&path, &info).expect("first");
+        trust(&path, &info).expect("second");
+        let text = std::fs::read_to_string(&path).expect("read");
+        assert_eq!(text.lines().count(), 1);
+    }
+}

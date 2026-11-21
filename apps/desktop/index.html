@@ -8,6 +8,7 @@
   <body>
     <div id="app">
       <header class="tabbar" role="tablist" aria-label="Terminal tabs">
+        <button id="sidebar-button" class="icon-button sidebar-toggle" title="Hosts (Ctrl+Shift+H)" aria-label="Show hosts" aria-pressed="true">☰</button>
         <div id="tabs" class="tabs"></div>
         <div class="new-tab">
           <button id="new-tab" class="icon-button" title="New tab (Ctrl+Shift+T)" aria-label="New tab">+</button>
@@ -15,7 +16,10 @@
           <div id="shell-menu" class="menu" role="menu" hidden></div>
         </div>
       </header>
-      <main id="terminals" class="terminals"></main>
+      <div class="workspace">
+        <aside id="sidebar" class="sidebar" aria-label="Saved hosts"></aside>
+        <main id="terminals" class="terminals"></main>
+      </div>
       <footer class="statusbar">
         <span id="status-shell"></span>
         <span id="status-size"></span>

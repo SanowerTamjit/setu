@@ -2,6 +2,9 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 import { appInfo, listShells, type ShellProfile } from "./ipc";
 import { TerminalTab } from "./terminal-tab";
+import { openSshDialog, setDefaultUser, type DialogOptions } from "./ssh-dialog";
+import { HostsPanel } from "./hosts-panel";
+import type { Host } from "./ipc";
 
 const tabsEl = document.getElementById("tabs")!;
 const terminalsEl = document.getElementById("terminals")!;
@@ -11,10 +14,13 @@ const menuEl = document.getElementById("shell-menu")!;
 const statusShell = document.getElementById("status-shell")!;
 const statusSize = document.getElementById("status-size")!;
 const statusVersion = document.getElementById("status-version")!;
+const sidebarEl = document.getElementById("sidebar")!;
+const sidebarButton = document.getElementById("sidebar-button") as HTMLButtonElement;
 
 const tabs: TerminalTab[] = [];
 let active: TerminalTab | null = null;
 let shells: ShellProfile[] = [];
+let localUser = "";
 
 function renderTabs() {
   tabsEl.replaceChildren(
@@ -59,7 +65,7 @@ function renderStatus() {
     statusSize.textContent = "";
     return;
   }
-  statusShell.textContent = active.shell ? `${active.shell.name} · ${active.shell.program}` : "";
+  statusShell.textContent = active.detail;
   const { cols, rows } = active.size;
   statusSize.textContent = `${cols}×${rows}`;
 }
@@ -91,6 +97,76 @@ async function newTab(shellId: string | null = null) {
   renderStatus();
 }
 
+/**
+ * Asks for connection details (or uses a saved host's), then connects in a
+ * new tab. `label` names the tab, for saved hosts.
+ */
+async function newSshTab(options: DialogOptions = {}, label?: string) {
+  await openSshDialog(async (request) => {
+    const tab = new TerminalTab(terminalsEl, {
+      onTitle: () => renderTabs(),
+      onExit: () => renderTabs(),
+      onResize: (t) => {
+        if (t === active) renderStatus();
+      },
+    });
+    const previous = active;
+    tabs.push(tab);
+    activate(tab);
+    try {
+      await tab.startSsh(request);
+      if (label) tab.title = label;
+      renderTabs();
+      renderStatus();
+    } catch (err) {
+      // Remove the half-open tab; the dialog shows what went wrong.
+      tabs.splice(tabs.indexOf(tab), 1);
+      await tab.dispose();
+      active = null;
+      if (previous) activate(previous);
+      renderTabs();
+      throw err;
+    }
+  }, options);
+  // The dialog took focus (even when hidden); give it back to the terminal.
+  active?.term.focus();
+}
+
+/** Connects to a saved host, asking only for what the host file can't hold. */
+function connectHost(host: Host) {
+  const authKind = ({ auto: "default", agent: "agent", key: "keyFile", password: "password" } as const)[host.auth ?? "auto"];
+  void newSshTab(
+    {
+      title: `Connect to ${host.name}`,
+      autoConnect: true,
+      prefill: {
+        host: host.host,
+        port: String(host.port ?? 22),
+        user: host.user || localUser,
+        authKind,
+        keyPath: host.key_file ?? "~/.ssh/id_ed25519",
+        jump: host.jump ?? "",
+      },
+    },
+    host.name,
+  );
+}
+
+const hostsPanel = new HostsPanel(sidebarEl, { connect: connectHost, defaultUser: () => localUser });
+
+const SIDEBAR_KEY = "setu.sidebar";
+function setSidebar(open: boolean) {
+  sidebarEl.hidden = !open;
+  sidebarButton.setAttribute("aria-pressed", String(open));
+  try {
+    localStorage.setItem(SIDEBAR_KEY, open ? "open" : "closed");
+  } catch {
+    // Remembering the sidebar is a convenience only.
+  }
+  active?.refit();
+}
+sidebarButton.onclick = () => setSidebar(sidebarEl.hidden);
+
 async function closeTab(tab: TerminalTab) {
   const i = tabs.indexOf(tab);
   if (i < 0) return;
@@ -114,7 +190,19 @@ function cycle(delta: number) {
 
 // Shell picker menu
 function renderMenu() {
+  const ssh = document.createElement("button");
+  ssh.className = "menu-item";
+  ssh.setAttribute("role", "menuitem");
+  ssh.innerHTML = `<span>New SSH connection…</span><span class="muted">Ctrl+Shift+O</span>`;
+  ssh.onclick = () => {
+    toggleMenu(false);
+    void newSshTab();
+  };
+  const separator = document.createElement("div");
+  separator.className = "menu-separator";
   menuEl.replaceChildren(
+    ssh,
+    separator,
     ...shells.map((shell) => {
       const item = document.createElement("button");
       item.className = "menu-item";
@@ -154,6 +242,13 @@ document.addEventListener(
     } else if (mod && e.code === "KeyW") {
       e.preventDefault();
       if (active) void closeTab(active);
+    } else if (mod && e.code === "KeyH") {
+      e.preventDefault();
+      if (sidebarEl.hidden) setSidebar(true);
+      hostsPanel.focusSearch();
+    } else if (mod && e.code === "KeyO") {
+      e.preventDefault();
+      void newSshTab();
     } else if (e.ctrlKey && e.code === "Tab") {
       e.preventDefault();
       cycle(e.shiftKey ? -1 : 1);
@@ -169,6 +264,16 @@ new ResizeObserver(() => active?.refit()).observe(terminalsEl);
 async function boot() {
   const [info, found] = await Promise.all([appInfo(), listShells()]);
   shells = found;
+  localUser = info.user;
+  setDefaultUser(info.user);
+  let sidebar = "open";
+  try {
+    sidebar = localStorage.getItem(SIDEBAR_KEY) ?? "open";
+  } catch {
+    // Default to open.
+  }
+  setSidebar(sidebar !== "closed");
+  void hostsPanel.reload();
   statusVersion.textContent = `Setu ${info.version} · ${info.os}`;
   renderMenu();
   // Plug and play: a working terminal on first launch, no wizard.

@@ -1,0 +1,21 @@
+[package]
+name = "setu-hosts"
+description = "Saved hosts for Setu: a plain TOML inventory and ~/.ssh/config import"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+toml = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
