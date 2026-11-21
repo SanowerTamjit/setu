@@ -14,14 +14,16 @@ Thanks for your interest in Setu! This guide gets you from clone to a reviewed p
 You need:
 
 - Rust, installed via [rustup](https://rustup.rs). The toolchain is pinned in `rust-toolchain.toml` and installs automatically.
-- Node.js 22 and pnpm (for the desktop app, once it lands).
+- Node.js 22 and pnpm (for the desktop app). On Linux, also `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`.
 - Docker (for SSH/SFTP integration tests, once they land).
 
 ```sh
 git clone https://github.com/SanowerTamjit/setu
 cd setu
-cargo build --workspace
+pnpm install
+pnpm build:ui          # the desktop crate embeds the built UI
 cargo test --workspace
+pnpm desktop           # run the app with hot reload
 ```
 
 Before opening a pull request, run what CI runs:

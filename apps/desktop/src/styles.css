@@ -1,0 +1,212 @@
+:root {
+  --bg: #11151c;
+  --bg-elevated: #181d26;
+  --bg-hover: #222936;
+  --border: #262d3a;
+  --text: #d8dee9;
+  --muted: #7d8799;
+  --accent: #f5a524;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Bengali", sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* Tab bar */
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  height: 36px;
+  user-select: none;
+}
+
+.tabs {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+  min-width: 120px;
+  max-width: 220px;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  position: relative;
+}
+
+.tab:hover {
+  background: var(--bg-hover);
+}
+
+.tab.active {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tab.active::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tab.exited .tab-label {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.tab-index {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tab-label {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tab-close,
+.icon-button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.tab-close {
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  font-size: 15px;
+}
+
+.tab-close:hover,
+.icon-button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.new-tab {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  position: relative;
+}
+
+.icon-button {
+  height: 28px;
+  min-width: 28px;
+  font-size: 18px;
+}
+
+.icon-button.chevron {
+  font-size: 11px;
+  min-width: 20px;
+}
+
+/* Shell picker */
+.menu {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  z-index: 10;
+  min-width: 280px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+/* Terminals */
+.terminals {
+  position: relative;
+  min-height: 0;
+}
+
+.terminal-pane {
+  position: absolute;
+  inset: 0;
+  padding: 6px 0 0 8px;
+  visibility: hidden;
+}
+
+.terminal-pane.active {
+  visibility: visible;
+}
+
+.terminal-pane .xterm {
+  height: 100%;
+}
+
+/* Status bar */
+.statusbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.statusbar #status-version {
+  margin-left: auto;
+}

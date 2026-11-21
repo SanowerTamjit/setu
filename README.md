@@ -36,10 +36,13 @@ docs/             Documentation and architecture decision records (ADRs)
 
 ## Building from source
 
-Requirements: Rust (the version in `rust-toolchain.toml`), and, once the desktop app lands, Node.js 22 with pnpm.
+Requirements: Rust (the version in `rust-toolchain.toml`), Node.js 22 with pnpm, and on Linux the WebKitGTK development packages (`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev` on Debian/Ubuntu).
 
 ```sh
-cargo build --workspace
+pnpm install
+pnpm desktop            # run the desktop app with hot reload
+
+pnpm build:ui           # build the UI once (needed before plain cargo builds)
 cargo test --workspace
 ```
 
