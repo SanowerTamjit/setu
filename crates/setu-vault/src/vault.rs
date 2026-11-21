@@ -119,6 +119,36 @@ pub struct EntryInfo {
     pub updated: u64,
 }
 
+/// The derived key of a vault, for "unlock automatically on this computer".
+/// Whoever holds it can open the vault without the master password, so it
+/// only ever goes to the OS keychain. Zeroized on drop; never printed.
+#[derive(Clone, PartialEq, Eq)]
+pub struct UnlockKey(Zeroizing<[u8; KEY_LEN]>);
+
+impl std::fmt::Debug for UnlockKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("UnlockKey(<redacted>)")
+    }
+}
+
+impl UnlockKey {
+    /// Text form for keychains that store strings.
+    pub fn to_text(&self) -> Zeroizing<String> {
+        Zeroizing::new(format!(
+            "setu-vault-key-v1:{}",
+            file::encode(self.0.as_ref())
+        ))
+    }
+
+    /// Parses [`UnlockKey::to_text`]; `None` for anything else.
+    pub fn from_text(text: &str) -> Option<Self> {
+        let encoded = text.strip_prefix("setu-vault-key-v1:")?;
+        let bytes = Zeroizing::new(file::decode(encoded)?);
+        let key: [u8; KEY_LEN] = bytes.as_slice().try_into().ok()?;
+        Some(UnlockKey(Zeroizing::new(key)))
+    }
+}
+
 /// An unlocked vault. Dropping it zeroizes the key and every secret.
 pub struct Vault {
     path: PathBuf,
@@ -202,9 +232,27 @@ impl Vault {
     pub fn open(path: &Path, password: &str) -> Result<Self, VaultError> {
         let file = VaultFile::read(path)?;
         let salt = file.salt(path)?;
+        let key = file.kdf.derive(password, &salt)?;
+        Self::decrypt(path, file, key)
+    }
+
+    /// Unlocks the vault with a key saved earlier from [`Vault::unlock_key`]
+    /// (kept in the OS keychain), skipping the password and Argon2. Fails
+    /// with [`VaultError::WrongPasswordOrTampered`] once the master password
+    /// has changed, because that changes the key.
+    pub fn open_with_key(path: &Path, key: &UnlockKey) -> Result<Self, VaultError> {
+        let file = VaultFile::read(path)?;
+        Self::decrypt(path, file, key.0.clone())
+    }
+
+    fn decrypt(
+        path: &Path,
+        file: VaultFile,
+        key: Zeroizing<[u8; KEY_LEN]>,
+    ) -> Result<Self, VaultError> {
+        let salt = file.salt(path)?;
         let nonce = file.nonce(path)?;
         let ciphertext = file.ciphertext(path)?;
-        let key = file.kdf.derive(password, &salt)?;
         let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
             .map_err(|_| VaultError::WrongPasswordOrTampered)?;
         let aad = file.aad();
@@ -231,6 +279,12 @@ impl Vault {
             key,
             contents,
         })
+    }
+
+    /// The key that unlocks this vault as it is now, for keeping in the OS
+    /// keychain. It changes when the master password changes.
+    pub fn unlock_key(&self) -> UnlockKey {
+        UnlockKey(self.key.clone())
     }
 
     pub fn path(&self) -> &Path {
@@ -383,6 +437,52 @@ mod tests {
 
     fn secret(s: &str) -> Zeroizing<String> {
         Zeroizing::new(s.to_string())
+    }
+
+    #[test]
+    fn unlock_key_opens_until_the_password_changes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join(VAULT_FILE);
+        let mut vault = new_vault(dir.path());
+        vault
+            .set(SecretKind::SshPassword, "ops@a:22", secret("pw"))
+            .expect("set");
+        let key = vault.unlock_key();
+        let text = key.to_text();
+        assert!(text.starts_with("setu-vault-key-v1:"));
+        assert_eq!(UnlockKey::from_text(&text), Some(key.clone()));
+        assert_eq!(format!("{key:?}"), "UnlockKey(<redacted>)");
+
+        let reopened = Vault::open_with_key(&path, &key).expect("open with key");
+        assert_eq!(
+            reopened
+                .get(SecretKind::SshPassword, "ops@a:22")
+                .as_deref()
+                .map(String::as_str),
+            Some("pw")
+        );
+
+        vault
+            .change_password(PW, "a different password")
+            .expect("change");
+        assert!(matches!(
+            Vault::open_with_key(&path, &key),
+            Err(VaultError::WrongPasswordOrTampered)
+        ));
+        Vault::open_with_key(&path, &vault.unlock_key()).expect("new key works");
+    }
+
+    #[test]
+    fn unlock_key_text_rejects_junk() {
+        for junk in [
+            "",
+            "abc",
+            "setu-vault-key-v1:",
+            "setu-vault-key-v1:AAAA",
+            "other:AAAA",
+        ] {
+            assert!(UnlockKey::from_text(junk).is_none(), "{junk}");
+        }
     }
 
     #[test]

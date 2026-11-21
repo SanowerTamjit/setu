@@ -9,8 +9,29 @@ Setu can remember SSH passwords and private-key passphrases in an encrypted vaul
 - **Use it:** when the password or passphrase field is left empty, Setu uses the saved one. If the vault is locked, the connect dialog offers to unlock it.
 - **Lock:** the vault locks itself after 15 minutes without use, and **Lock now** locks it at once. Quitting Setu locks it too.
 - **Remove a secret, or change the master password:** open the vault from the status bar.
+- **Unlock automatically:** tick **Unlock automatically on this computer** when you unlock, or turn it on in the vault dialog. See below.
 
 There is no recovery. If you forget the master password, the saved secrets are gone; nobody can reset it.
+
+## Unlocking automatically
+
+With **Unlock automatically on this computer** on, Setu keeps the vault's derived key (never the master password) in your operating system's credential store, and opens the vault from it at start-up and whenever it is needed:
+
+| System | Store |
+|--------|-------|
+| macOS | Keychain |
+| Windows | Credential Manager |
+| Linux | Secret Service (GNOME Keyring, KWallet or KeePassXC), over D-Bus |
+
+The entry is named `dev.setu.vault`, with the vault file's path as the account.
+
+- The idle timeout still clears the key from Setu's memory; the vault reopens from the store on next use, so you are not asked again.
+- **Lock now** locks until you type the master password, even with this on.
+- Turning it off deletes the stored key.
+- Changing the master password updates the stored key. If the vault file changes elsewhere (another machine, a restored backup), the stored key no longer opens it: Setu deletes it and asks for the password once.
+- If no store is available (for example Linux without a Secret Service running), the option is not offered, the vault dialog says why, and everything else works as before.
+
+The trade-off: anyone or anything that can use your logged-in account can then open the vault without the master password, the same as for passwords your browser or OS remembers. Leave it off on shared or less trusted machines.
 
 ## How it is protected
 

@@ -1257,3 +1257,25 @@ button.link-button {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 }
+
+/* "Unlock automatically on this computer" in the vault dialog. */
+.check-row.remember-row {
+  align-items: flex-start;
+  margin-top: 2px;
+}
+
+.check-row.remember-row input {
+  margin-top: 2px;
+}
+
+.check-row.remember-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.check-row.remember-row small {
+  font-size: 11.5px;
+  line-height: 1.4;
+}
