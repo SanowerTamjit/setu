@@ -167,6 +167,17 @@ impl Vault {
         path.is_file()
     }
 
+    /// Checks that the file at `path` is a vault this version can open
+    /// (format, version, cipher, KDF settings and encodings), without the
+    /// master password. It cannot tell whether the ciphertext is intact.
+    pub fn check_file(path: &Path) -> Result<(), VaultError> {
+        let file = VaultFile::read(path)?;
+        file.salt(path)?;
+        file.nonce(path)?;
+        file.ciphertext(path)?;
+        Ok(())
+    }
+
     /// Creates an empty vault. Refuses to replace an existing one.
     pub fn create(path: &Path, password: &str, kdf: KdfParams) -> Result<Self, VaultError> {
         check_strength(password)?;
@@ -372,6 +383,20 @@ mod tests {
 
     fn secret(s: &str) -> Zeroizing<String> {
         Zeroizing::new(s.to_string())
+    }
+
+    #[test]
+    fn check_file_needs_no_password() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join(VAULT_FILE);
+        assert!(matches!(
+            Vault::check_file(&path),
+            Err(VaultError::NotFound(_))
+        ));
+        new_vault(dir.path());
+        Vault::check_file(&path).expect("valid vault");
+        std::fs::write(&path, "{\"format\":\"other\"}").expect("write");
+        assert!(Vault::check_file(&path).is_err());
     }
 
     #[test]
