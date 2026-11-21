@@ -6,6 +6,7 @@ import {
   vaultChangePassword,
   vaultCreate,
   vaultLock,
+  vaultRemember,
   vaultRemove,
   vaultStatus,
   vaultUnlock,
@@ -32,6 +33,23 @@ const KIND_LABEL = { sshPassword: "Password", keyPassphrase: "Key passphrase" } 
 function when(seconds: number) {
   const d = new Date(seconds * 1000);
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** The "unlock automatically on this computer" tick box, or nothing when
+ * this computer has no usable keychain. */
+function rememberRow(status: VaultStatus, checked: boolean) {
+  const box = el("input", { type: "checkbox", checked });
+  if (!status.remember.available) return { row: null, box: null };
+  const row = el("label", { className: "check-row remember-row" },
+    box,
+    el("span", {},
+      "Unlock automatically on this computer",
+      el("small", { className: "muted" },
+        `Keeps the vault key in ${status.remember.store}. Anyone who can use your logged-in account can then open the vault.`,
+      ),
+    ),
+  );
+  return { row, box };
 }
 
 function passwordInput(placeholder = "") {
@@ -77,8 +95,9 @@ export function openVaultDialog(options: { unlockOnly?: boolean; reason?: string
       };
     };
 
-    function renderCreate() {
+    function renderCreate(s: VaultStatus) {
       const pw = passwordInput(`At least ${MIN_CHARS} characters`);
+      const remember = rememberRow(s, false);
       const confirm = passwordInput();
       const create = el("button", { type: "submit", className: "primary" }, "Create vault");
       const cancel = el("button", { type: "button" }, "Not now");
@@ -88,6 +107,7 @@ export function openVaultDialog(options: { unlockOnly?: boolean; reason?: string
         ...(options.reason ? [el("div", { className: "dialog-message info" }, options.reason)] : []),
         field("Master password", pw),
         field("Confirm master password", confirm),
+        ...(remember.row ? [remember.row] : []),
         el("div", { className: "dialog-message warning" },
           "If you forget the master password, the saved secrets cannot be recovered. Nobody can reset it, including Setu.",
         ),
@@ -101,7 +121,7 @@ export function openVaultDialog(options: { unlockOnly?: boolean; reason?: string
         if (pw.value !== confirm.value) return fail("The two passwords are different.");
         const done = busy(create, "Creating…");
         try {
-          set(await vaultCreate(pw.value));
+          set(await vaultCreate(pw.value, remember.box?.checked));
         } catch (err) {
           fail(err);
         } finally {
@@ -111,14 +131,17 @@ export function openVaultDialog(options: { unlockOnly?: boolean; reason?: string
       };
     }
 
-    function renderUnlock() {
+    function renderUnlock(s: VaultStatus) {
       const pw = passwordInput();
+      const remember = rememberRow(s, s.remember.enabled);
       const unlock = el("button", { type: "submit", className: "primary" }, "Unlock");
       const cancel = el("button", { type: "button" }, "Cancel");
       cancel.onclick = close;
       body.replaceChildren(
         el("p", { className: "muted" }, options.reason ?? "Enter your master password to use saved passwords and passphrases."),
         field("Master password", pw),
+        ...(remember.row ? [remember.row] : []),
+        ...(s.remember.problem && s.remember.available ? [el("div", { className: "dialog-message info" }, s.remember.problem)] : []),
         el("div", { className: "actions" }, cancel, unlock),
       );
       pw.focus();
@@ -127,7 +150,7 @@ export function openVaultDialog(options: { unlockOnly?: boolean; reason?: string
         clearMessage();
         const done = busy(unlock, "Unlocking…");
         try {
-          set(await vaultUnlock(pw.value));
+          set(await vaultUnlock(pw.value, remember.box ? remember.box.checked : undefined));
         } catch (err) {
           fail(err);
           pw.select();
@@ -167,6 +190,25 @@ export function openVaultDialog(options: { unlockOnly?: boolean; reason?: string
       const change = el("button", { type: "button" }, "Change master password");
       const done = el("button", { type: "submit", className: "primary" }, "Done");
       lock.onclick = async () => set(await vaultLock());
+      const remember = rememberRow(s, s.remember.enabled);
+      if (remember.box) {
+        const box = remember.box;
+        box.onchange = async () => {
+          clearMessage();
+          box.disabled = true;
+          try {
+            set(await vaultRemember(box.checked));
+          } catch (err) {
+            fail(err);
+            box.checked = !box.checked;
+          } finally {
+            box.disabled = false;
+          }
+        };
+      }
+      const keychainNote = !s.remember.available && s.remember.problem
+        ? [el("small", { className: "muted" }, `Automatic unlock is not available: ${s.remember.problem}`)]
+        : [];
       change.onclick = renderChange;
       form.onsubmit = (e) => {
         e.preventDefault();
@@ -175,8 +217,12 @@ export function openVaultDialog(options: { unlockOnly?: boolean; reason?: string
       body.replaceChildren(
         el("p", { className: "vault-state" }, el("span", { className: "dot unlocked" }), "Unlocked"),
         el("p", { className: "muted" },
-          `Locks by itself after ${s.autoLockMinutes} minutes without use. Saved secrets are filled in when you connect; they are never shown.`,
+          s.remember.enabled
+            ? `Clears itself from memory after ${s.autoLockMinutes} minutes without use and reopens from ${s.remember.store} when needed. "Lock now" locks it until you enter the password. Saved secrets are filled in when you connect; they are never shown.`
+            : `Locks by itself after ${s.autoLockMinutes} minutes without use. Saved secrets are filled in when you connect; they are never shown.`,
         ),
+        ...(remember.row ? [remember.row] : []),
+        ...keychainNote,
         s.entries.length
           ? el("div", { className: "vault-list" }, ...s.entries.map(entryRow))
           : el("div", { className: "empty-box muted" }, "Nothing saved yet. Tick “Save in vault” when you connect with a password or an encrypted key."),
@@ -220,8 +266,8 @@ export function openVaultDialog(options: { unlockOnly?: boolean; reason?: string
     function render() {
       clearMessage();
       if (!status) return;
-      if (!status.exists) renderCreate();
-      else if (!status.unlocked) renderUnlock();
+      if (!status.exists) renderCreate(status);
+      else if (!status.unlocked) renderUnlock(status);
       else renderUnlocked(status);
     }
 

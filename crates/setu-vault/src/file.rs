@@ -167,3 +167,7 @@ fn decode_fixed<const N: usize>(
 pub fn encode(bytes: &[u8]) -> String {
     B64.encode(bytes)
 }
+
+pub fn decode(text: &str) -> Option<Vec<u8>> {
+    B64.decode(text).ok()
+}

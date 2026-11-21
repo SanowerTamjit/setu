@@ -197,11 +197,22 @@ export interface VaultStatus {
   path: string;
   entries: VaultEntry[];
   autoLockMinutes: number;
+  /** "Unlock automatically on this computer" (the OS keychain). */
+  remember: {
+    available: boolean;
+    /** Such as "macOS Keychain". */
+    store: string;
+    enabled: boolean;
+    problem?: string;
+  };
 }
 
 export const vaultStatus = () => invoke<VaultStatus>("vault_status");
-export const vaultCreate = (password: string) => invoke<VaultStatus>("vault_create", { password });
-export const vaultUnlock = (password: string) => invoke<VaultStatus>("vault_unlock", { password });
+export const vaultCreate = (password: string, remember?: boolean) =>
+  invoke<VaultStatus>("vault_create", { password, remember });
+export const vaultUnlock = (password: string, remember?: boolean) =>
+  invoke<VaultStatus>("vault_unlock", { password, remember });
+export const vaultRemember = (enabled: boolean) => invoke<VaultStatus>("vault_remember", { enabled });
 export const vaultLock = () => invoke<VaultStatus>("vault_lock");
 export const vaultRemove = (kind: SecretKind, target: string) =>
   invoke<VaultStatus>("vault_remove", { kind, target });
