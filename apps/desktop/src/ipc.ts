@@ -75,8 +75,8 @@ export const closeTerminal = (id: number) => invoke<void>("close_terminal", { id
 export type AuthRequest =
   | { kind: "default" }
   | { kind: "agent" }
-  | { kind: "keyFile"; path: string; passphrase: string | null }
-  | { kind: "password"; password: string };
+  | { kind: "keyFile"; path: string; passphrase: string | null; save: boolean }
+  | { kind: "password"; password: string; save: boolean };
 
 export interface ConnectRequest {
   host: string;
@@ -97,12 +97,14 @@ export interface HostKeyInfo {
 export type ConnectFailure =
   | { kind: "unknownHostKey"; key: HostKeyInfo }
   | { kind: "hostKeyChanged"; key: HostKeyInfo; knownHosts: string; line: number }
-  | { kind: "needsPassphrase"; path: string }
+  | { kind: "needsPassphrase"; path: string; vault: VaultAvailability }
+  | { kind: "needsPassword"; vault: VaultAvailability }
   | { kind: "error"; message: string };
 
 export interface OpenedSsh {
   id: number;
   title: string;
+  savedToVault: boolean;
 }
 
 /** Connects over SSH and opens a remote shell. Rejects with a `ConnectFailure`. */
@@ -176,3 +178,32 @@ export interface Imported {
 
 export const sshConfigImport = (hosts: Host[], folder: string | null) =>
   invoke<Imported>("ssh_config_import", { hosts, folder });
+
+// ---- Vault (src-tauri/src/vault.rs). Stored secrets never come back to the UI. ----
+
+export type VaultAvailability = "none" | "locked" | "unlocked";
+export type SecretKind = "sshPassword" | "keyPassphrase";
+
+export interface VaultEntry {
+  kind: SecretKind;
+  target: string;
+  /** Seconds since the Unix epoch. */
+  updated: number;
+}
+
+export interface VaultStatus {
+  exists: boolean;
+  unlocked: boolean;
+  path: string;
+  entries: VaultEntry[];
+  autoLockMinutes: number;
+}
+
+export const vaultStatus = () => invoke<VaultStatus>("vault_status");
+export const vaultCreate = (password: string) => invoke<VaultStatus>("vault_create", { password });
+export const vaultUnlock = (password: string) => invoke<VaultStatus>("vault_unlock", { password });
+export const vaultLock = () => invoke<VaultStatus>("vault_lock");
+export const vaultRemove = (kind: SecretKind, target: string) =>
+  invoke<VaultStatus>("vault_remove", { kind, target });
+export const vaultChangePassword = (current: string, next: string) =>
+  invoke<VaultStatus>("vault_change_password", { current, new: next });

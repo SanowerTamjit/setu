@@ -1,8 +1,10 @@
 //! SSH tabs: connect, handle host-key trust, and open a remote shell.
 
 use crate::terminals::{output_sink, Session, Terminals};
+use crate::vault::{Availability, VaultState};
 use serde::{Deserialize, Serialize};
 use setu_ssh::{known_hosts, Auth, ConnectOptions, HostKeyInfo, ShellSize, SshError, Zeroizing};
+use setu_vault::SecretKind;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -18,10 +20,17 @@ pub enum AuthRequest {
     #[serde(rename_all = "camelCase")]
     KeyFile {
         path: String,
+        /// Empty means "use the vault's, if it has one".
         passphrase: Option<String>,
+        /// Save the passphrase in the vault once the connection works.
+        #[serde(default)]
+        save: bool,
     },
     Password {
+        /// Empty means "use the vault's, if it has one".
         password: String,
+        #[serde(default)]
+        save: bool,
     },
 }
 
@@ -65,6 +74,11 @@ pub enum ConnectFailure {
     /// Ask for the key's passphrase, then retry.
     NeedsPassphrase {
         path: String,
+        vault: Availability,
+    },
+    /// Ask for the password (none was typed and the vault has none), then retry.
+    NeedsPassword {
+        vault: Availability,
     },
     Error {
         message: String,
@@ -86,6 +100,7 @@ impl From<SshError> for ConnectFailure {
             },
             SshError::KeyNeedsPassphrase { path } => ConnectFailure::NeedsPassphrase {
                 path: path.display().to_string(),
+                vault: Availability::None,
             },
             other => ConnectFailure::Error {
                 message: other.to_string(),
@@ -111,15 +126,87 @@ fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-fn auth_methods(auth: AuthRequest) -> Vec<Auth> {
-    match auth {
-        AuthRequest::Default => Vec::new(),
-        AuthRequest::Agent => vec![Auth::Agent],
-        AuthRequest::KeyFile { path, passphrase } => vec![Auth::KeyFile {
-            path: expand_home(&path),
-            passphrase: passphrase.filter(|p| !p.is_empty()).map(Zeroizing::new),
-        }],
-        AuthRequest::Password { password } => vec![Auth::Password(Zeroizing::new(password))],
+/// A secret the user typed and asked to keep, saved once the connection works.
+type ToSave = Option<(SecretKind, String, Zeroizing<String>)>;
+
+/// Turns the form's choice into auth methods, filling empty secrets from the
+/// vault. `password_target` is the vault key for a login password.
+fn auth_methods(
+    auth: AuthRequest,
+    password_target: &str,
+    vault: &VaultState,
+) -> Result<(Vec<Auth>, ToSave), ConnectFailure> {
+    Ok(match auth {
+        AuthRequest::Default => (Vec::new(), None),
+        AuthRequest::Agent => (vec![Auth::Agent], None),
+        AuthRequest::KeyFile {
+            path,
+            passphrase,
+            save,
+        } => {
+            let path = expand_home(&path);
+            let target = path.display().to_string();
+            let typed = passphrase.filter(|p| !p.is_empty()).map(Zeroizing::new);
+            let to_save = match (&typed, save) {
+                (Some(p), true) => Some((SecretKind::KeyPassphrase, target.clone(), p.clone())),
+                _ => None,
+            };
+            let passphrase = typed.or_else(|| vault.get(SecretKind::KeyPassphrase, &target));
+            (vec![Auth::KeyFile { path, passphrase }], to_save)
+        }
+        AuthRequest::Password { password, save } => {
+            if password.is_empty() {
+                let stored = vault.get(SecretKind::SshPassword, password_target).ok_or(
+                    ConnectFailure::NeedsPassword {
+                        vault: vault.availability(),
+                    },
+                )?;
+                (vec![Auth::Password(stored)], None)
+            } else {
+                let password = Zeroizing::new(password);
+                let to_save = save.then(|| {
+                    (
+                        SecretKind::SshPassword,
+                        password_target.to_string(),
+                        password.clone(),
+                    )
+                });
+                (vec![Auth::Password(password)], to_save)
+            }
+        }
+    })
+}
+
+/// The vault key for a login password.
+fn password_target(user: &str, host: &str, port: u16) -> String {
+    format!("{user}@{}:{port}", host.to_ascii_lowercase())
+}
+
+/// Puts a passphrase from the vault on every use of `key` in the chain, so a
+/// retry can unlock the key that asked for it.
+fn with_passphrase(
+    opts: &mut ConnectOptions,
+    key: &std::path::Path,
+    passphrase: &Zeroizing<String>,
+) {
+    if opts.auth.is_empty() {
+        if let Some(dir) = key.parent() {
+            opts.auth = Auth::defaults(dir);
+        }
+    }
+    for auth in &mut opts.auth {
+        if let Auth::KeyFile {
+            path,
+            passphrase: p @ None,
+        } = auth
+        {
+            if path == key {
+                *p = Some(passphrase.clone());
+            }
+        }
+    }
+    for hop in &mut opts.jump {
+        with_passphrase(hop, key, passphrase);
     }
 }
 
@@ -159,12 +246,17 @@ fn user_or_local(user: &str) -> String {
     }
 }
 
-fn build_options(req: ConnectRequest) -> Result<ConnectOptions, ConnectFailure> {
+fn build_options(
+    req: ConnectRequest,
+    vault: &VaultState,
+) -> Result<(ConnectOptions, ToSave), ConnectFailure> {
     let known = known_hosts_path()?;
-    let auth = auth_methods(req.auth);
     let user = user_or_local(&req.user);
+    let port = req.port.unwrap_or(22);
+    let target = password_target(&user, req.host.trim(), port);
+    let (auth, to_save) = auth_methods(req.auth, &target, vault)?;
     let mut opts = ConnectOptions::new(req.host.trim(), user.as_str())
-        .port(req.port.unwrap_or(22))
+        .port(port)
         .known_hosts(&known);
     opts.auth = auth.clone();
     // ProxyJump takes a comma-separated chain, connected in order.
@@ -179,18 +271,22 @@ fn build_options(req: ConnectRequest) -> Result<ConnectOptions, ConnectFailure> 
         hop.auth = auth.clone();
         opts = opts.jump(hop);
     }
-    Ok(opts)
+    Ok((opts, to_save))
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenedSsh {
     id: u32,
     title: String,
+    /// The typed password or passphrase was saved in the vault.
+    saved_to_vault: bool,
 }
 
 #[tauri::command]
 pub async fn ssh_connect(
     state: State<'_, Terminals>,
+    vault: State<'_, VaultState>,
     request: ConnectRequest,
     cols: u16,
     rows: u16,
@@ -198,8 +294,31 @@ pub async fn ssh_connect(
     on_exit: Channel<u32>,
 ) -> Result<OpenedSsh, ConnectFailure> {
     let title = format!("{}@{}", user_or_local(&request.user), request.host.trim());
-    let opts = build_options(request)?;
-    let client = Arc::new(setu_ssh::connect(&opts).await?);
+    let (opts, to_save) = build_options(request, &vault)?;
+    let needs_passphrase = |path: PathBuf| ConnectFailure::NeedsPassphrase {
+        path: path.display().to_string(),
+        vault: vault.availability(),
+    };
+    let client = match setu_ssh::connect(&opts).await {
+        Ok(client) => client,
+        // An encrypted key with no passphrase given: try the vault's once.
+        Err(SshError::KeyNeedsPassphrase { path }) => {
+            let Some(passphrase) =
+                vault.get(SecretKind::KeyPassphrase, &path.display().to_string())
+            else {
+                return Err(needs_passphrase(path));
+            };
+            let mut retry = opts.clone();
+            with_passphrase(&mut retry, &path, &passphrase);
+            match setu_ssh::connect(&retry).await {
+                Ok(client) => client,
+                Err(SshError::KeyNeedsPassphrase { path }) => return Err(needs_passphrase(path)),
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let client = Arc::new(client);
 
     let id = state.next_id();
     let sessions = Arc::clone(&state.sessions);
@@ -226,7 +345,16 @@ pub async fn ssh_connect(
             },
         )
         .map_err(|message| ConnectFailure::Error { message })?;
-    Ok(OpenedSsh { id, title })
+    // Saving is best effort: the connection already works.
+    let saved_to_vault = match to_save {
+        Some((kind, target, secret)) => vault.save(kind, &target, secret).unwrap_or(false),
+        None => false,
+    };
+    Ok(OpenedSsh {
+        id,
+        title,
+        saved_to_vault,
+    })
 }
 
 /// Records a host key the user explicitly accepted in the trust prompt.
@@ -260,7 +388,7 @@ mod tests {
             r#"{"host":"db","user":"","auth":{"kind":"agent"},"jump":"ops@a:2200, b"}"#,
         )
         .expect("parse");
-        let opts = build_options(req).expect("options");
+        let (opts, _) = build_options(req, &VaultState::from_env()).expect("options");
         assert_eq!(opts.user, local_user());
         let hops: Vec<_> = opts
             .jump
@@ -276,6 +404,7 @@ mod tests {
     fn auth_request_debug_hides_secrets() {
         let req = AuthRequest::Password {
             password: "hunter2".into(),
+            save: true,
         };
         assert!(!format!("{req:?}").contains("hunter2"));
     }
@@ -289,5 +418,74 @@ mod tests {
         assert!(matches!(req, AuthRequest::KeyFile { .. }));
         let req: AuthRequest = serde_json::from_str(r#"{"kind":"default"}"#).expect("parse");
         assert!(matches!(req, AuthRequest::Default));
+    }
+
+    #[test]
+    fn empty_password_without_vault_asks_for_one() {
+        let vault = VaultState::from_env();
+        let err = auth_methods(
+            AuthRequest::Password {
+                password: String::new(),
+                save: false,
+            },
+            "me@host:22",
+            &vault,
+        )
+        .expect_err("needs a password");
+        assert!(matches!(err, ConnectFailure::NeedsPassword { .. }));
+    }
+
+    #[test]
+    fn typed_secrets_are_saved_only_when_asked() {
+        let vault = VaultState::from_env();
+        let (_, to_save) = auth_methods(
+            AuthRequest::Password {
+                password: "pw".into(),
+                save: true,
+            },
+            "me@host:22",
+            &vault,
+        )
+        .expect("auth");
+        let (kind, target, _) = to_save.expect("to save");
+        assert_eq!(kind, SecretKind::SshPassword);
+        assert_eq!(target, "me@host:22");
+        let (_, to_save) = auth_methods(
+            AuthRequest::Password {
+                password: "pw".into(),
+                save: false,
+            },
+            "me@host:22",
+            &vault,
+        )
+        .expect("auth");
+        assert!(to_save.is_none());
+        assert_eq!(
+            password_target("Me", "Web.Example", 2222),
+            "Me@web.example:2222"
+        );
+    }
+
+    #[test]
+    fn vault_passphrase_reaches_every_hop() {
+        let key = PathBuf::from("/home/me/.ssh/id_ed25519");
+        let mut opts = ConnectOptions::new("db", "me");
+        opts.auth = vec![Auth::KeyFile {
+            path: key.clone(),
+            passphrase: None,
+        }];
+        let mut hop = ConnectOptions::new("bastion", "me");
+        hop.auth = opts.auth.clone();
+        opts = opts.jump(hop);
+        with_passphrase(&mut opts, &key, &Zeroizing::new("pp".into()));
+        for o in [&opts, &opts.jump[0]] {
+            assert!(matches!(
+                &o.auth[0],
+                Auth::KeyFile {
+                    passphrase: Some(_),
+                    ..
+                }
+            ));
+        }
     }
 }

@@ -4,7 +4,9 @@ import { appInfo, listShells, type ShellProfile } from "./ipc";
 import { TerminalTab } from "./terminal-tab";
 import { openSshDialog, setDefaultUser, type DialogOptions } from "./ssh-dialog";
 import { HostsPanel } from "./hosts-panel";
-import type { Host } from "./ipc";
+import { vaultStatus, type Host, type VaultStatus } from "./ipc";
+import { onVaultChange, openVaultDialog } from "./vault-dialog";
+import { listen } from "@tauri-apps/api/event";
 
 const tabsEl = document.getElementById("tabs")!;
 const terminalsEl = document.getElementById("terminals")!;
@@ -16,6 +18,7 @@ const statusSize = document.getElementById("status-size")!;
 const statusVersion = document.getElementById("status-version")!;
 const sidebarEl = document.getElementById("sidebar")!;
 const sidebarButton = document.getElementById("sidebar-button") as HTMLButtonElement;
+const statusVault = document.getElementById("status-vault") as HTMLButtonElement;
 
 const tabs: TerminalTab[] = [];
 let active: TerminalTab | null = null;
@@ -154,6 +157,21 @@ function connectHost(host: Host) {
 
 const hostsPanel = new HostsPanel(sidebarEl, { connect: connectHost, defaultUser: () => localUser });
 
+function renderVault(status: VaultStatus) {
+  const state = status.unlocked ? "unlocked" : status.exists ? "locked" : "none";
+  const label = { unlocked: "Vault unlocked", locked: "Vault locked", none: "Set up vault" }[state];
+  statusVault.replaceChildren(
+    Object.assign(document.createElement("span"), { className: `dot ${state}` }),
+    label,
+  );
+}
+onVaultChange(renderVault);
+statusVault.onclick = async () => {
+  await openVaultDialog();
+  active?.term.focus();
+};
+void listen<VaultStatus>("vault-status", (e) => renderVault(e.payload));
+
 const SIDEBAR_KEY = "setu.sidebar";
 function setSidebar(open: boolean) {
   sidebarEl.hidden = !open;
@@ -274,6 +292,7 @@ async function boot() {
   }
   setSidebar(sidebar !== "closed");
   void hostsPanel.reload();
+  void vaultStatus().then(renderVault);
   statusVersion.textContent = `Setu ${info.version} · ${info.os}`;
   renderMenu();
   // Plug and play: a working terminal on first launch, no wizard.

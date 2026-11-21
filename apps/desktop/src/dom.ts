@@ -29,7 +29,8 @@ export function modal(content: HTMLElement, onClose: () => void) {
   document.body.append(overlay);
   let closed = false;
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
+    // Only the topmost dialog answers Escape.
+    if (e.key === "Escape" && [...document.querySelectorAll(".overlay")].pop() === overlay) {
       e.preventDefault();
       e.stopPropagation();
       close();
