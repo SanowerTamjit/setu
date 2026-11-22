@@ -17,6 +17,7 @@ thiserror.workspace = true
 tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net", "fs", "io-util"] }
 zeroize = "1"
 russh-sftp = "3"
+rand = { version = "0.10", default-features = false, features = ["std", "thread_rng"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "fs"] }

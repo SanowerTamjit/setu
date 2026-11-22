@@ -4611,6 +4611,7 @@ dependencies = [
  "tauri-build",
  "tempfile",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]
@@ -4637,6 +4638,7 @@ dependencies = [
 name = "setu-ssh"
 version = "0.0.1"
 dependencies = [
+ "rand",
  "russh",
  "russh-sftp",
  "serde",

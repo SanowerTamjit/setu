@@ -21,6 +21,7 @@ tauri-build = { version = "2.6", features = [] }
 setu-core.workspace = true
 setu-pty.workspace = true
 setu-ssh.workspace = true
+zeroize = "1"
 setu-hosts.workspace = true
 setu-vault = { workspace = true, features = ["os-keychain"] }
 serde.workspace = true

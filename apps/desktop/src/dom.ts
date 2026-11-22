@@ -52,3 +52,20 @@ export function errorText(err: unknown): string {
   if (err && typeof err === "object" && "message" in err) return String((err as { message: unknown }).message);
   return String(err);
 }
+
+/** Copies text to the clipboard, falling back to a hidden text box. */
+export async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    // Some webviews refuse the async clipboard; use the older route.
+  }
+  const area = el("textarea", { value: text });
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.append(area);
+  area.select();
+  document.execCommand("copy");
+  area.remove();
+}

@@ -6,6 +6,7 @@
 
 mod files;
 mod hosts;
+mod keys;
 mod session;
 mod ssh;
 mod terminals;
@@ -78,6 +79,9 @@ pub fn run() {
             ssh::ssh_connect,
             ssh::ssh_open_shell,
             ssh::ssh_trust_host,
+            keys::ssh_keys_list,
+            keys::ssh_key_generate,
+            keys::ssh_key_add_to_agent,
             hosts::hosts_list,
             hosts::host_save,
             hosts::host_delete,

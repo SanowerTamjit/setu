@@ -15,6 +15,7 @@ import { bindingsFor, KeyDispatcher, KEYMAPS, prefixBytes } from "./keymap";
 import { openPalette } from "./palette";
 import { openSettings } from "./settings-dialog";
 import "./settings-shells";
+import { openKeyManager } from "./key-manager";
 import { loadSettings, onSettingsChange, settings, updateSettings } from "./settings";
 import { applyTheme, THEMES } from "./themes";
 import { dialogValues, describe, flushSave, loadSession, scheduleSave, SESSION_VERSION, type SavedPane, type SavedTab, type Session } from "./session";
@@ -491,6 +492,7 @@ for (const c of [
   { id: "files.open", title: "Open Files (SFTP) on this server", category: "Files", when: isRemote, run: () => openFiles() },
   { id: "settings.open", title: "Open settings", category: "Settings", keywords: "preferences options", run: () => openSettings().then(() => active?.focus()) },
   { id: "settings.shells", title: "Shell profiles", category: "Settings", keywords: "wsl environment variables folder default shell", run: () => openSettings("shells").then(() => active?.focus()) },
+  { id: "keys.open", title: "Manage SSH keys", category: "SSH", keywords: "keygen ed25519 rsa agent fingerprint public key", run: () => openKeyManager().then(() => active?.focus()) },
   { id: "vault.open", title: "Open the vault", category: "Vault", run: () => openVaultDialog().then(() => active?.focus()) },
 ] satisfies Command[]) {
   registerCommand(c);

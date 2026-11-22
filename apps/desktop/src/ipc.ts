@@ -325,3 +325,39 @@ export function transfer(
 }
 
 export const transferCancel = (transferId: number) => invoke<void>("transfer_cancel", { transferId });
+
+// ---- SSH keys ----
+
+export interface KeyView {
+  path: string;
+  name: string;
+  state: "plain" | "encrypted" | "unreadable";
+  problem: string | null;
+  algorithm: string | null;
+  fingerprint: string | null;
+  comment: string | null;
+  publicLine: string | null;
+  inAgent: boolean;
+}
+
+export interface KeyList {
+  dir: string;
+  keys: KeyView[];
+  agent: "none" | "unreachable" | "running";
+  agentOnly: string[];
+}
+
+export type KeyKind = "ed25519" | "ecdsa" | "rsa";
+
+export const sshKeysList = () => invoke<KeyList>("ssh_keys_list");
+
+export const sshKeyGenerate = (name: string, kind: KeyKind, comment: string, passphrase: string | null) =>
+  invoke<{ path: string; fingerprint: string; publicLine: string }>("ssh_key_generate", {
+    name,
+    kind,
+    comment,
+    passphrase,
+  });
+
+export const sshKeyAddToAgent = (path: string, passphrase: string | null) =>
+  invoke<void>("ssh_key_add_to_agent", { path, passphrase });
