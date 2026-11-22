@@ -128,11 +128,22 @@ pub fn host_from_config(config: &SshConfig, alias: &str) -> (Host, Vec<String>) 
 
 /// Lists every concrete host in `config` with its status against `inventory`.
 pub fn plan(config: &SshConfig, inventory: &Inventory) -> Vec<Candidate> {
-    config
-        .aliases()
-        .iter()
-        .map(|alias| {
-            let (mut host, mut notes) = host_from_config(config, alias);
+    plan_hosts(
+        config
+            .aliases()
+            .iter()
+            .map(|alias| host_from_config(config, alias))
+            .collect(),
+        inventory,
+    )
+}
+
+/// Gives each host found elsewhere (another tool's file) its status
+/// against `inventory`.
+pub fn plan_hosts(hosts: Vec<(Host, Vec<String>)>, inventory: &Inventory) -> Vec<Candidate> {
+    hosts
+        .into_iter()
+        .map(|(mut host, mut notes)| {
             if let Err(e) = host.normalize() {
                 notes.push(e.to_string());
                 return Candidate {
@@ -167,9 +178,10 @@ pub struct Summary {
     pub updated: usize,
 }
 
-/// Adds the chosen hosts to `inventory`. New hosts go into `folder`; hosts
-/// that are already saved keep their folder, tags and notes and only take
-/// the new connection settings.
+/// Adds the chosen hosts to `inventory`. New hosts go into `folder` (their
+/// own folder, if they came with one, goes inside it); hosts that are
+/// already saved keep their folder, tags and notes and only take the new
+/// connection settings.
 pub fn apply(
     inventory: &mut Inventory,
     hosts: Vec<Host>,
@@ -190,7 +202,11 @@ pub fn apply(
                 summary.updated += 1;
             }
             None => {
-                host.folder = folder.map(str::to_string);
+                host.folder = match (folder, host.folder.take()) {
+                    (Some(f), Some(own)) => Some(format!("{f}/{own}")),
+                    (Some(f), None) => Some(f.to_string()),
+                    (None, own) => own,
+                };
                 inventory.upsert(host, None)?;
                 summary.added += 1;
             }

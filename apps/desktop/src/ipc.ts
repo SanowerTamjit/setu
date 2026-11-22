@@ -218,6 +218,15 @@ export interface SshConfigScan {
 
 export const sshConfigScan = () => invoke<SshConfigScan>("ssh_config_scan");
 
+export interface FileScan {
+  format: string;
+  candidates: ImportCandidate[];
+  skipped: string[];
+}
+
+export const hostsParseFile = (fileName: string, bytes: Uint8Array) =>
+  invoke<FileScan>("hosts_parse_file", { fileName, bytes: Array.from(bytes) });
+
 export interface Imported {
   summary: { added: number; updated: number };
   view: HostsView;

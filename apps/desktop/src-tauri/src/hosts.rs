@@ -143,3 +143,37 @@ pub fn ssh_config_import(
         .update(|inv| import::apply(inv, hosts, folder.as_deref()))
         .map(|(summary, view)| Imported { summary, view })
 }
+
+#[derive(Debug, Serialize)]
+pub struct FileScan {
+    /// What the file was read as, such as "PuTTY sessions".
+    format: String,
+    candidates: Vec<Candidate>,
+    /// Entries left out on purpose, such as telnet sessions.
+    skipped: Vec<String>,
+}
+
+/// Reads hosts from another tool's file (PuTTY .reg, MobaXterm, CSV,
+/// Ansible). Nothing is saved until `ssh_config_import`.
+#[tauri::command]
+pub fn hosts_parse_file(
+    state: State<'_, Hosts>,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<FileScan, String> {
+    use setu_hosts::sources;
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err("that file is over 5 MB; is it really a list of hosts?".into());
+    }
+    let text = sources::decode_text(&bytes);
+    let format = sources::detect(&file_name, &text).ok_or_else(|| {
+        "could not tell what kind of file this is. Setu reads PuTTY .reg exports, MobaXterm .mxtsessions, CSV and Ansible inventories".to_string()
+    })?;
+    let parsed = sources::parse(format, &text);
+    let inventory = state.store()?.load().map_err(|e| e.to_string())?;
+    Ok(FileScan {
+        format: format.label().to_string(),
+        candidates: import::plan_hosts(parsed.hosts, &inventory),
+        skipped: parsed.skipped,
+    })
+}

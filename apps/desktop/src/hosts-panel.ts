@@ -81,7 +81,7 @@ export class HostsPanel {
   ) {
     const add = el("button", { className: "icon-button", title: "Add host", ariaLabel: "Add host" }, "+");
     add.onclick = () => void this.edit(null);
-    const importButton = el("button", { className: "text-button", title: "Import hosts from ~/.ssh/config" }, "Import");
+    const importButton = el("button", { className: "text-button", title: "Import hosts from SSH config, PuTTY, MobaXterm, Termius or Ansible" }, "Import");
     importButton.onclick = () => void this.import();
     this.search = el("input", { type: "search", placeholder: "Search hosts, tags, folders", spellcheck: false, autocomplete: "off" });
     this.search.oninput = () => {
@@ -156,6 +156,11 @@ export class HostsPanel {
     }
   }
 
+  /** Opens the import dialog, as the Import button does. */
+  openImport() {
+    return this.import();
+  }
+
   private async import() {
     const result = await openImportDialog();
     if (!result) return;
@@ -172,7 +177,7 @@ export class HostsPanel {
     if (this.view.hosts.length === 0) {
       const add = el("button", { className: "primary" }, "Add a host");
       add.onclick = () => void this.edit(null);
-      const imp = el("button", {}, "Import from ~/.ssh/config");
+      const imp = el("button", {}, "Import hosts…");
       imp.onclick = () => void this.import();
       this.list.replaceChildren(
         el("div", { className: "empty" },

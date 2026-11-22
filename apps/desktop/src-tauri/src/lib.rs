@@ -89,6 +89,7 @@ pub fn run() {
             hosts::host_delete,
             hosts::ssh_config_scan,
             hosts::ssh_config_import,
+            hosts::hosts_parse_file,
             vault::vault_status,
             vault::vault_create,
             vault::vault_unlock,

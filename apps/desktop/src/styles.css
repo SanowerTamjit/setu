@@ -1982,3 +1982,129 @@ button.link-button {
 .secret-overlay .secret-bar {
   position: absolute;
 }
+
+/* Import: choosing where hosts come from */
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.dialog .source-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  height: auto;
+  padding: 12px;
+  text-align: left;
+}
+
+.dialog .source-card:hover {
+  border-color: var(--accent);
+}
+
+.small-print {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* Jump-host map */
+.dialog.jump-dialog {
+  width: min(960px, calc(100vw - 32px));
+}
+
+.jump-canvas {
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.jump-svg {
+  display: block;
+}
+
+.jump-edge {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  opacity: 0.7;
+}
+
+.jump-node rect {
+  fill: var(--bg-elevated);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.jump-node.saved {
+  cursor: pointer;
+}
+
+.jump-node.saved:hover rect,
+.jump-node.saved:focus rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+  outline: none;
+}
+
+.jump-node:focus {
+  outline: none;
+}
+
+.jump-node.hop rect {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+}
+
+.jump-node.external rect {
+  stroke-dasharray: 4 3;
+}
+
+.jump-node.local rect {
+  fill: var(--bg-hover);
+}
+
+.jump-label {
+  fill: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.jump-detail {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+}
+
+.jump-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.jump-legend .swatch {
+  width: 14px;
+  height: 10px;
+  margin-left: 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.jump-legend .swatch:first-child {
+  margin-left: 0;
+}
+
+.jump-legend .swatch.hop {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.jump-legend .swatch.external {
+  border-style: dashed;
+}
