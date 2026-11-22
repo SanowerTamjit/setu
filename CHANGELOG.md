@@ -13,10 +13,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The hosts sidebar's **Import** now offers PuTTY, MobaXterm, CSV and Ansible as well as `~/.ssh/config`.
 - Files (SFTP) opens with Ctrl+Shift+E instead of Ctrl+Shift+F, which is now find, as in most terminals.
 - Minimum supported Rust version is now 1.89 (needed by russh 0.65, which fixes RUSTSEC-2026-0495).
-- The desktop app uses xterm's DOM renderer on Linux: the WebGL renderer showed new output one frame late under WebKitGTK.
+- The desktop app picks the terminal renderer itself (GPU on Windows and macOS, DOM on Linux, where WebGL showed new output one frame late under WebKitGTK); Settings → Terminal → **Renderer** can force either.
+- The Files tab's server-side buttons are now icons (Edit, Permissions, New folder, Rename, Delete) with tooltips.
 
 ### Added
 
+- GPU-rendered terminal (WebGL) with font ligatures: a Renderer setting (Automatic, GPU, DOM), a Font setting, and ligatures on by default for fonts that have them; the status bar shows which renderer is in use. See `docs/terminal.md`.
+- Files: **Pause**, **Resume** and **Retry** copies (one or all). Each file is written as `name.setu-part` and renamed when complete; resuming continues from the byte where it stopped, like `rsync --partial`. See `docs/files.md`.
+- Files: edit a remote file in your own editor (**Edit** or F4). Every save is written back in place, keeping owner and permissions, and a save is refused if the server's copy changed meanwhile. See `docs/files.md`.
+- Files: a permissions editor for remote items: read, write and execute for owner, group and others, the special bits, octal mode, user and group, optionally for everything inside a folder, with the matching `chmod`/`chown` shown. See `docs/files.md`.
+- YubiKey and other FIDO2 security keys: make `ed25519-sk` and `ecdsa-sk` keys (optionally stored on the device or requiring the PIN each time), load keys stored on the device, and sign in with them through ssh-agent. See `docs/ssh-keys.md`.
 - Hosts view: every saved host as a card with name, address, jump host, folder, tags and how many panes are open, grouped by folder, with search, tag filters, one-click Connect and Files, and keyboard control (Enter connects, E or F2 edits, arrow keys move). Open it from the rail or with "Go to hosts" in the palette. See `docs/hosts.md`.
 - Command palette (Ctrl+Shift+P): one fuzzy search over commands, saved hosts, shells and profiles, open tabs, themes, keybinding profiles and snippets, with recent commands first and shortcuts shown. See `docs/terminal.md`.
 - Themes: Dark, Light and High contrast for the whole app and the terminal, plus the terminal font size, in a new Settings dialog (Ctrl+,). Preferences are saved in `settings.json`.
