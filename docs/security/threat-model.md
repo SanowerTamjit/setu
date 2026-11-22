@@ -12,6 +12,7 @@ What Setu protects, from whom, and where each protection lives. Update this file
 | Trust in servers | `~/.ssh/known_hosts` | Strict checking; changed keys refused with a warning; only keys a server actually offered can be trusted; host names that would be patterns are refused |
 | Files being edited | per-user private folder | 0700 random folder under `XDG_RUNTIME_DIR` or `~/.cache` (Linux), per-user temp elsewhere; deleted on close, swept after a week |
 | What you type and see | memory only | Never logged; `session.json` holds hosts, users, ports and key paths only |
+| Workflows and their run output | `workflows/*.toml`, `workflow-runs.json` | 0600 files (folder 0700), written atomically; history keeps the last 100 runs and 8 KiB of output per host; **Clear run history** removes it |
 | The builds people install | GitHub Releases | Pinned actions, no signing secrets in PR builds, SHA-256 sums, Sigstore provenance, SBOM |
 
 ## Who might attack, and how
@@ -27,8 +28,9 @@ What Setu protects, from whom, and where each protection lives. Update this file
    - Packs are data only: one-line snippets typed, never run; unknown fields refused.
 3. **A web page whose text you copy.** Pasting several lines into a shell without bracketed paste would run them at once; the paste guard shows them and asks first.
 4. **Another user on the same computer.** Config, vault, session and key files are 0600; edit folders are 0700 and not in shared `/tmp`.
-5. **Code in the web view gone wrong** (an XSS bug in the UI). The CSP allows only Setu's own scripts. Rust commands check their inputs instead of trusting the UI: host-key trust needs a key the server offered, key commands only touch `~/.ssh`, JSON files are size-limited and parsed.
-6. **The supply chain**: a compromised dependency or GitHub Action. Lockfiles with `--locked`/`--frozen-lockfile`, `cargo deny` (advisories, licenses, sources), daily advisory audit, dependency review on PRs, actions pinned to commit SHAs, CodeQL, OpenSSF Scorecard.
+5. **A workflow file someone gives you** (`workflows/*.toml`). It is a script by design: it runs the commands it lists on your hosts. Protections: nothing runs without **Run** and a confirmation that lists every command and host; commands only go to saved hosts over SSH (nothing runs locally, no `sh -c`); the file is size-capped and checked (ids, links, loops, sizes) before it is listed or run; the Rust side runs only what it reads back from disk, never a workflow sent by the window; runs never prompt, so they never accept a new or changed host key and take secrets only from the vault or ssh-agent; server output is stripped of escape sequences and shown as text.
+6. **Code in the web view gone wrong** (an XSS bug in the UI). The CSP allows only Setu's own scripts. Rust commands check their inputs instead of trusting the UI: host-key trust needs a key the server offered, key commands only touch `~/.ssh`, JSON files are size-limited and parsed, workflow ids are checked so files stay in `workflows/`.
+7. **The supply chain**: a compromised dependency or GitHub Action. Lockfiles with `--locked`/`--frozen-lockfile`, `cargo deny` (advisories, licenses, sources), daily advisory audit, dependency review on PRs, actions pinned to commit SHAs, CodeQL, OpenSSF Scorecard.
 
 ## Out of scope
 

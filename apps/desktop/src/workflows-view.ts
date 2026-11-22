@@ -169,6 +169,11 @@ export class WorkflowsView {
   private selection: Selection = null;
   private run: LiveRun | null = null;
   private error = "";
+  /** Canvas scale; a newly opened workflow is fitted to the space. */
+  private zoom = 1;
+  private fitPending = true;
+  private readonly sizer: HTMLElement;
+  private readonly zoomLabel: HTMLElement;
 
   private readonly list: HTMLElement;
   private readonly main: HTMLElement;
@@ -191,15 +196,40 @@ export class WorkflowsView {
     this.edges.classList.add("wf-edges");
     this.surface = el("div", { className: "wf-surface" });
     this.surface.append(this.edges);
-    this.canvas = el("div", { className: "wf-canvas", tabIndex: 0 }, this.surface);
+    this.sizer = el("div", { className: "wf-sizer" }, this.surface);
+    this.canvas = el("div", { className: "wf-canvas", tabIndex: 0 }, this.sizer);
     this.canvas.setAttribute("aria-label", "Workflow canvas");
+    this.zoomLabel = el("span", { className: "wf-zoom-label" });
+    const zoomButton = (label: string, title: string, run: () => void) => {
+      const b = el("button", { type: "button", title }, label);
+      b.setAttribute("aria-label", title);
+      b.onclick = run;
+      return b;
+    };
+    const zoomBar = el(
+      "div",
+      { className: "wf-zoom" },
+      zoomButton("−", "Zoom out", () => this.setZoom(this.zoom - 0.1)),
+      this.zoomLabel,
+      zoomButton("+", "Zoom in", () => this.setZoom(this.zoom + 0.1)),
+      zoomButton("Fit", "Fit the workflow in view", () => this.fit()),
+    );
+    this.canvas.addEventListener(
+      "wheel",
+      (e) => {
+        if (!e.ctrlKey) return;
+        e.preventDefault();
+        this.setZoom(this.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+      },
+      { passive: false },
+    );
     this.inspector = el("aside", { className: "wf-inspector" });
     this.main = el(
       "div",
       { className: "wf-main" },
       this.toolbar,
       this.banner,
-      el("div", { className: "wf-body" }, this.canvas, this.inspector),
+      el("div", { className: "wf-body" }, el("div", { className: "wf-stage" }, this.canvas, zoomBar), this.inspector),
     );
     this.root.replaceChildren(this.list, this.main);
 
@@ -248,6 +278,7 @@ export class WorkflowsView {
     this.dirty = true;
     this.run = null;
     this.selection = null;
+    this.fitPending = true;
     this.render();
     if (!template) this.addStep("command");
   }
@@ -260,6 +291,22 @@ export class WorkflowsView {
     this.dirty = false;
     this.run = null;
     this.selection = null;
+    this.fitPending = true;
+  }
+
+  private setZoom(z: number) {
+    this.zoom = Math.min(1.5, Math.max(0.4, Math.round(z * 100) / 100));
+    this.renderCanvas();
+  }
+
+  /** Scales the canvas so every step is in view (never above 100%). */
+  private fit() {
+    const wf = this.current;
+    if (!wf || !wf.step.length || !this.canvas.clientWidth) return;
+    const w = Math.max(...wf.step.map((s) => s.x + NODE_W)) + 60;
+    const h = Math.max(...wf.step.map((s) => s.y + NODE_H)) + 60;
+    this.setZoom(Math.min(1, (this.canvas.clientWidth - 16) / w, (this.canvas.clientHeight - 16) / h));
+    this.canvas.scrollTo(0, 0);
   }
 
   /** Asks before throwing away unsaved changes. */
@@ -307,6 +354,7 @@ export class WorkflowsView {
     const items = (this.data?.workflows ?? []).map((w) => {
       const last = this.history.find((r) => r.workflow === w.id);
       const current = this.current && (this.savedId ?? this.current.id) === w.id;
+      const steps = current ? this.current!.step.length : w.step.length;
       const b = el(
         "button",
         { type: "button", className: "wf-item" + (current ? " current" : "") },
@@ -315,7 +363,7 @@ export class WorkflowsView {
           "span",
           { className: "wf-item-text" },
           el("span", { className: "wf-item-name" }, current && this.dirty ? `${this.current!.name} •` : w.name),
-          el("small", { className: "muted" }, `${w.step.length} step${w.step.length === 1 ? "" : "s"}${last ? " · " + relative(last.startedMs) : ""}`),
+          el("small", { className: "muted" }, `${steps} step${steps === 1 ? "" : "s"}${last ? " · " + relative(last.startedMs) : ""}`),
         ),
       );
       b.onclick = async () => {
@@ -407,6 +455,10 @@ export class WorkflowsView {
       e.stopPropagation();
       menu.hidden = !menu.hidden;
       if (!menu.hidden) {
+        // Fixed, so the scrolling list beside it cannot clip the menu.
+        const r = b.getBoundingClientRect();
+        menu.style.top = `${r.bottom + 4}px`;
+        menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8))}px`;
         const away = () => {
           menu.hidden = true;
           document.removeEventListener("click", away);
@@ -445,8 +497,9 @@ export class WorkflowsView {
           title: opts.title ?? label,
         },
         icon(iconName, 15),
-        label,
+        el("span", { className: "wf-label" }, label),
       );
+      b.setAttribute("aria-label", label);
       b.onclick = run;
       return b;
     };
@@ -541,10 +594,18 @@ export class WorkflowsView {
     }
     this.canvas.classList.remove("empty");
     this.canvas.classList.toggle("running", !!this.run);
-    const width = Math.max(...wf.step.map((s) => s.x + NODE_W + 200), 900);
-    const height = Math.max(...wf.step.map((s) => s.y + NODE_H + 200), 520);
+    const width = Math.max(...wf.step.map((s) => s.x + NODE_W + 80), 600);
+    const height = Math.max(...wf.step.map((s) => s.y + NODE_H + 80), 400);
     this.surface.style.width = `${width}px`;
     this.surface.style.height = `${height}px`;
+    this.surface.style.transform = `scale(${this.zoom})`;
+    this.sizer.style.width = `${width * this.zoom}px`;
+    this.sizer.style.height = `${height * this.zoom}px`;
+    this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
+    if (this.fitPending && this.canvas.clientWidth) {
+      this.fitPending = false;
+      queueMicrotask(() => this.fit());
+    }
     this.edges.setAttribute("width", String(width));
     this.edges.setAttribute("height", String(height));
     this.renderEdges();
@@ -681,6 +742,7 @@ export class WorkflowsView {
         g.onpointerdown = (e) => {
           e.stopPropagation();
           this.select({ kind: "link", index });
+          this.focus();
         };
       }
       parts.push(g);
@@ -725,6 +787,7 @@ export class WorkflowsView {
     if (from && from !== step) wf.link.push({ from: from.id, to: step.id });
     this.selection = { kind: "step", id: step.id };
     this.change();
+    this.surface.querySelector<HTMLElement>(`[data-step="${CSS.escape(step.id)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
     this.inspector.querySelector<HTMLElement>(kind === "command" ? "textarea" : "input")?.focus();
   }
 
@@ -769,8 +832,8 @@ export class WorkflowsView {
     const start = { x: e.clientX, y: e.clientY, sx: step.x, sy: step.y };
     let moved = false;
     node.onpointermove = (m) => {
-      const dx = m.clientX - start.x;
-      const dy = m.clientY - start.y;
+      const dx = (m.clientX - start.x) / this.zoom;
+      const dy = (m.clientY - start.y) / this.zoom;
       if (!moved && Math.hypot(dx, dy) < 3) return;
       moved = true;
       step.x = snap(start.sx + dx);
@@ -789,7 +852,7 @@ export class WorkflowsView {
 
   private canvasPoint(e: PointerEvent) {
     const r = this.surface.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    return { x: (e.clientX - r.left) / this.zoom, y: (e.clientY - r.top) / this.zoom };
   }
 
   private startLink(e: PointerEvent, from: string) {

@@ -25,7 +25,7 @@ Setu is planned as 25 modules. **C** = Community (this repo), **C+E** = free bas
 | 6 | Host inventory | C+E | P1 |
 | 7 | Server management | C+E | P2 |
 | 8 | Monitoring | C+E | P2 |
-| 9 | Automation and DevOps (incl. `setu` CLI) | C+E | P2–P3 |
+| 9 | Automation and DevOps (incl. `setu` CLI; visual workflows arrive in P1) | C+E | P1–P3 |
 | 10 | Containers and Kubernetes | C | P3 |
 | 11 | Cloud integration | C+E | P3 |
 | 12 | Database access (plugin) | C | P3 |

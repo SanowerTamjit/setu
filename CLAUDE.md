@@ -11,6 +11,7 @@ Setu is an open-source (Apache-2.0) SSH client, terminal and ops workbench: a Ru
 | `crates/setu-ssh` | SSH, SFTP, known_hosts, key generation (russh) |
 | `crates/setu-hosts` | Host inventory, ssh_config and other imports |
 | `crates/setu-vault` | Encrypted vault, OS keychain |
+| `crates/setu-workflow` | Workflows: model, checks, scheduler, runner engine, files and run history |
 | `crates/setu-cli` | The `setu` CLI and `setu doctor` |
 | `apps/desktop/src-tauri` | Tauri commands: the only bridge between UI and Rust |
 | `apps/desktop/src` | TypeScript UI (no framework), xterm.js |
