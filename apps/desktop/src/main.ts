@@ -19,6 +19,8 @@ import { openKeyManager } from "./key-manager";
 import { copyText } from "./dom";
 import "./known-hosts";
 import { openJumpMap } from "./jump-map";
+import { HostsHome } from "./hosts-home";
+import { icon, type IconName } from "./icons";
 import { loadPacks, openRolePicker, registerSnippets } from "./packs";
 import { loadSettings, onSettingsChange, settings, updateSettings } from "./settings";
 import { applyTheme, THEMES } from "./themes";
@@ -34,6 +36,7 @@ const statusSize = document.getElementById("status-size")!;
 const statusVersion = document.getElementById("status-version")!;
 const sidebarEl = document.getElementById("sidebar")!;
 const sidebarButton = document.getElementById("sidebar-button") as HTMLButtonElement;
+sidebarButton.replaceChildren(icon("sidebar", 16));
 const statusVault = document.getElementById("status-vault") as HTMLButtonElement;
 const statusFiles = document.getElementById("status-files") as HTMLButtonElement;
 statusFiles.onclick = () => void openFiles();
@@ -147,6 +150,7 @@ async function receiveTab(token: string): Promise<boolean> {
 
 function renderTabs() {
   if (!restoring && isMainWindow) scheduleSave(snapshot);
+  if (view === "hosts") hostsHome.render();
   tabsEl.replaceChildren(
     ...tabs.map((tab, i) => {
       const el = document.createElement("div");
@@ -218,6 +222,7 @@ function renderStatus() {
 }
 
 function activate(tab: Tab) {
+  if (view !== "terminals") showView("terminals");
   if (active && active !== tab) active.hide();
   active = tab;
   tab.show();
@@ -319,6 +324,88 @@ const hostsPanel = new HostsPanel(sidebarEl, {
   defaultUser: () => localUser,
 });
 
+/** Open panes connected to a saved host, for the cards' status. */
+function openCount(host: Host) {
+  return tabs
+    .filter((t): t is PaneTab => t instanceof PaneTab)
+    .flatMap((t) => t.panes)
+    .filter((p) => p.isRemote && p.label === host.name && !p.hasExited && p.sessionId !== null).length;
+}
+
+const hostsHomeEl = document.getElementById("hosts-home")!;
+const hostsHome = new HostsHome(hostsHomeEl, hostsPanel, {
+  connect: (host) => connectHost(host),
+  files: (host) => connectHost(host, (tab) => void openFiles(tab)),
+  map: () => void openJumpMap(hostsPanel.hosts, (h) => connectHost(h)),
+  defaultUser: () => localUser,
+  openCount,
+});
+
+// The hosts view and the terminals share the space right of the rail.
+type View = "terminals" | "hosts";
+let view: View = "terminals";
+let sidebarWanted = true;
+const railButtons = new Map<string, HTMLButtonElement>();
+
+function showView(next: View) {
+  if (next === view) {
+    if (next === "hosts") hostsHome.focusSearch();
+    return;
+  }
+  view = next;
+  const hosts = next === "hosts";
+  hostsHomeEl.hidden = !hosts;
+  terminalsEl.hidden = hosts;
+  sidebarEl.hidden = hosts || !sidebarWanted;
+  sidebarButton.hidden = hosts;
+  for (const [id, b] of railButtons) {
+    if (id === "hosts" || id === "terminals") b.classList.toggle("current", id === next);
+  }
+  if (hosts) {
+    hostsHome.render();
+    hostsHome.focusSearch();
+  } else {
+    active?.refit();
+    active?.focus();
+  }
+}
+
+function buildRail() {
+  const rail = document.getElementById("rail")!;
+  const item = (id: string, name: IconName, label: string, run: () => void) => {
+    const b = document.createElement("button");
+    b.className = "rail-button";
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    b.append(icon(name, 20));
+    b.onclick = run;
+    railButtons.set(id, b);
+    return b;
+  };
+  const logo = document.createElement("div");
+  logo.className = "rail-logo";
+  logo.title = "Setu";
+  logo.append(icon("logo", 22));
+  const spacer = document.createElement("div");
+  spacer.className = "rail-spacer";
+  rail.replaceChildren(
+    logo,
+    item("hosts", "hosts", "Hosts", () => showView("hosts")),
+    item("terminals", "terminal", "Terminals", () => showView("terminals")),
+    item("keys", "key", "SSH keys and known hosts", () => void runCommand("keys.open")),
+    item("snippets", "snippet", "Snippets", () => void showPalette("Snippet ")),
+    item("vault", "vault", "Vault", () => void openVaultDialog().then(() => active?.focus())),
+    spacer,
+    item("palette", "command", "Commands (Ctrl+Shift+P)", () => void showPalette()),
+    item("settings", "settings", "Settings (Ctrl+,)", () => void runCommand("settings.open")),
+  );
+  railButtons.get("terminals")!.classList.add("current");
+  // A tab moved into its own window is just terminals.
+  rail.hidden = !isMainWindow;
+}
+buildRail();
+hostsPanel.onChange(() => hostsHome.render());
+
 function renderVault(status: VaultStatus) {
   const state = status.unlocked ? "unlocked" : status.exists ? "locked" : "none";
   const label = { unlocked: "Vault unlocked", locked: "Vault locked", none: "Set up vault" }[state];
@@ -336,7 +423,8 @@ void listen<VaultStatus>("vault-status", (e) => renderVault(e.payload));
 
 const SIDEBAR_KEY = "setu.sidebar";
 function setSidebar(open: boolean) {
-  sidebarEl.hidden = !open;
+  sidebarWanted = open;
+  sidebarEl.hidden = !open || view === "hosts";
   sidebarButton.setAttribute("aria-pressed", String(open));
   try {
     localStorage.setItem(SIDEBAR_KEY, open ? "open" : "closed");
@@ -487,10 +575,13 @@ for (const c of [
     title: "Search saved hosts",
     category: "Hosts",
     run: () => {
+      if (view === "hosts") return hostsHome.focusSearch();
       if (sidebarEl.hidden) setSidebar(true);
       hostsPanel.focusSearch();
     },
   },
+  { id: "view.hosts", title: "Go to hosts", category: "View", keywords: "cards home servers", run: () => showView("hosts") },
+  { id: "view.terminals", title: "Go to terminals", category: "View", run: () => showView("terminals") },
   { id: "sidebar.toggle", title: "Show or hide the hosts sidebar", category: "View", run: () => setSidebar(sidebarEl.hidden) },
   { id: "find.open", title: "Find in scrollback", category: "Terminal", when: isTerminal, run: () => terminalOf(active)?.findBar.open() },
   { id: "files.open", title: "Open Files (SFTP) on this server", category: "Files", when: isRemote, run: () => openFiles() },
@@ -662,7 +753,10 @@ document.addEventListener(
   { capture: true },
 );
 
-new ResizeObserver(() => active?.refit()).observe(terminalsEl);
+// A hidden terminal area measures 0 wide; fitting then would shrink every shell.
+new ResizeObserver(() => {
+  if (!terminalsEl.hidden && terminalsEl.clientWidth > 0) active?.refit();
+}).observe(terminalsEl);
 
 /**
  * Reconnects a restored SSH pane: the connect dialog stays hidden unless it

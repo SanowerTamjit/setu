@@ -7,6 +7,7 @@
   </head>
   <body>
     <div id="app">
+      <nav id="rail" class="rail" aria-label="Sections"></nav>
       <header class="tabbar" role="tablist" aria-label="Terminal tabs">
         <button id="sidebar-button" class="icon-button sidebar-toggle" title="Hosts (Ctrl+Shift+H)" aria-label="Show hosts" aria-pressed="true">☰</button>
         <div id="tabs" class="tabs"></div>
@@ -19,6 +20,7 @@
       <div class="workspace">
         <aside id="sidebar" class="sidebar" aria-label="Saved hosts"></aside>
         <main id="terminals" class="terminals"></main>
+        <section id="hosts-home" class="hosts-home" aria-label="Hosts" hidden></section>
       </div>
       <footer class="statusbar">
         <span id="status-shell"></span>
