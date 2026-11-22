@@ -74,6 +74,8 @@ export class HostsPanel {
   private readonly notice: HTMLDivElement;
   private readonly footer: HTMLDivElement;
   private noticeTimer: number | undefined;
+  private readonly listeners = new Set<(view: HostsView) => void>();
+  private readonly noticeListeners = new Set<(text: string, error: boolean) => void>();
 
   constructor(
     root: HTMLElement,
@@ -127,14 +129,36 @@ export class HostsPanel {
     }
   }
 
+  /** Calls `listener` whenever the saved hosts change. */
+  onChange(listener: (view: HostsView) => void) {
+    this.listeners.add(listener);
+  }
+
+  /** Calls `listener` with each notice ("Imported: added 3 hosts."). */
+  onNotice(listener: (text: string, error: boolean) => void) {
+    this.noticeListeners.add(listener);
+  }
+
+  /** Where hosts are saved, for the hosts view. */
+  get path() {
+    return this.view.path;
+  }
+
+  /** Opens the host dialog for `host`, or for a new host. */
+  editHost(host: Host | null, folder: string | null = null) {
+    return this.edit(host, folder);
+  }
+
   private setView(view: HostsView) {
     this.view = view;
+    for (const l of this.listeners) l(view);
     this.footer.replaceChildren(el("span", {}, view.path));
     this.footer.title = `Saved hosts are stored in ${view.path}`;
     this.render();
   }
 
   private flash(text: string, error = false) {
+    for (const l of this.noticeListeners) l(text, error);
     this.notice.textContent = text;
     this.notice.classList.toggle("error", error);
     this.notice.hidden = false;

@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- A new look: a side rail for Hosts, Terminals, Keys, Snippets and the Vault; a slimmer host sidebar; rounded tabs; and one dialog layout (spacing, type sizes, a close button in the corner) for every dialog, built on shared design tokens across the Dark, Light and High contrast themes.
 - The hosts sidebar's **Import** now offers PuTTY, MobaXterm, CSV and Ansible as well as `~/.ssh/config`.
 - Files (SFTP) opens with Ctrl+Shift+E instead of Ctrl+Shift+F, which is now find, as in most terminals.
 - Minimum supported Rust version is now 1.89 (needed by russh 0.65, which fixes RUSTSEC-2026-0495).
@@ -15,6 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Hosts view: every saved host as a card with name, address, jump host, folder, tags and how many panes are open, grouped by folder, with search, tag filters, one-click Connect and Files, and keyboard control (Enter connects, E or F2 edits, arrow keys move). Open it from the rail or with "Go to hosts" in the palette. See `docs/hosts.md`.
 - Command palette (Ctrl+Shift+P): one fuzzy search over commands, saved hosts, shells and profiles, open tabs, themes, keybinding profiles and snippets, with recent commands first and shortcuts shown. See `docs/terminal.md`.
 - Themes: Dark, Light and High contrast for the whole app and the terminal, plus the terminal font size, in a new Settings dialog (Ctrl+,). Preferences are saved in `settings.json`.
 - Keybinding profiles: Default, Vim (Ctrl+Space prefix, h j k l between panes) and Emacs (Ctrl+X 2, 3, o, 0; Alt+X for commands), with the pending prefix shown in the status bar. See `docs/terminal.md`.

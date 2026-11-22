@@ -1,6 +1,6 @@
 // The "New SSH connection" dialog, including the host-key trust prompt.
 
-import { el, field } from "./dom";
+import { addCloseButton, el, field } from "./dom";
 import { sshTrustHost, vaultStatus, type AuthRequest, type ConnectFailure, type ConnectRequest, type VaultAvailability } from "./ipc";
 import { openVaultDialog } from "./vault-dialog";
 
@@ -146,6 +146,7 @@ export function openSshDialog(connect: Connect, options: DialogOptions = {}): Pr
     };
     document.addEventListener("keydown", onKey, true);
     cancelButton.onclick = close;
+    addCloseButton(form, close);
 
     const showMessage = (text: string, kind: "error" | "info" = "error", action?: { label: string; run: () => void }) => {
       message.hidden = false;

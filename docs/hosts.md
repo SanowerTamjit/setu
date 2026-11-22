@@ -12,6 +12,17 @@ With `SETU_HOME` set (portable mode), the file is `$SETU_HOME/config/hosts.toml`
 
 **No secrets are stored here.** Passwords are asked for when you connect, and keys stay in `~/.ssh`. Passwords and passphrases will be storable in the encrypted vault (`setu-vault`), never in this file.
 
+## The hosts view
+
+The top button in the rail on the left opens the hosts view: each saved host as a card, grouped by the first part of its folder. A card shows the host's name, `user@address:port`, the jump host it goes through, the rest of its folder, how it signs in, its tags, and a green "open" count while panes are connected to it.
+
+- **Connect** opens a terminal to the host; the Files button opens it in a Files (SFTP) tab and the pencil edits it.
+- Type in the search box to filter by name, address, user, folder, jump host or tag; Enter connects to the first match. The tag chips under it show only hosts with that tag.
+- With a card focused, Enter connects, E or F2 edits, and the arrow keys move between cards.
+- **Jump-host map**, **Import** and **New host** are at the top right.
+
+The sidebar next to the terminals (Ctrl+Shift+H) lists the same hosts as a tree, for connecting without leaving your tabs.
+
 ## Format
 
 ```toml

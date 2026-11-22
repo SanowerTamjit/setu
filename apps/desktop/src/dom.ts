@@ -1,5 +1,7 @@
 // Small DOM helpers shared by the dialogs and panels.
 
+import { icon } from "./icons";
+
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   props: Record<string, unknown> = {},
@@ -44,7 +46,18 @@ export function modal(content: HTMLElement, onClose: () => void) {
     onClose();
   };
   document.addEventListener("keydown", onKey, true);
+  // Every dialog gets the same close button in its top corner.
+  if (content.classList.contains("dialog")) addCloseButton(content, close);
   return { overlay, close };
+}
+
+/** The close button in a dialog's top corner. */
+export function addCloseButton(dialog: HTMLElement, close: () => void) {
+  if (dialog.querySelector(":scope > .dialog-close")) return;
+  const x = el("button", { type: "button", className: "dialog-close", title: "Close (Esc)" }, icon("close", 16));
+  x.setAttribute("aria-label", "Close");
+  x.onclick = close;
+  dialog.prepend(x);
 }
 
 export function errorText(err: unknown): string {
