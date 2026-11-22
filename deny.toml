@@ -5,14 +5,11 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-ignore = [
-  # Marvin attack: timing side channel in the `rsa` crate's private-key
-  # operations. No fixed release exists yet. Setu uses RSA only to sign SSH
-  # user-auth challenges locally, where an attacker cannot time many
-  # operations; RSA support stays because many users still have id_rsa keys.
-  # Revisit when `rsa` ships a constant-time release.
-  { id = "RUSTSEC-2023-0071", reason = "no fix available; local SSH user-auth signing only" },
-]
+# Keep this list empty when possible. Each entry needs a reason and a date to
+# revisit; `cargo deny` warns when an ignored advisory no longer applies.
+# (RUSTSEC-2023-0071, the `rsa` Marvin attack, was removed on 2026-11-22:
+# it no longer matches any crate in Cargo.lock.)
+ignore = []
 
 [licenses]
 version = 2
