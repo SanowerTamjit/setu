@@ -1,0 +1,6 @@
+#!/bin/sh
+# Every commit needs a DCO sign-off (see CONTRIBUTING.md). Use `git commit -s`.
+if ! grep -qE '^Signed-off-by: .+ <.+>' "$1"; then
+  echo "commit-msg: missing 'Signed-off-by:' line. Commit with 'git commit -s'." >&2
+  exit 1
+fi

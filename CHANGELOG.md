@@ -17,6 +17,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Development: unit tests for the desktop UI (Vitest, run in CI), a `justfile` with one command for each everyday task (`just check` runs everything CI runs), and git hooks (`just install-hooks`) that refuse commits with private keys or tokens, unformatted Rust, failing UI tests or a missing sign-off.
+
 - A more restrained look: the Dark and Light themes now use neutral graphite and white surfaces with a blue accent instead of amber, and host cards, avatars, tags and buttons are quieter (one neutral avatar style, Connect as a secondary button, flat cards, smaller corners). High contrast is unchanged.
 - A new look: a side rail for Hosts, Terminals, Keys, Snippets and the Vault; a slimmer host sidebar; rounded tabs; and one dialog layout (spacing, type sizes, a close button in the corner) for every dialog, built on shared design tokens across the Dark, Light and High contrast themes.
 - The hosts sidebar's **Import** now offers PuTTY, MobaXterm, CSV and Ansible as well as `~/.ssh/config`.
