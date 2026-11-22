@@ -1,10 +1,10 @@
 // The settings dialog: a list of sections on the left, the chosen one on the
 // right. Features add their own sections with `registerSettingsSection`.
 
-import { el, modal } from "./dom";
+import { el, field, modal } from "./dom";
 import { bindingsFor, KEYMAPS } from "./keymap";
 import { allCommands } from "./commands";
-import { settings, updateSettings } from "./settings";
+import { settings, updateSettings, type RendererName } from "./settings";
 import { THEMES } from "./themes";
 
 export interface SettingsSection {
@@ -123,7 +123,43 @@ registerSettingsSection({
   render(body) {
     const mask = el("input", { type: "checkbox", checked: settings().maskSecrets });
     mask.onchange = () => updateSettings({ maskSecrets: mask.checked });
+    const renderer = el(
+      "select",
+      {},
+      el("option", { value: "auto" }, "Automatic"),
+      el("option", { value: "gpu" }, "GPU (WebGL)"),
+      el("option", { value: "dom" }, "Compatible (DOM)"),
+    );
+    renderer.value = settings().renderer;
+    renderer.onchange = () => updateSettings({ renderer: renderer.value as RendererName });
+    const font = el("input", {
+      type: "text",
+      value: settings().fontFamily,
+      placeholder: "JetBrains Mono, Cascadia Code, Fira Code…",
+      spellcheck: false,
+    });
+    font.onchange = () => updateSettings({ fontFamily: font.value.trim() });
+    const ligatures = el("input", { type: "checkbox", checked: settings().ligatures });
+    ligatures.onchange = () => updateSettings({ ligatures: ligatures.checked });
     body.append(
+      el("h3", {}, "Rendering"),
+      field(
+        "Renderer",
+        renderer,
+        "Automatic draws with the GPU on macOS and Windows. On Linux it uses the compatible renderer, because some WebKitGTK setups show new output a frame late with the GPU; pick GPU to try it. The status bar shows which one a terminal uses.",
+      ),
+      field("Font", font, "Leave empty for the first installed of JetBrains Mono, Cascadia Code, Fira Code, SF Mono, Menlo or Consolas."),
+      el(
+        "label",
+        { className: "check-row remember-row" },
+        ligatures,
+        el(
+          "span",
+          {},
+          "Font ligatures",
+          el("small", { className: "muted" }, "Join sequences such as -> => != and >= into one symbol, when the font has them."),
+        ),
+      ),
       el("h3", {}, "Privacy"),
       el(
         "label",
