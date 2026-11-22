@@ -10,6 +10,12 @@ import { HostsPanel } from "./hosts-panel";
 import { vaultStatus, type Host, type VaultStatus } from "./ipc";
 import { onVaultChange, openVaultDialog } from "./vault-dialog";
 import { listen } from "@tauri-apps/api/event";
+import { registerCommand, registerProvider, runCommand, type Command } from "./commands";
+import { bindingsFor, KeyDispatcher, KEYMAPS, prefixBytes } from "./keymap";
+import { openPalette } from "./palette";
+import { openSettings } from "./settings-dialog";
+import { loadSettings, onSettingsChange, settings, updateSettings } from "./settings";
+import { applyTheme, THEMES } from "./themes";
 import { dialogValues, describe, flushSave, loadSession, scheduleSave, SESSION_VERSION, type SavedPane, type SavedTab, type Session } from "./session";
 
 const tabsEl = document.getElementById("tabs")!;
@@ -317,8 +323,8 @@ function renderMenu() {
   menuEl.replaceChildren(
     ssh,
     separator2,
-    splitItem("Split right", "Ctrl+Shift+D", "right"),
-    splitItem("Split down", "Ctrl+Alt+Shift+D", "down"),
+    splitItem("Split right", shortcut("pane.splitRight") ?? "", "right"),
+    splitItem("Split down", shortcut("pane.splitDown") ?? "", "down"),
     separator,
     ...shells.map((shell) => {
       const item = document.createElement("button");
@@ -348,43 +354,172 @@ menuButton.onclick = (e) => {
 };
 document.addEventListener("click", () => toggleMenu(false));
 
-// Keyboard shortcuts. Ctrl+Shift (Cmd on macOS) keeps plain Ctrl keys for the shell.
+// ---- Commands, keymaps and the palette ----
+
+function focusPane(dx: number, dy: number) {
+  if (active instanceof PaneTab && active.paneCount > 1) active.focusNeighbour(dx, dy);
+}
+
+const isTerminal = () => terminalOf(active) !== null;
+const isRemote = () => {
+  const t = terminalOf(active);
+  return !!t && t.isRemote && t.sessionId !== null && !t.hasExited;
+};
+
+for (const c of [
+  { id: "palette.open", title: "Show all commands", run: () => showPalette() },
+  { id: "tab.new", title: "New tab", category: "Tab", run: () => newTab() },
+  { id: "ssh.new", title: "New SSH connection…", category: "Connect", run: () => newSshTab() },
+  { id: "pane.splitRight", title: "Split right", category: "Pane", when: isTerminal, run: () => splitActive("right") },
+  { id: "pane.splitDown", title: "Split down", category: "Pane", when: isTerminal, run: () => splitActive("down") },
+  { id: "pane.close", title: "Close pane", category: "Pane", run: () => closeActive() },
+  { id: "pane.focusLeft", title: "Focus pane on the left", category: "Pane", run: () => focusPane(-1, 0) },
+  { id: "pane.focusRight", title: "Focus pane on the right", category: "Pane", run: () => focusPane(1, 0) },
+  { id: "pane.focusUp", title: "Focus pane above", category: "Pane", run: () => focusPane(0, -1) },
+  { id: "pane.focusDown", title: "Focus pane below", category: "Pane", run: () => focusPane(0, 1) },
+  { id: "tab.close", title: "Close tab", category: "Tab", run: () => (active ? closeTab(active) : undefined) },
+  { id: "tab.next", title: "Next tab", category: "Tab", run: () => cycle(1) },
+  { id: "tab.previous", title: "Previous tab", category: "Tab", run: () => cycle(-1) },
+  {
+    id: "hosts.search",
+    title: "Search saved hosts",
+    category: "Hosts",
+    run: () => {
+      if (sidebarEl.hidden) setSidebar(true);
+      hostsPanel.focusSearch();
+    },
+  },
+  { id: "sidebar.toggle", title: "Show or hide the hosts sidebar", category: "View", run: () => setSidebar(sidebarEl.hidden) },
+  { id: "find.open", title: "Find in scrollback", category: "Terminal", when: isTerminal, run: () => terminalOf(active)?.findBar.open() },
+  { id: "files.open", title: "Open Files (SFTP) on this server", category: "Files", when: isRemote, run: () => openFiles() },
+  { id: "settings.open", title: "Open settings", category: "Settings", keywords: "preferences options", run: () => openSettings().then(() => active?.focus()) },
+  { id: "vault.open", title: "Open the vault", category: "Vault", run: () => openVaultDialog().then(() => active?.focus()) },
+] satisfies Command[]) {
+  registerCommand(c);
+}
+
+for (const t of THEMES) {
+  registerCommand({
+    id: `theme.${t.id}`,
+    title: t.name,
+    category: "Theme",
+    keywords: `color colour appearance ${t.description}`,
+    run: () => updateSettings({ theme: t.id }),
+  });
+}
+for (const k of KEYMAPS) {
+  registerCommand({
+    id: `keymap.${k.id}`,
+    title: k.name,
+    category: "Keybindings",
+    keywords: `keymap shortcuts ${k.description}`,
+    run: () => updateSettings({ keymap: k.id }),
+  });
+}
+
+registerProvider(() =>
+  hostsPanel.hosts.map((host) => ({
+    id: `connect:${host.name}`,
+    title: host.name,
+    category: "Connect",
+    keywords: `ssh ${host.user ?? ""}@${host.host} ${host.folder ?? ""} ${(host.tags ?? []).join(" ")}`,
+    run: () => connectHost(host),
+  })),
+);
+registerProvider(() =>
+  shells.map((shell) => ({
+    id: `shell:${shell.id}`,
+    title: shell.name,
+    category: "New tab",
+    keywords: shell.program,
+    run: () => newTab(shell.id),
+  })),
+);
+registerProvider(() =>
+  tabs.map((tab, i) => ({
+    id: `goto:${i}`,
+    title: `${i + 1}. ${tab.title}`,
+    category: "Go to tab",
+    run: () => activate(tab),
+  })),
+);
+
+const statusPrefix = document.getElementById("status-prefix")!;
+const keys = new KeyDispatcher((prefix) => {
+  statusPrefix.hidden = !prefix;
+  statusPrefix.textContent = prefix ? `${prefix} …` : "";
+});
+let bindings = bindingsFor("default");
+
+function applyKeymap() {
+  bindings = bindingsFor(settings().keymap);
+  keys.setBindings(bindings);
+  renderMenu();
+}
+
+/** The first shortcut for a command in the active keymap, for menus and the palette. */
+function shortcut(id: string): string | undefined {
+  return bindings[id]?.[0];
+}
+
+const RECENT_KEY = "setu.recentCommands";
+function recentCommands(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as string[];
+  } catch {
+    return [];
+  }
+}
+function noteRecent(id: string) {
+  try {
+    const next = [id, ...recentCommands().filter((x) => x !== id)].slice(0, 12);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // Recent commands are a convenience.
+  }
+}
+
+let paletteOpen = false;
+async function showPalette(initial?: string) {
+  if (paletteOpen) return;
+  paletteOpen = true;
+  await openPalette({ shortcut, recent: recentCommands, onRun: noteRecent, initial });
+  paletteOpen = false;
+  if (!document.querySelector(".overlay")) active?.focus();
+}
+document.getElementById("status-palette")!.onclick = () => void showPalette();
+document.getElementById("status-settings")!.onclick = () => void runCommand("settings.open");
+
+// Keyboard shortcuts come from the active keymap. Ctrl+Shift (Cmd on macOS)
+// and the Vim/Emacs prefixes keep plain keys for the shell.
 document.addEventListener(
   "keydown",
   (e) => {
-    const mod = (e.ctrlKey || e.metaKey) && e.shiftKey;
-    if (mod && e.code === "KeyT") {
-      e.preventDefault();
-      void newTab();
-    } else if (mod && e.code === "KeyW") {
-      e.preventDefault();
-      void closeActive();
-    } else if (mod && e.code === "KeyD") {
-      e.preventDefault();
-      void splitActive(e.altKey ? "down" : "right");
-    } else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code.startsWith("Arrow") && active instanceof PaneTab && active.paneCount > 1) {
-      e.preventDefault();
-      e.stopPropagation();
-      const [dx, dy] = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.code] ?? [0, 0];
-      active.focusNeighbour(dx, dy);
-    } else if (mod && e.code === "KeyH") {
-      e.preventDefault();
-      if (sidebarEl.hidden) setSidebar(true);
-      hostsPanel.focusSearch();
-    } else if (mod && e.code === "KeyF") {
-      e.preventDefault();
-      terminalOf(active)?.findBar.open();
-    } else if (mod && e.code === "KeyE") {
-      e.preventDefault();
-      void openFiles();
-    } else if (mod && e.code === "KeyO") {
-      e.preventDefault();
-      void newSshTab();
-    } else if (e.ctrlKey && e.code === "Tab") {
-      e.preventDefault();
-      cycle(e.shiftKey ? -1 : 1);
-    } else if (e.key === "Escape" && !menuEl.hidden) {
+    if (e.key === "Escape" && !menuEl.hidden) {
       toggleMenu(false);
+      return;
+    }
+    // Dialogs and the palette handle their own keys.
+    if (document.querySelector(".overlay")) return;
+    // In a text field (hosts search, find), Ctrl+X and friends keep their usual meaning.
+    const t = e.target as HTMLElement | null;
+    const inField = !!t && (t.tagName === "INPUT" || (t.tagName === "TEXTAREA" && !t.classList.contains("xterm-helper-textarea")));
+    const result = keys.handle(e, !inField);
+    if (!result) return;
+    if ("passPrefix" in result) {
+      const term = terminalOf(active);
+      const bytes = prefixBytes(result.passPrefix);
+      if (term && bytes) {
+        e.preventDefault();
+        term.term.input(bytes);
+      }
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if ("command" in result) {
+      noteRecent(result.command);
+      void runCommand(result.command);
     }
   },
   { capture: true },
@@ -443,8 +578,14 @@ function restoreSession(session: Session) {
 
 window.addEventListener("beforeunload", () => flushSave());
 
+onSettingsChange((s, changed) => {
+  if (changed.theme) applyTheme(s.theme);
+  if (changed.keymap) applyKeymap();
+});
+
 async function boot() {
-  const [info, found] = await Promise.all([appInfo(), listShells()]);
+  const [info, found] = await Promise.all([appInfo(), listShells(), loadSettings()]);
+  applyTheme(settings().theme);
   shells = found;
   localUser = info.user;
   setDefaultUser(info.user);
@@ -458,7 +599,7 @@ async function boot() {
   void hostsPanel.reload();
   void vaultStatus().then(renderVault);
   statusVersion.textContent = `Setu ${info.version} · ${info.os}`;
-  renderMenu();
+  applyKeymap();
   const session = await loadSession();
   if (session) {
     restoreSession(session);

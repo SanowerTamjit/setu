@@ -5,6 +5,8 @@ import type { Tab } from "./tab";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { FindBar } from "./find-bar";
+import { onSettingsChange, settings } from "./settings";
+import { terminalTheme } from "./themes";
 import { connectionOf, describe, type SavedConnection } from "./session";
 import {
   closeTerminal,
@@ -17,29 +19,6 @@ import {
   type ShellProfile,
 } from "./ipc";
 
-const THEME = {
-  background: "#11151c",
-  foreground: "#d8dee9",
-  cursor: "#f5a524",
-  cursorAccent: "#11151c",
-  selectionBackground: "#3b4252",
-  black: "#1c2129",
-  red: "#e06c75",
-  green: "#98c379",
-  yellow: "#e5c07b",
-  blue: "#61afef",
-  magenta: "#c678dd",
-  cyan: "#56b6c2",
-  white: "#d8dee9",
-  brightBlack: "#5c6370",
-  brightRed: "#ff7a85",
-  brightGreen: "#b5e890",
-  brightYellow: "#ffd68a",
-  brightBlue: "#82c4ff",
-  brightMagenta: "#de9bf0",
-  brightCyan: "#7fd6e0",
-  brightWhite: "#ffffff",
-};
 
 export interface TabEvents {
   onTitle: (tab: TerminalTab) => void;
@@ -55,6 +34,7 @@ export class TerminalTab implements Tab {
   private id: number | null = null;
   private exited = false;
   private resizeTimer: number | undefined;
+  private readonly unsubscribe: () => void;
   shell: ShellProfile | null = null;
   /** Shown in the status bar: the shell program or `ssh user@host`. */
   detail = "";
@@ -87,14 +67,21 @@ export class TerminalTab implements Tab {
       cursorBlink: true,
       fontFamily:
         '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
-      fontSize: 14,
+      fontSize: settings().fontSize,
       lineHeight: 1.15,
       scrollback: 10000,
-      theme: THEME,
+      theme: terminalTheme(settings().theme),
     });
     this.term.loadAddon(this.fit);
     this.term.open(this.element);
     this.findBar = new FindBar(this.element, this.term);
+    this.unsubscribe = onSettingsChange((s, changed) => {
+      if (changed.theme) this.term.options.theme = terminalTheme(s.theme);
+      if (changed.fontSize) {
+        this.term.options.fontSize = s.fontSize;
+        this.refit();
+      }
+    });
 
     this.term.onData((data) => {
       if (this.reconnect) {
@@ -292,6 +279,7 @@ export class TerminalTab implements Tab {
 
   async dispose() {
     if (this.id !== null && !this.exited) await closeTerminal(this.id).catch(() => {});
+    this.unsubscribe();
     this.findBar.dispose();
     this.term.dispose();
     this.element.remove();

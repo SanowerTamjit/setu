@@ -109,6 +109,11 @@ export class HostsPanel {
     );
   }
 
+  /** The saved hosts as last loaded. */
+  get hosts(): Host[] {
+    return this.view.hosts;
+  }
+
   focusSearch() {
     this.search.focus();
     this.search.select();

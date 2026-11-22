@@ -39,6 +39,7 @@ pub fn run() {
         .manage(vault::VaultState::from_env())
         .manage(files::Files::default())
         .manage(session::SessionFile::from_env())
+        .manage(session::SettingsFile::from_env())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             let vault = app.state::<vault::VaultState>().inner().clone();
@@ -77,6 +78,8 @@ pub fn run() {
             session::session_load,
             session::session_save,
             session::session_clear,
+            session::settings_load,
+            session::settings_save,
             files::files_open,
             files::files_close,
             files::files_list,
