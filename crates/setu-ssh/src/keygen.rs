@@ -236,12 +236,13 @@ fn ssh_keygen() -> std::process::Command {
 /// A private folder holding an askpass script that prints `pin`, so
 /// `ssh-keygen` can get the PIN without a terminal. Unix only: on Windows,
 /// OpenSSH asks for the PIN and touch in the system's own security key dialog.
+#[cfg(unix)]
 struct PinAskpass {
     dir: tempfile::TempDir,
 }
 
+#[cfg(unix)]
 impl PinAskpass {
-    #[cfg(unix)]
     fn new() -> Result<Self, KeyGenError> {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::Builder::new()
