@@ -125,13 +125,22 @@ export class TerminalTab implements Tab {
 
   async start(shellId: string | null) {
     this.fit.fit();
-    const { id, shell } = await openTerminal(
-      shellId,
+    // A profile from Settings starts its base shell with its own folder,
+    // arguments and variables.
+    const profile = shellId?.startsWith("custom:")
+      ? settings().shellProfiles.find((p) => p.id === shellId)
+      : undefined;
+    if (shellId?.startsWith("custom:") && !profile) throw new Error("That shell profile no longer exists.");
+    const launch = profile ? { args: profile.args, cwd: profile.cwd, env: Object.entries(profile.env) } : null;
+    const { id, shell: base } = await openTerminal(
+      profile ? profile.base : shellId,
+      launch,
       this.term.cols,
       this.term.rows,
       (data) => this.write(data),
       (code) => this.handleExit(code),
     );
+    const shell = profile ? { ...base, id: profile.id, name: profile.name } : base;
     this.id = id;
     this.shell = shell;
     this.title = shell.name;

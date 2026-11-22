@@ -14,6 +14,7 @@ import { registerCommand, registerProvider, runCommand, type Command } from "./c
 import { bindingsFor, KeyDispatcher, KEYMAPS, prefixBytes } from "./keymap";
 import { openPalette } from "./palette";
 import { openSettings } from "./settings-dialog";
+import "./settings-shells";
 import { loadSettings, onSettingsChange, settings, updateSettings } from "./settings";
 import { applyTheme, THEMES } from "./themes";
 import { dialogValues, describe, flushSave, loadSession, scheduleSave, SESSION_VERSION, type SavedPane, type SavedTab, type Session } from "./session";
@@ -224,7 +225,7 @@ async function newTab(shellId: string | null = null) {
   tabs.push(tab);
   activate(tab);
   try {
-    await tab.focused.start(shellId);
+    await tab.focused.start(shellId ?? settings().defaultShell);
   } catch (err) {
     tab.focused.term.write(`\x1b[31mCould not start the shell: ${String(err)}\x1b[0m\r\n`);
   }
@@ -375,6 +376,19 @@ function cycle(delta: number) {
   activate(tabs[(i + delta + tabs.length) % tabs.length]);
 }
 
+/** Everything a new tab can start: your profiles first, then detected shells. */
+function launchable(): { id: string; name: string; detail: string }[] {
+  const names = new Map(shells.map((s) => [s.id, s.name]));
+  return [
+    ...settings().shellProfiles.map((p) => ({
+      id: p.id,
+      name: p.name,
+      detail: `${names.get(p.base) ?? p.base} profile`,
+    })),
+    ...shells.map((s) => ({ id: s.id, name: s.name, detail: s.program })),
+  ];
+}
+
 // Shell picker menu
 function renderMenu() {
   const ssh = document.createElement("button");
@@ -408,13 +422,13 @@ function renderMenu() {
     splitItem("Split right", shortcut("pane.splitRight") ?? "", "right"),
     splitItem("Split down", shortcut("pane.splitDown") ?? "", "down"),
     separator,
-    ...shells.map((shell) => {
+    ...launchable().map((shell) => {
       const item = document.createElement("button");
       item.className = "menu-item";
       item.setAttribute("role", "menuitem");
       item.innerHTML = `<span></span><span class="muted"></span>`;
       item.children[0].textContent = shell.name;
-      item.children[1].textContent = shell.program;
+      item.children[1].textContent = shell.detail;
       item.onclick = () => {
         toggleMenu(false);
         void newTab(shell.id);
@@ -476,6 +490,7 @@ for (const c of [
   { id: "find.open", title: "Find in scrollback", category: "Terminal", when: isTerminal, run: () => terminalOf(active)?.findBar.open() },
   { id: "files.open", title: "Open Files (SFTP) on this server", category: "Files", when: isRemote, run: () => openFiles() },
   { id: "settings.open", title: "Open settings", category: "Settings", keywords: "preferences options", run: () => openSettings().then(() => active?.focus()) },
+  { id: "settings.shells", title: "Shell profiles", category: "Settings", keywords: "wsl environment variables folder default shell", run: () => openSettings("shells").then(() => active?.focus()) },
   { id: "vault.open", title: "Open the vault", category: "Vault", run: () => openVaultDialog().then(() => active?.focus()) },
 ] satisfies Command[]) {
   registerCommand(c);
@@ -510,11 +525,11 @@ registerProvider(() =>
   })),
 );
 registerProvider(() =>
-  shells.map((shell) => ({
+  launchable().map((shell) => ({
     id: `shell:${shell.id}`,
     title: shell.name,
     category: "New tab",
-    keywords: shell.program,
+    keywords: shell.detail,
     run: () => newTab(shell.id),
   })),
 );
@@ -664,6 +679,7 @@ window.addEventListener("beforeunload", () => flushSave());
 onSettingsChange((s, changed) => {
   if (changed.theme) applyTheme(s.theme);
   if (changed.keymap) applyKeymap();
+  if (changed.shellProfiles) renderMenu();
 });
 
 async function boot() {

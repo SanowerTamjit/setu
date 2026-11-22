@@ -283,17 +283,26 @@ fn choose_shell(shells: Vec<ShellProfile>, id: Option<&str>) -> Result<ShellProf
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn open_terminal(
     window: tauri::Window,
     state: State<'_, Terminals>,
     shell_id: Option<String>,
+    launch: Option<setu_pty::Launch>,
     cols: u16,
     rows: u16,
     on_output: Channel<InvokeResponseBody>,
     on_exit: Channel<u32>,
 ) -> Result<OpenedTerminal, String> {
     let shell = choose_shell(detect_shells(), shell_id.as_deref())?;
-    let opts = SpawnOptions::from(&shell).size(PtySize { rows, cols });
+    let opts = match launch {
+        Some(launch) => {
+            setu_pty::spawn_options(&shell, &launch, &crate::files::home_dir(), |p| p.is_dir())
+                .map_err(|e| e.to_string())?
+        }
+        None => SpawnOptions::from(&shell),
+    }
+    .size(PtySize { rows, cols });
 
     let id = state.next_id();
     let pipes = state.pipes(id, on_output, on_exit, window.label());

@@ -63,8 +63,16 @@ export const windowDetach = (payload: string, title: string) => invoke<void>("wi
 
 export const windowTake = (token: string) => invoke<string | null>("window_take", { token });
 
+/** What a shell profile changes about its base shell. */
+export interface Launch {
+  args: string[];
+  cwd: string;
+  env: [string, string][];
+}
+
 export function openTerminal(
   shellId: string | null,
+  launch: Launch | null,
   cols: number,
   rows: number,
   onOutput: (data: Uint8Array) => void,
@@ -77,6 +85,7 @@ export function openTerminal(
   exit.onmessage = onExit;
   return invoke<OpenedTerminal>("open_terminal", {
     shellId,
+    launch,
     cols,
     rows,
     onOutput: output,

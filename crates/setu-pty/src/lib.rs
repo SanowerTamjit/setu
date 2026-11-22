@@ -10,9 +10,11 @@
 //!
 //! It contains no UI code. The desktop app and the CLI both use it.
 
+pub mod launch;
 pub mod session;
 pub mod shells;
 
+pub use launch::{spawn_options, Launch, LaunchError};
 pub use session::{
     ExitStatus, PtyError, PtySession, PtySize, SpawnOptions, CURSOR_POSITION_REPLY,
     CURSOR_POSITION_REQUEST,

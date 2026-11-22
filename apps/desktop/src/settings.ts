@@ -27,6 +27,8 @@ export interface Settings {
   /** Hide things that look like secrets in terminal output. */
   maskSecrets: boolean;
   shellProfiles: ShellProfileSetting[];
+  /** Shell or profile id for new tabs; null means the system's default shell. */
+  defaultShell: string | null;
   /** The role chosen on first launch, or null before choosing. */
   role: string | null;
   fontSize: number;
@@ -38,6 +40,7 @@ export const DEFAULTS: Settings = {
   keymap: "default",
   maskSecrets: true,
   shellProfiles: [],
+  defaultShell: null,
   role: null,
   fontSize: 14,
 };
@@ -52,6 +55,7 @@ function sanitize(raw: unknown): Settings {
   if (r.theme === "dark" || r.theme === "light" || r.theme === "high-contrast") s.theme = r.theme;
   if (r.keymap === "default" || r.keymap === "vim" || r.keymap === "emacs") s.keymap = r.keymap;
   if (typeof r.maskSecrets === "boolean") s.maskSecrets = r.maskSecrets;
+  if (typeof r.defaultShell === "string") s.defaultShell = r.defaultShell;
   if (typeof r.role === "string" || r.role === null) s.role = r.role as string | null;
   if (typeof r.fontSize === "number" && r.fontSize >= 8 && r.fontSize <= 32) s.fontSize = r.fontSize;
   if (Array.isArray(r.shellProfiles)) {
