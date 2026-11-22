@@ -139,10 +139,15 @@ pub fn parse(text: &str) -> Result<Manifest, String> {
         if s.command.len() > MAX_COMMAND {
             return Err(format!("snippet `{}` is too long", s.id));
         }
-        if s.command
-            .chars()
-            .any(|c| c.is_control() && c != '\n' && c != '\t')
-        {
+        // One line only: in a shell without bracketed paste, each line
+        // break would press Enter, so a pack could run commands unseen.
+        if s.command.contains(['\n', '\r']) {
+            return Err(format!(
+                "snippet `{}` has more than one line; join commands with && or ;",
+                s.id
+            ));
+        }
+        if s.command.chars().any(|c| c.is_control() && c != '\t') {
             return Err(format!("snippet `{}` contains control characters", s.id));
         }
     }
@@ -276,6 +281,12 @@ mod tests {
             parse(&pack("acme.tools", "1.0.0", "ls\\u001b[2J")).is_err(),
             "escape codes"
         );
+        assert!(
+            parse(&pack("acme.tools", "1.0.0", "ls\\nrm -rf ~")).is_err(),
+            "a second line would run without Enter"
+        );
+        assert!(parse(&pack("acme.tools", "1.0.0", "a\\rb")).is_err());
+        assert!(parse(&pack("acme.tools", "1.0.0", "a\\tb")).is_ok());
         assert!(parse(r#"{"format":1,"id":"a.b","name":"N","version":"1.0.0","kind":"snippets","run":"x"}"#).is_err(), "unknown fields");
         assert!(
             parse(r#"{"format":2,"id":"a.b","name":"N","version":"1.0.0","kind":"snippets"}"#)
