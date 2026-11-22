@@ -15,13 +15,6 @@ export interface HostsHomeActions {
   openCount: (host: Host) => number;
 }
 
-/** A stable hue for a folder, so a folder's cards share a colour. */
-function hue(text: string) {
-  let h = 0;
-  for (const c of text) h = (h * 31 + c.charCodeAt(0)) % 360;
-  return h;
-}
-
 function initials(name: string) {
   // web-01 → W1, api-prod-01 → AP, bastion → BA.
   const parts = name.split(/[^A-Za-z0-9]+/).filter(Boolean);
@@ -215,7 +208,6 @@ export class HostsHome {
     const sub = (host.folder ?? "").split("/").slice(1).join(" / ");
     const open = this.actions.openCount(host);
     const avatar = el("span", { className: "avatar" }, initials(host.name));
-    avatar.style.setProperty("--hue", String(hue(host.folder || host.name)));
 
     const connect = el("button", { type: "button", className: "card-connect" }, icon("connect", 15), "Connect");
     connect.onclick = (e) => {
