@@ -82,6 +82,8 @@ pub fn run() {
             keys::ssh_keys_list,
             keys::ssh_key_generate,
             keys::ssh_key_add_to_agent,
+            keys::known_hosts_list,
+            keys::known_hosts_remove,
             hosts::hosts_list,
             hosts::host_save,
             hosts::host_delete,

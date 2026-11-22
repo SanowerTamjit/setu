@@ -160,3 +160,29 @@ pub async fn ssh_key_add_to_agent(path: String, passphrase: Option<String>) -> R
         .await
         .map_err(|e| e.to_string())
 }
+
+fn known_hosts_path() -> Result<PathBuf, String> {
+    setu_ssh::known_hosts::default_path()
+        .ok_or_else(|| "could not find your .ssh folder".to_string())
+}
+
+#[derive(Serialize)]
+pub struct KnownHosts {
+    path: String,
+    entries: Vec<setu_ssh::known_hosts::Entry>,
+}
+
+#[tauri::command]
+pub fn known_hosts_list() -> Result<KnownHosts, String> {
+    let path = known_hosts_path()?;
+    let entries = setu_ssh::known_hosts::entries(&path).map_err(|e| e.to_string())?;
+    Ok(KnownHosts {
+        path: path.to_string_lossy().into_owned(),
+        entries,
+    })
+}
+
+#[tauri::command]
+pub fn known_hosts_remove(line: usize, raw: String) -> Result<(), String> {
+    setu_ssh::known_hosts::remove(&known_hosts_path()?, line, &raw).map_err(|e| e.to_string())
+}

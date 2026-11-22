@@ -361,3 +361,18 @@ export const sshKeyGenerate = (name: string, kind: KeyKind, comment: string, pas
 
 export const sshKeyAddToAgent = (path: string, passphrase: string | null) =>
   invoke<void>("ssh_key_add_to_agent", { path, passphrase });
+
+export interface KnownHost {
+  line: number;
+  hosts: string[];
+  hashed: boolean;
+  marker: string | null;
+  algorithm: string;
+  fingerprint: string;
+  comment: string;
+  raw: string;
+}
+
+export const knownHostsList = () => invoke<{ path: string; entries: KnownHost[] }>("known_hosts_list");
+
+export const knownHostsRemove = (line: number, raw: string) => invoke<void>("known_hosts_remove", { line, raw });
