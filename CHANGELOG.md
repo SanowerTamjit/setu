@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Security
+
+- Host names that could not be real addresses (with spaces, commas or `*`, `?`, `!`, `|`, `@`, `[`, `]`, `#`) are refused when importing, connecting and trusting a host key. Before, a crafted name in an imported file could make "trust this host" add a key trusted for every host.
+- Only a host key that a server actually presented can be trusted from the trust prompt.
+- On Windows, file names from a server like `C:name` or `name:stream` are refused, so a download cannot land outside the chosen folder.
+- Files edited in a local editor are copied to a private per-user folder (`$XDG_RUNTIME_DIR` or `~/.cache/setu/edit` on Linux) instead of the shared `/tmp`, and with no editor set, file types that would run instead of open (`.bat`, `.exe`, `.desktop`, `.command`, …) are refused.
+- Pack snippets must be one line, so picking one can never run a command before you press Enter.
+- Release builds: GitHub Actions pinned to commit SHAs, signing secrets never given to pull-request builds, an SBOM with every nightly, and daily dependency advisory checks. See `docs/security/phase1-review.md`.
+
 ### Changed
 
 - A more restrained look: the Dark and Light themes now use neutral graphite and white surfaces with a blue accent instead of amber, and host cards, avatars, tags and buttons are quieter (one neutral avatar style, Connect as a secondary button, flat cards, smaller corners). High contrast is unchanged.
@@ -17,6 +26,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The Files tab's server-side buttons are now icons (Edit, Permissions, New folder, Rename, Delete) with tooltips.
 
 ### Added
+
+- Settings → **Features**: turn newer features (security keys, remote edit, paste guard) off or on. See `docs/feature-flags.md`.
+- Paste guard: pasting several lines into a shell that would run each line at once shows them and asks first.
 
 - GPU-rendered terminal (WebGL) with font ligatures: a Renderer setting (Automatic, GPU, DOM), a Font setting, and ligatures on by default for fonts that have them; the status bar shows which renderer is in use. See `docs/terminal.md`.
 - Files: **Pause**, **Resume** and **Retry** copies (one or all). Each file is written as `name.setu-part` and renamed when complete; resuming continues from the byte where it stopped, like `rsync --partial`. See `docs/files.md`.

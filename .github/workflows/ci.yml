@@ -62,6 +62,27 @@ jobs:
           fail-on-severity: moderate
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0, SSPL-1.0
 
+  changelog:
+    name: Changelog reminder
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # A reminder, not a gate: warns when app or crate code changed but
+      # CHANGELOG.md did not. Label the PR `no-changelog` to silence it.
+      - env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          SKIP: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        run: |
+          changed=$(git diff --name-only "$BASE" "$HEAD")
+          if [ "$SKIP" != true ] && echo "$changed" | grep -qE '^(apps|crates)/' && ! echo "$changed" | grep -qx CHANGELOG.md; then
+            echo "::warning file=CHANGELOG.md::Code changed but CHANGELOG.md did not. Add a line under Unreleased, or label the PR no-changelog."
+          fi
+
   test:
     name: Clippy and tests (${{ matrix.os }})
     strategy:

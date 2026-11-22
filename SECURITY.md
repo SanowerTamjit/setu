@@ -35,4 +35,11 @@ Out of scope: vulnerabilities in third-party servers you connect to, and issues 
 - Strict SSH host-key verification by default, with a clear warning when a key changes; no plaintext fallbacks.
 - Secrets are encrypted at rest (Argon2id key derivation, AEAD cipher) and are never written to logs, crash reports or telemetry.
 - Telemetry is off unless you opt in, and never records commands, hostnames or output.
-- Dependencies are pinned and checked with `cargo-deny` in CI.
+- Dependencies are pinned and checked with `cargo-deny` and `pnpm audit` in CI and every day; GitHub Actions are pinned to commit SHAs.
+- Data from servers and imported files is untrusted: file names, host names and snippets are checked before they reach the file system, `known_hosts` or a shell.
+
+See [docs/security/threat-model.md](docs/security/threat-model.md) for what is protected and the known gaps, and [docs/security/phase1-review.md](docs/security/phase1-review.md) for the latest review.
+
+## Verifying a download
+
+Every build comes with `SHA256SUMS`, a GitHub build-provenance attestation (`gh attestation verify <file> --repo SanowerTamjit/setu`) and an SPDX software bill of materials. See [docs/releasing.md](docs/releasing.md).

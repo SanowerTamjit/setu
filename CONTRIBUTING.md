@@ -42,9 +42,17 @@ cargo test --workspace
 - Fill in the PR template. CI must pass on macOS, Linux and Windows.
 - Maintainers aim for a first response within 48 hours.
 
+### Feature flags
+
+New features that are not tested everywhere yet, or that change behaviour people rely on, ship behind a flag. See [docs/feature-flags.md](docs/feature-flags.md).
+
+### Using AI assistants
+
+You are welcome to use them. [CLAUDE.md](CLAUDE.md) (read by Claude Code, and by other agents through [AGENTS.md](AGENTS.md)) has the project's rules and security checklist, and [docs/development-workflow.md](docs/development-workflow.md) describes how the project itself is built with them. You are responsible for every line you submit: read it, test it, and add a `Co-Authored-By:` trailer naming the assistant.
+
 ### Security-sensitive code
 
-Changes to `crates/setu-ssh`, `crates/setu-vault`, credential handling, host-key verification or cryptography need a review from a security code owner (see `.github/CODEOWNERS`). Never log secrets, passwords, keys or terminal output.
+Changes to `crates/setu-ssh`, `crates/setu-vault`, credential handling, host-key verification or cryptography need a review from a security code owner (see `.github/CODEOWNERS`). Never log secrets, passwords, keys or terminal output. The threat model is in [docs/security/threat-model.md](docs/security/threat-model.md).
 
 ## Sign your commits (DCO)
 
