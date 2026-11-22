@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Tabs come back after a restart: Setu reopens your tabs with their splits, divider positions and focused pane. Local panes start a fresh shell; SSH panes wait for Enter, then reconnect without the dialog unless a password, passphrase or host-key check needs you, and split SSH panes log in once. Saved in `session.json` (no secrets; mode 0600 on Unix), which `setu paths` now lists. See `docs/terminal.md`.
 - Split panes: split a terminal tab side by side (Ctrl+Shift+D) or stacked (Ctrl+Alt+Shift+D), as often as you like; drag the dividers to resize, move focus with Alt+Arrow keys, and close a pane with Ctrl+Shift+W. Splitting an SSH pane opens another shell over the same connection, with no new login. See `docs/terminal.md`.
 - Find in a terminal's scrollback (Ctrl+Shift+F): matches highlighted as you type, a match counter, next and previous, and match case, whole word and regular expression options. See `docs/terminal.md`.
 - Vault: **Unlock automatically on this computer** keeps the vault key in the macOS Keychain, Windows Credential Manager or the Linux Secret Service, so the vault opens at start-up and after the idle timeout without the master password. Off by default; **Lock now** still requires the password, and turning it off deletes the stored key. See `docs/vault.md`.

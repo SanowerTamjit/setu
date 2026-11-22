@@ -7,6 +7,7 @@
 
 import type { Tab } from "./tab";
 import { TerminalTab, type TabEvents } from "./terminal-tab";
+import type { SavedNode, SavedPane, SavedTab } from "./session";
 
 export type Direction = "right" | "down";
 
@@ -51,16 +52,71 @@ export class PaneTab implements Tab {
   private focusedPane: TerminalTab;
   private visible = false;
 
+  /**
+   * With `saved`, rebuilds that layout with empty panes; `setUp` is then
+   * called for each pane with what it held, to start its shell.
+   */
   constructor(
     container: HTMLElement,
     private readonly events: PaneTabEvents,
+    saved?: SavedTab,
+    setUp?: (pane: TerminalTab, saved: SavedPane) => void,
   ) {
     this.element = document.createElement("div");
     this.element.className = "pane-tab";
     container.appendChild(this.element);
-    this.focusedPane = this.createPane();
-    this.root = { kind: "leaf", pane: this.focusedPane };
-    this.layout();
+    if (saved) {
+      const restored: [TerminalTab, SavedPane][] = [];
+      this.root = this.build(saved.layout, restored);
+      this.focusedPane = restored[Math.min(Math.max(saved.focused, 0), restored.length - 1)][0];
+      this.layout();
+      for (const [pane, s] of restored) setUp?.(pane, s);
+    } else {
+      this.focusedPane = this.createPane();
+      this.root = { kind: "leaf", pane: this.focusedPane };
+      this.layout();
+    }
+  }
+
+  private build(saved: SavedNode, out: [TerminalTab, SavedPane][]): Node {
+    if ("pane" in saved) {
+      const pane = this.createPane();
+      out.push([pane, saved.pane]);
+      return { kind: "leaf", pane };
+    }
+    const divider = document.createElement("div");
+    divider.className = `pane-divider ${saved.split === "row" ? "vertical" : "horizontal"}`;
+    const split: Split = {
+      kind: "split",
+      axis: saved.split,
+      ratio: Math.min(1 - MIN_RATIO, Math.max(MIN_RATIO, saved.ratio)),
+      a: this.build(saved.a, out),
+      b: this.build(saved.b, out),
+      divider,
+    };
+    this.element.append(divider);
+    this.wireDivider(split);
+    return split;
+  }
+
+  /**
+   * The layout and what each pane holds, for session restore. Connection
+   * groups are numbered per tab: panes sharing a connection share a number.
+   */
+  save(): SavedTab {
+    const groups = new Map<object, number>();
+    const panes = this.panes;
+    const savePane = (p: TerminalTab): SavedPane => {
+      if (p.connection) {
+        const key = p.connectionGroup ?? p;
+        if (!groups.has(key)) groups.set(key, groups.size);
+        return { kind: "ssh", connection: p.connection, label: p.label, group: groups.get(key)! };
+      }
+      return { kind: "local", shellId: p.shell?.id ?? null };
+    };
+    const walk = (n: Node): SavedNode =>
+      n.kind === "leaf" ? { pane: savePane(n.pane) } : { split: n.axis, ratio: n.ratio, a: walk(n.a), b: walk(n.b) };
+    return { layout: walk(this.root), focused: Math.max(0, panes.indexOf(this.focusedPane)) };
   }
 
   /** The pane that has (or last had) keyboard focus. */
@@ -374,6 +430,7 @@ export class PaneTab implements Tab {
     d.addEventListener("dblclick", () => {
       split.ratio = 0.5;
       this.layout();
+      this.events.onChange(this);
     });
     d.addEventListener("pointerdown", (e) => {
       e.preventDefault();
@@ -389,6 +446,7 @@ export class PaneTab implements Tab {
       };
       const up = () => {
         d.classList.remove("dragging");
+        this.events.onChange(this);
         d.removeEventListener("pointermove", move);
         d.removeEventListener("pointerup", up);
         d.removeEventListener("pointercancel", up);

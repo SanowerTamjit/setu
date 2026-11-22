@@ -5,6 +5,7 @@ import type { Tab } from "./tab";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { FindBar } from "./find-bar";
+import { connectionOf, describe, type SavedConnection } from "./session";
 import {
   closeTerminal,
   openTerminal,
@@ -59,6 +60,17 @@ export class TerminalTab implements Tab {
   detail = "";
   isRemote = false;
   title = "Terminal";
+  /** How this SSH pane connected (no secrets), to reconnect after a restart. */
+  connection: SavedConnection | null = null;
+  /** The tab name a saved host gave this pane. */
+  label: string | undefined;
+  /**
+   * Panes holding the same object share one SSH connection (split panes);
+   * session restore uses it to log in once for all of them.
+   */
+  connectionGroup: object | null = null;
+  /** Set while the pane waits for Enter to reconnect after a restart. */
+  private reconnect: (() => void) | null = null;
 
   constructor(
     container: HTMLElement,
@@ -85,6 +97,10 @@ export class TerminalTab implements Tab {
     this.findBar = new FindBar(this.element, this.term);
 
     this.term.onData((data) => {
+      if (this.reconnect) {
+        if (data.includes("\r")) this.reconnect();
+        return;
+      }
       if (this.id !== null && !this.exited) void writeTerminal(this.id, data);
     });
     this.term.onTitleChange((title) => {
@@ -144,6 +160,9 @@ export class TerminalTab implements Tab {
     );
     this.id = id;
     this.isRemote = true;
+    this.reconnect = null;
+    this.connection = connectionOf(request);
+    this.connectionGroup = {};
     this.title = title;
     const port = request.port && request.port !== 22 ? `:${request.port}` : "";
     const via = request.jump ? ` via ${request.jump}` : "";
@@ -164,10 +183,39 @@ export class TerminalTab implements Tab {
       (code) => this.handleExit(code),
     );
     this.isRemote = true;
+    this.reconnect = null;
+    this.connection = from.connection;
+    this.connectionGroup = from.connectionGroup;
+    this.label = from.label;
     this.title = from.title;
     this.detail = from.detail;
     this.events.onTitle(this);
     this.refit();
+  }
+
+  /**
+   * Shows a restored SSH pane that is not connected yet; Enter calls
+   * `onEnter` (which connects, asking only for what it must).
+   */
+  waitForReconnect(connection: SavedConnection, label: string | undefined, group: object, onEnter: () => void) {
+    this.connection = connection;
+    this.label = label;
+    this.connectionGroup = group;
+    this.isRemote = true;
+    this.title = label ?? describe(connection);
+    const via = connection.jump ? ` via ${connection.jump}` : "";
+    this.detail = `ssh ${describe(connection)}${via} · not connected`;
+    this.reconnect = onEnter;
+    this.term.write(
+      `\x1b[2mRestored from your last session.\x1b[0m\r\n` +
+        `Press \x1b[1;33mEnter\x1b[0m to reconnect to \x1b[1m${describe(connection)}\x1b[0m${via}.\r\n`,
+    );
+    this.events.onTitle(this);
+  }
+
+  /** Waiting for Enter to reconnect (a restored SSH pane). */
+  get awaitingReconnect() {
+    return this.reconnect !== null;
   }
 
   private firstOutput = true;

@@ -29,6 +29,16 @@ A tab can hold several terminals. **Ctrl+Shift+D** splits the focused pane side 
 
 Closing one SSH pane leaves the connection open for the others; it closes when the last pane or Files tab using it closes.
 
+## Tabs come back after a restart
+
+When Setu starts, it reopens the tabs you had open, with the same splits, divider positions, focused pane and active tab.
+
+- **Local panes** start a fresh shell of the same kind. The scrollback and running programs are not kept, and neither is the working directory (yet).
+- **SSH panes** don't connect by themselves. Each one shows "Press Enter to reconnect to user@host". Enter connects without showing the dialog, unless something is needed: a password or passphrase (or the vault to unlock), or a host key to trust. Panes of one tab that shared a connection share it again, so a split SSH tab needs one login.
+- **Files tabs** are not reopened; open them again from the SSH tab (Ctrl+Shift+E).
+
+The layout is saved as `session.json` in Setu's config folder (`setu paths` shows where) a moment after each change. It holds host names, ports, user names, the authentication method and key file paths, never passwords, passphrases, anything you typed or any output. On Unix only you can read it. To start with a single fresh tab, quit Setu and delete that file.
+
 ## Find in scrollback
 
 Press **Ctrl+Shift+F** in a terminal tab (in a split tab, it searches the focused pane). If text is selected on one line, the search starts with it.
