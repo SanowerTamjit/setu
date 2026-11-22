@@ -3760,3 +3760,476 @@ button.with-icon {
 .lp-row.b { top: 38px; }
 .lp-head { left: calc(24% + 10px); right: 4px; top: 16px; height: 9px; background: var(--bg-elevated) !important; border: 1px solid var(--border); border-radius: 4px 4px 0 0 !important; }
 .studio .lp-term { left: calc(24% + 10px); right: 4px; top: 25px; bottom: 4px; border-radius: 0 0 4px 4px; }
+
+/* ================================================================
+   Studio: the futuristic skin. Glass panels over a deep "space"
+   background, neon edges and glows, HUD-style labels. Dark and Light
+   get the effects; High contrast keeps solid black and white.
+   ================================================================ */
+
+:root[data-layout="studio"] {
+  --st-space: #05070d;
+  --st-panel: rgba(15, 20, 33, 0.72);
+  --st-panel-solid: #0d121d;
+  --st-row-hover: rgba(120, 160, 255, 0.07);
+  --st-edge: rgba(130, 170, 255, 0.14);
+  --st-edge-hi: rgba(110, 190, 255, 0.5);
+  --st-neon: #4c8dff;
+  --st-neon-2: #22d3ee;
+  --st-neon-3: #8b5cf6;
+  --st-term: #0a0d14;
+  --st-text-dim: #7f8aa3;
+  --st-glow: 0 0 0 1px rgba(76, 141, 255, 0.4), 0 0 22px rgba(76, 141, 255, 0.28);
+  --st-glow-soft: 0 0 18px rgba(76, 141, 255, 0.18);
+  --st-card-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(130, 170, 255, 0.06), 0 0 60px rgba(76, 141, 255, 0.07);
+  --st-blur: blur(16px) saturate(150%);
+  --st-backdrop:
+    radial-gradient(1100px 620px at 8% -12%, rgba(76, 141, 255, 0.2), transparent 62%),
+    radial-gradient(900px 560px at 108% 112%, rgba(139, 92, 246, 0.18), transparent 60%),
+    radial-gradient(700px 400px at 70% 10%, rgba(34, 211, 238, 0.07), transparent 65%),
+    linear-gradient(rgba(130, 170, 255, 0.035) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, rgba(130, 170, 255, 0.035) 1px, transparent 1px) 0 0 / 44px 44px;
+  --st-hairline: linear-gradient(90deg, transparent, var(--st-neon) 20%, var(--st-neon-2) 50%, var(--st-neon-3) 80%, transparent);
+  --st-primary: linear-gradient(135deg, #3d7bff 0%, #6d5cf6 100%);
+}
+
+:root[data-layout="studio"][data-theme="light"] {
+  --st-space: #eef2fa;
+  --st-panel: rgba(255, 255, 255, 0.72);
+  --st-panel-solid: #ffffff;
+  --st-row-hover: rgba(37, 99, 235, 0.06);
+  --st-edge: rgba(37, 99, 235, 0.14);
+  --st-edge-hi: rgba(37, 99, 235, 0.45);
+  --st-neon: #2563eb;
+  --st-neon-2: #0891b2;
+  --st-neon-3: #7c3aed;
+  --st-term: #fbfcff;
+  --st-text-dim: #5b6478;
+  --st-glow: 0 0 0 1px rgba(37, 99, 235, 0.35), 0 0 18px rgba(37, 99, 235, 0.18);
+  --st-glow-soft: 0 0 16px rgba(37, 99, 235, 0.12);
+  --st-card-shadow: 0 20px 50px rgba(30, 50, 100, 0.14), 0 0 0 1px rgba(37, 99, 235, 0.05);
+  --st-backdrop:
+    radial-gradient(1100px 620px at 8% -12%, rgba(37, 99, 235, 0.13), transparent 62%),
+    radial-gradient(900px 560px at 108% 112%, rgba(124, 58, 237, 0.1), transparent 60%),
+    linear-gradient(rgba(37, 99, 235, 0.045) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, rgba(37, 99, 235, 0.045) 1px, transparent 1px) 0 0 / 44px 44px;
+  --st-primary: linear-gradient(135deg, #2563eb 0%, #6d28d9 100%);
+}
+
+:root[data-layout="studio"][data-theme="high-contrast"] {
+  --st-space: #000000;
+  --st-panel: #000000;
+  --st-panel-solid: #000000;
+  --st-row-hover: #1f1f1f;
+  --st-edge: #ffffff;
+  --st-edge-hi: #ffd400;
+  --st-neon: #ffd400;
+  --st-neon-2: #ffd400;
+  --st-neon-3: #ffd400;
+  --st-term: #000000;
+  --st-text-dim: #e0e0e0;
+  --st-glow: 0 0 0 2px #ffd400;
+  --st-glow-soft: none;
+  --st-card-shadow: none;
+  --st-blur: none;
+  --st-backdrop: none;
+  --st-hairline: #ffffff;
+  --st-primary: #ffd400;
+}
+
+/* Space background with a faint grid */
+:root[data-layout="studio"] body,
+:root[data-layout="studio"] #app,
+:root[data-layout="studio"] .workspace {
+  background: var(--st-space);
+}
+
+:root[data-layout="studio"] #app {
+  background: var(--st-backdrop), var(--st-space);
+}
+
+:root[data-layout="studio"] .workspace {
+  background: transparent;
+}
+
+/* Glass panels */
+:root[data-layout="studio"] .st-titlebar,
+:root[data-layout="studio"] .st-navigator,
+:root[data-layout="studio"] .st-header,
+:root[data-layout="studio"] .hosts-home {
+  background: var(--st-panel);
+  -webkit-backdrop-filter: var(--st-blur);
+  backdrop-filter: var(--st-blur);
+}
+
+:root[data-layout="studio"] .st-titlebar {
+  position: relative;
+  border-bottom: 1px solid var(--st-edge);
+}
+
+/* A neon hairline under the title bar */
+:root[data-layout="studio"] .st-titlebar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--st-hairline);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.st-brand span {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--text), var(--st-neon-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+:root[data-theme="high-contrast"] .st-brand span {
+  background: none;
+  color: var(--text);
+}
+
+.st-brand .icon {
+  color: var(--st-neon-2);
+  filter: drop-shadow(0 0 6px var(--st-neon-2));
+}
+
+:root[data-theme="high-contrast"] .st-brand .icon {
+  color: var(--accent);
+  filter: none;
+}
+
+.st-views,
+.st-search,
+.st-status .status-button {
+  background: color-mix(in srgb, var(--st-panel-solid) 70%, transparent);
+  border-color: var(--st-edge);
+}
+
+.st-view.current {
+  color: var(--text);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--st-neon) 22%, transparent), color-mix(in srgb, var(--st-neon) 8%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-neon) 45%, transparent), var(--st-glow-soft);
+}
+
+.st-search {
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.st-search:hover,
+.st-search:focus-visible {
+  border-color: var(--st-edge-hi);
+  box-shadow: var(--st-glow);
+  outline: none;
+}
+
+.st-search .icon {
+  color: var(--st-neon-2);
+}
+
+.st-search-keys {
+  color: var(--st-neon-2);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--st-neon-2) 40%, transparent);
+}
+
+.st-tool:hover,
+.st-action:hover {
+  color: var(--st-neon-2);
+  background: color-mix(in srgb, var(--st-neon-2) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-neon-2) 30%, transparent);
+}
+
+/* Navigator: a floating glass panel */
+:root[data-layout="studio"] .st-navigator {
+  margin: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
+  border: 1px solid var(--st-edge);
+  border-radius: 16px;
+  box-shadow: var(--st-card-shadow);
+  overflow: hidden;
+}
+
+.st-new > .st-new-button,
+.st-new > .st-new-more {
+  color: #fff;
+  background: var(--st-primary);
+  border-color: transparent;
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--st-neon) 40%, transparent);
+}
+
+.st-new > .st-new-more {
+  border-left-color: rgba(255, 255, 255, 0.28);
+}
+
+:root[data-theme="high-contrast"] .st-new > .st-new-button,
+:root[data-theme="high-contrast"] .st-new > .st-new-more {
+  color: #000;
+  box-shadow: none;
+}
+
+.st-new > .st-new-ssh {
+  background: transparent;
+  border-color: var(--st-edge);
+}
+
+.st-new > .st-new-ssh:hover {
+  border-color: var(--st-edge-hi);
+  box-shadow: var(--st-glow-soft);
+}
+
+/* HUD section labels: mono, spaced, with a neon tick and a fading rule */
+.st-section-title {
+  gap: var(--space-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--st-text-dim);
+}
+
+.st-section-title > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.st-section-title > span:first-child::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  background: var(--st-neon-2);
+  box-shadow: 0 0 8px var(--st-neon-2);
+  transform: rotate(45deg);
+}
+
+.st-section-title > span:first-child::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--st-edge-hi), transparent);
+  opacity: 0.6;
+}
+
+.st-section-title .count {
+  font-family: var(--mono);
+  color: var(--st-neon-2);
+}
+
+/* Session rows */
+.st-session:hover {
+  background: var(--st-row-hover);
+}
+
+.st-session.current {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--st-neon) 20%, transparent), color-mix(in srgb, var(--st-neon) 4%, transparent) 70%);
+  border-color: color-mix(in srgb, var(--st-neon) 40%, transparent);
+  box-shadow: var(--st-glow-soft);
+}
+
+.st-session.current::before {
+  background: linear-gradient(180deg, var(--st-neon-2), var(--st-neon), var(--st-neon-3));
+  box-shadow: 0 0 10px var(--st-neon);
+}
+
+.st-session-icon {
+  background: color-mix(in srgb, var(--st-panel-solid) 60%, transparent);
+  border: 1px solid var(--st-edge);
+}
+
+.st-session.current .st-session-icon,
+.st-header-icon {
+  color: var(--st-neon-2);
+  background: color-mix(in srgb, var(--st-neon-2) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-neon-2) 40%, transparent);
+}
+
+.st-dot {
+  border-color: var(--st-panel-solid);
+}
+
+.st-session.current .st-dot {
+  border-color: var(--st-panel-solid);
+}
+
+/* Glows are static: an endless animation repaints the glass panels and
+   keeps a CPU core busy where WebKitGTK has no compositing. */
+.st-session.live .st-dot {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 25%, transparent), 0 0 8px var(--success);
+}
+
+.st-session.waiting .st-dot {
+  box-shadow: 0 0 8px var(--warn);
+}
+
+.st-session.exited .st-dot {
+  box-shadow: 0 0 6px var(--danger);
+}
+
+.st-session-detail {
+  color: var(--st-text-dim);
+}
+
+.st-badge {
+  color: var(--st-neon-2);
+  border-color: color-mix(in srgb, var(--st-neon-2) 35%, transparent);
+}
+
+.st-hosts {
+  border-top-color: var(--st-edge);
+}
+
+:root[data-layout="studio"] .st-hosts .panel-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--st-text-dim);
+}
+
+:root[data-layout="studio"] .st-hosts .panel-search input {
+  background: color-mix(in srgb, var(--st-panel-solid) 70%, transparent);
+  border-color: var(--st-edge);
+}
+
+:root[data-layout="studio"] .st-hosts .host-row:hover,
+:root[data-layout="studio"] .st-hosts .host-row.selected {
+  background: var(--st-row-hover);
+}
+
+/* Stage: header + terminal as one glowing card */
+:root[data-layout="studio"] .workspace {
+  padding: var(--space-3) var(--space-3) var(--space-3) 0;
+}
+
+:root[data-layout="studio"] .st-header {
+  position: relative;
+  border-color: var(--st-edge);
+  border-radius: 16px 16px 0 0;
+}
+
+/* The neon edge along the top of the card */
+:root[data-layout="studio"] .st-header::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--st-hairline);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--st-neon) 60%, transparent);
+  pointer-events: none;
+}
+
+:root[data-theme="high-contrast"][data-layout="studio"] .st-header::before {
+  display: none;
+}
+
+.st-header-title {
+  letter-spacing: 0.01em;
+}
+
+.st-header-detail {
+  color: var(--st-text-dim);
+}
+
+.st-pill {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.st-pill.ssh {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--success) 30%, transparent);
+}
+
+:root[data-theme="high-contrast"] .st-pill.ssh {
+  box-shadow: none;
+}
+
+.st-action.labelled {
+  border-color: color-mix(in srgb, var(--st-neon-2) 35%, transparent);
+}
+
+:root[data-layout="studio"] .workspace .terminals {
+  background: var(--st-term);
+  border-color: var(--st-edge);
+  border-radius: 0 0 16px 16px;
+  box-shadow: var(--st-card-shadow);
+}
+
+:root[data-layout="studio"] .st-header[hidden] ~ .terminals {
+  border-radius: 16px;
+}
+
+:root[data-layout="studio"] .hosts-home {
+  border-color: var(--st-edge);
+  border-radius: 16px;
+  box-shadow: var(--st-card-shadow);
+}
+
+/* Host cards as glass tiles that light up on hover */
+:root[data-layout="studio"] .host-card {
+  background: color-mix(in srgb, var(--st-panel-solid) 65%, transparent);
+  border-color: var(--st-edge);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+:root[data-layout="studio"] .host-card:hover,
+:root[data-layout="studio"] .host-card:focus-visible {
+  border-color: var(--st-edge-hi);
+  box-shadow: var(--st-glow);
+  transform: translateY(-1px);
+}
+
+:root[data-layout="studio"] .home-search {
+  background: color-mix(in srgb, var(--st-panel-solid) 70%, transparent);
+  border-color: var(--st-edge);
+}
+
+/* Dialogs float over a blurred workspace */
+:root[data-layout="studio"] .overlay {
+  background: color-mix(in srgb, var(--st-space) 55%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+:root[data-layout="studio"] .overlay > .dialog {
+  background: var(--st-panel-solid);
+  border: 1px solid var(--st-edge-hi);
+  border-radius: 16px;
+  box-shadow: var(--st-card-shadow), var(--st-glow-soft);
+}
+
+:root[data-theme="high-contrast"][data-layout="studio"] .overlay {
+  background: rgb(0 0 0 / 70%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Thin neon scrollbars */
+:root[data-layout="studio"] .st-navigator ::-webkit-scrollbar,
+:root[data-layout="studio"] .hosts-home::-webkit-scrollbar {
+  width: 8px;
+}
+
+:root[data-layout="studio"] .st-navigator ::-webkit-scrollbar-thumb,
+:root[data-layout="studio"] .hosts-home::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--st-neon) 35%, transparent);
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-layout="studio"] .host-card {
+    transition: none;
+    transform: none !important;
+  }
+}

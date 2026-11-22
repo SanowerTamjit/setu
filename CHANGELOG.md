@@ -27,7 +27,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- A second window layout, **Studio**, next to the current one (now called **Classic**): open sessions listed on the left with their connection state, a search box for hosts, commands and snippets in a new title bar, and a header over the terminal with Files, split, find and new-window buttons. Pick it in Settings → Appearance → **Layout**, from the command palette, or with the layout button; switching keeps your sessions running. See `docs/terminal.md`.
+- A second window layout, **Studio**, with a futuristic look (glass panels, neon edges, HUD-style labels), next to the current one (now called **Classic**): open sessions listed on the left with their connection state, a search box for hosts, commands and snippets in a new title bar, and a header over the terminal with Files, split, find and new-window buttons. Pick it in Settings → Appearance → **Layout**, from the command palette, or with the layout button; switching keeps your sessions running. See `docs/terminal.md`.
 - Settings → **Features**: turn newer features (security keys, remote edit, paste guard) off or on. See `docs/feature-flags.md`.
 - Paste guard: pasting several lines into a shell that would run each line at once shows them and asks first.
 

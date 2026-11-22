@@ -21,6 +21,6 @@ export const LAYOUTS: readonly LayoutInfo[] = [
   {
     id: "studio",
     name: "Studio",
-    description: "Sessions listed on the left, search for everything at the top, actions over the terminal.",
+    description: "Futuristic: glass panels and neon edges, sessions on the left, search for everything at the top.",
   },
 ];
