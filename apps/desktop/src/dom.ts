@@ -52,7 +52,14 @@ export function modal(content: HTMLElement, onClose: () => void) {
 }
 
 /** A small yes-or-no dialog; resolves true when the action is chosen. */
-export function confirmDialog(title: string, text: string | HTMLElement, action: string, danger = false): Promise<boolean> {
+export function confirmDialog(
+  title: string,
+  text: string | HTMLElement,
+  action: string,
+  danger = false,
+  /** Start on Cancel, so a reflex Enter does not confirm. */
+  safeDefault = false,
+): Promise<boolean> {
   return new Promise((resolve) => {
     let yes = false;
     const ok = el("button", { type: "submit", className: danger ? "danger-solid" : "primary" }, action);
@@ -61,7 +68,7 @@ export function confirmDialog(title: string, text: string | HTMLElement, action:
     const form = el("form", { className: "dialog small" }, el("h2", {}, title), body, el("div", { className: "actions" }, cancel, ok));
     const { close } = modal(form, () => resolve(yes));
     cancel.onclick = close;
-    ok.focus();
+    (safeDefault ? cancel : ok).focus();
     form.onsubmit = (e) => {
       e.preventDefault();
       yes = true;

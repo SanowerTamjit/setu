@@ -17,11 +17,15 @@ export function runningLines(text: string): number {
   return (text.match(/\r\n|\r|\n/g) ?? []).length;
 }
 
+/** Whether pasting `text` now would run lines unseen, so it needs asking. */
+export function needsPasteCheck(term: Terminal, text: string): boolean {
+  return enabled("pasteGuard") && !term.modes.bracketedPasteMode && runningLines(text) > 0;
+}
+
 /** Resolves true when the text may be pasted now. */
 export async function pasteAllowed(term: Terminal, text: string): Promise<boolean> {
-  if (!enabled("pasteGuard") || term.modes.bracketedPasteMode) return true;
+  if (!needsPasteCheck(term, text)) return true;
   const lines = runningLines(text);
-  if (lines === 0) return true;
   const all = text.split(/\r\n|\r|\n/);
   const shown = all.slice(0, PREVIEW_LINES).join("\n");
   const more = all.length > PREVIEW_LINES ? `\n… and ${all.length - PREVIEW_LINES} more lines` : "";
@@ -35,5 +39,5 @@ export async function pasteAllowed(term: Terminal, text: string): Promise<boolea
     ),
     el("pre", { className: "paste-preview" }, shown + more),
   );
-  return confirmDialog("Paste and run these lines?", body, "Paste anyway", true);
+  return confirmDialog("Paste and run these lines?", body, "Paste anyway", true, true);
 }
