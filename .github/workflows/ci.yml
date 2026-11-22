@@ -49,7 +49,10 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    if: github.event_name == 'pull_request'
+    # Needs GitHub's dependency graph (Settings → Code security). Once it is
+    # on, set the repository variable DEPENDENCY_REVIEW to `on` (Settings →
+    # Secrets and variables → Actions → Variables) to run this check.
+    if: github.event_name == 'pull_request' && vars.DEPENDENCY_REVIEW == 'on'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -57,7 +60,7 @@ jobs:
           persist-credentials: false
       # Fails a pull request that adds a dependency with a known
       # vulnerability or a license outside deny.toml's list.
-      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           fail-on-severity: moderate
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0, SSPL-1.0

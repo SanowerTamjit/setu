@@ -44,7 +44,7 @@ A review of everything in Phase 1 (PRs #1 to #23) for ways data could leak or be
 | Provenance | Sigstore attestation | Unchanged, now covers the SBOM |
 | New CVEs between pull requests | Found only on the next PR | Daily `audit.yml` (RustSec + npm) |
 | Static analysis | Clippy only | CodeQL for Rust, TypeScript and the workflows (security-extended) |
-| Dependency review | None | Pull requests adding vulnerable or copyleft dependencies fail |
+| Dependency review | None | Pull requests adding vulnerable or copyleft dependencies fail (runs once the dependency graph is on, see below) |
 | OpenSSF Scorecard | None | Weekly, results under Security → Code scanning |
 | Reproducibility | `--locked`, `--frozen-lockfile`, stable toolchain | Unchanged; exact toolchain pinning is left for versioned releases |
 
@@ -52,7 +52,7 @@ A review of everything in Phase 1 (PRs #1 to #23) for ways data could leak or be
 
 These need a click in GitHub settings; nothing in the repository can do them:
 
-1. **Settings → Code security**: turn on *Private vulnerability reporting* (SECURITY.md points to it), *Dependabot alerts* and *security updates*, *Secret scanning* and *Push protection*.
+1. **Settings → Code security**: turn on *Dependency graph*, *Private vulnerability reporting* (SECURITY.md points to it), *Dependabot alerts* and *security updates*, *Secret scanning* and *Push protection*. Then add the repository variable `DEPENDENCY_REVIEW` = `on` (Settings → Secrets and variables → Actions → Variables) so the dependency review check runs on pull requests.
 2. **Settings → Branches → master**: require pull requests, the CI checks, and signed-off commits; block force pushes.
 3. **Settings → Environments**: create `release`, limited to `master`, and move the signing secrets there (then add `environment: release` to the nightly build job).
 4. **Settings → Actions → General**: "Allow actions … pinned to a full-length commit SHA" and read-only `GITHUB_TOKEN` by default.
