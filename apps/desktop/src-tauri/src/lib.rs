@@ -2,7 +2,7 @@
 //!
 //! The web view only renders. Shells, SSH sessions, saved hosts and the
 //! vault run in Rust and talk to the UI through the commands in [`terminals`],
-//! [`ssh`], [`files`], [`hosts`], [`vault`] and [`session`].
+//! [`ssh`], [`files`], [`hosts`], [`vault`], [`workflows`] and [`session`].
 
 mod files;
 mod hosts;
@@ -14,6 +14,7 @@ mod ssh;
 mod terminals;
 mod vault;
 mod windows;
+mod workflows;
 
 use serde::Serialize;
 
@@ -47,6 +48,7 @@ pub fn run() {
         .manage(session::SettingsFile::from_env())
         .manage(windows::Detached::default())
         .manage(ssh::OfferedKeys::default())
+        .manage(workflows::Workflows::from_env())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             let vault = app.state::<vault::VaultState>().inner().clone();
@@ -126,6 +128,14 @@ pub fn run() {
             remote_edit::remote_edit_open,
             remote_edit::remote_edit_push,
             remote_edit::remote_edit_stop,
+            workflows::workflows_list,
+            workflows::workflow_save,
+            workflows::workflow_delete,
+            workflows::workflow_run,
+            workflows::workflow_answer,
+            workflows::workflow_cancel,
+            workflows::workflow_history,
+            workflows::workflow_history_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

@@ -52,6 +52,15 @@ export const FLAGS = [
     default: true,
     since: "0.1.0",
   },
+  {
+    id: "workflows",
+    title: "Workflows",
+    description:
+      "The Workflows view: draw steps that run commands on your saved hosts in order or in parallel, with approvals, failure branches and run history.",
+    stage: "beta",
+    default: true,
+    since: "0.1.0",
+  },
 ] as const satisfies readonly FeatureFlag[];
 
 export type FlagId = (typeof FLAGS)[number]["id"];

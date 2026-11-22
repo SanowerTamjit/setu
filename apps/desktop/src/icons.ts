@@ -37,6 +37,8 @@ const PATHS = {
   splitDown: "M4 5h16v14H4zM4 12h16",
   window: "M9 4h11v11M20 4l-9 9M15 20H4V9",
   retry: "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4",
+  // Three boxes joined by arrows: a workflow.
+  workflow: "M3.5 4.5h6v5h-6zM14.5 4.5h6v5h-6zM9 17h6v4H9zM9.5 7h5M17.5 9.5v3.5H12V17M6.5 9.5v3.5H12",
 } as const;
 
 export type IconName = keyof typeof PATHS;
