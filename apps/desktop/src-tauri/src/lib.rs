@@ -2,10 +2,11 @@
 //!
 //! The web view only renders. Shells, SSH sessions, saved hosts and the
 //! vault run in Rust and talk to the UI through the commands in [`terminals`],
-//! [`ssh`], [`files`], [`hosts`] and [`vault`].
+//! [`ssh`], [`files`], [`hosts`], [`vault`] and [`session`].
 
 mod files;
 mod hosts;
+mod session;
 mod ssh;
 mod terminals;
 mod vault;
@@ -37,6 +38,7 @@ pub fn run() {
         .manage(hosts::Hosts::from_env())
         .manage(vault::VaultState::from_env())
         .manage(files::Files::default())
+        .manage(session::SessionFile::from_env())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             let vault = app.state::<vault::VaultState>().inner().clone();
@@ -72,6 +74,9 @@ pub fn run() {
             vault::vault_remember,
             vault::vault_remove,
             vault::vault_change_password,
+            session::session_load,
+            session::session_save,
+            session::session_clear,
             files::files_open,
             files::files_close,
             files::files_list,

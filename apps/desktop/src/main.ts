@@ -10,6 +10,7 @@ import { HostsPanel } from "./hosts-panel";
 import { vaultStatus, type Host, type VaultStatus } from "./ipc";
 import { onVaultChange, openVaultDialog } from "./vault-dialog";
 import { listen } from "@tauri-apps/api/event";
+import { dialogValues, describe, flushSave, loadSession, scheduleSave, SESSION_VERSION, type SavedPane, type SavedTab, type Session } from "./session";
 
 const tabsEl = document.getElementById("tabs")!;
 const terminalsEl = document.getElementById("terminals")!;
@@ -35,19 +36,35 @@ function terminalOf(tab: Tab | null): TerminalTab | null {
   return tab instanceof PaneTab ? tab.focused : null;
 }
 
-function createPaneTab() {
-  return new PaneTab(terminalsEl, {
-    onChange: () => {
-      renderTabs();
-      renderStatus();
+function createPaneTab(saved?: SavedTab, setUp?: (pane: TerminalTab, saved: SavedPane) => void) {
+  return new PaneTab(
+    terminalsEl,
+    {
+      onChange: () => {
+        renderTabs();
+        renderStatus();
+      },
+      onResize: (t) => {
+        if (t === active) renderStatus();
+      },
     },
-    onResize: (t) => {
-      if (t === active) renderStatus();
-    },
-  });
+    saved,
+    setUp,
+  );
 }
 
+/** The open terminal tabs as session.json stores them (Files tabs are not kept). */
+function snapshot(): Session {
+  const kept = tabs.filter((t): t is PaneTab => t instanceof PaneTab);
+  const activeIndex = active instanceof PaneTab ? kept.indexOf(active) : -1;
+  return { version: SESSION_VERSION, tabs: kept.map((t) => t.save()), active: Math.max(0, activeIndex) };
+}
+
+/** Set once the saved session has been put back, so it is not overwritten while loading. */
+let restoring = true;
+
 function renderTabs() {
+  if (!restoring) scheduleSave(snapshot);
   tabsEl.replaceChildren(
     ...tabs.map((tab, i) => {
       const el = document.createElement("div");
@@ -103,7 +120,7 @@ function renderStatus() {
   statusShell.textContent = active.detail;
   statusSize.textContent = active.sizeLabel;
   const term = terminalOf(active);
-  statusFiles.hidden = !(term && term.isRemote && !term.hasExited);
+  statusFiles.hidden = !(term && term.isRemote && !term.hasExited && term.sessionId !== null);
 }
 
 function activate(tab: Tab) {
@@ -139,7 +156,10 @@ async function newSshTab(options: DialogOptions = {}, label?: string, then?: (ta
     activate(tab);
     try {
       await tab.focused.startSsh(request);
-      if (label) tab.title = label;
+      if (label) {
+        tab.title = label;
+        tab.focused.label = label;
+      }
       renderTabs();
       renderStatus();
       then?.(tab.focused);
@@ -372,6 +392,57 @@ document.addEventListener(
 
 new ResizeObserver(() => active?.refit()).observe(terminalsEl);
 
+/**
+ * Reconnects a restored SSH pane: the connect dialog stays hidden unless it
+ * needs something (a password, a passphrase, a new host key). The other
+ * panes of the tab that shared this connection then open shells on it.
+ */
+function reconnectPane(tab: PaneTab, pane: TerminalTab) {
+  const connection = pane.connection;
+  const group = pane.connectionGroup;
+  if (!connection) return;
+  const name = pane.label ?? describe(connection);
+  void openSshDialog(
+    async (request) => {
+      await pane.startSsh(request);
+      pane.connectionGroup = group;
+      if (pane.label) pane.title = pane.label;
+      renderTabs();
+      renderStatus();
+      for (const other of tab.panes) {
+        if (other !== pane && other.awaitingReconnect && other.connectionGroup === group) {
+          void other.startSshFrom(pane).catch((err) => {
+            other.term.write(`\x1b[31mCould not open the pane: ${String(err)}\x1b[0m\r\n`);
+          });
+        }
+      }
+    },
+    { title: `Reconnect to ${name}`, autoConnect: true, prefill: dialogValues(connection) },
+  ).then(() => pane.focus());
+}
+
+/** Reopens last time's tabs: local shells start, SSH panes wait for Enter. */
+function restoreSession(session: Session) {
+  for (const saved of session.tabs) {
+    // One object per saved connection group, shared by its panes.
+    const groups = new Map<number, object>();
+    const tab: PaneTab = createPaneTab(saved, (pane, s) => {
+      if (s.kind === "local") {
+        void pane.start(s.shellId).catch((err) => {
+          pane.term.write(`\x1b[31mCould not start the shell: ${String(err)}\x1b[0m\r\n`);
+        });
+      } else {
+        if (!groups.has(s.group)) groups.set(s.group, {});
+        pane.waitForReconnect(s.connection, s.label, groups.get(s.group)!, () => reconnectPane(tab, pane));
+      }
+    });
+    tabs.push(tab);
+  }
+  activate(tabs[session.active] ?? tabs[0]);
+}
+
+window.addEventListener("beforeunload", () => flushSave());
+
 async function boot() {
   const [info, found] = await Promise.all([appInfo(), listShells()]);
   shells = found;
@@ -388,8 +459,15 @@ async function boot() {
   void vaultStatus().then(renderVault);
   statusVersion.textContent = `Setu ${info.version} · ${info.os}`;
   renderMenu();
-  // Plug and play: a working terminal on first launch, no wizard.
-  await newTab();
+  const session = await loadSession();
+  if (session) {
+    restoreSession(session);
+  } else {
+    // Plug and play: a working terminal on first launch, no wizard.
+    await newTab();
+  }
+  restoring = false;
+  renderTabs();
 }
 
 void boot();
