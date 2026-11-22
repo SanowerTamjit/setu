@@ -10,6 +10,7 @@ mod session;
 mod ssh;
 mod terminals;
 mod vault;
+mod windows;
 
 use serde::Serialize;
 
@@ -40,6 +41,7 @@ pub fn run() {
         .manage(files::Files::default())
         .manage(session::SessionFile::from_env())
         .manage(session::SettingsFile::from_env())
+        .manage(windows::Detached::default())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             let vault = app.state::<vault::VaultState>().inner().clone();
@@ -53,6 +55,15 @@ pub fn run() {
             });
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // A closed window ends the shells it was showing.
+            if let tauri::WindowEvent::Destroyed = event {
+                use tauri::Manager;
+                window
+                    .state::<terminals::Terminals>()
+                    .close_shown_in(window.label());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             app_info,
             terminals::list_shells,
@@ -60,6 +71,10 @@ pub fn run() {
             terminals::write_terminal,
             terminals::resize_terminal,
             terminals::close_terminal,
+            terminals::terminal_hold,
+            terminals::terminal_attach,
+            windows::window_detach,
+            windows::window_take,
             ssh::ssh_connect,
             ssh::ssh_open_shell,
             ssh::ssh_trust_host,

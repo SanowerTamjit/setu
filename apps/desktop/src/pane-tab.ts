@@ -194,8 +194,9 @@ export class PaneTab implements Tab {
     this.focusedPane.focus();
   }
 
-  async dispose() {
-    await Promise.all(this.panes.map((p) => p.dispose()));
+  /** `keepSessions`: the panes' shells live on in another window. */
+  async dispose(keepSessions = false) {
+    await Promise.all(this.panes.map((p) => p.dispose(keepSessions)));
     this.element.remove();
   }
 

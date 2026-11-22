@@ -283,8 +283,11 @@ pub struct OpenedSsh {
     saved_to_vault: bool,
 }
 
+// A Tauri command's arguments are what the UI sends; grouping them would only move the list.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn ssh_connect(
+    window: tauri::Window,
     state: State<'_, Terminals>,
     vault: State<'_, VaultState>,
     request: ConnectRequest,
@@ -318,12 +321,20 @@ pub async fn ssh_connect(
         }
         Err(e) => return Err(e.into()),
     };
-    let id = open_shell(&state, Arc::new(client), cols, rows, on_output, on_exit)
-        .await
-        .map_err(|e| match e {
-            ShellError::Ssh(e) => ConnectFailure::from(e),
-            ShellError::State(message) => ConnectFailure::Error { message },
-        })?;
+    let id = open_shell(
+        &state,
+        window.label(),
+        Arc::new(client),
+        cols,
+        rows,
+        on_output,
+        on_exit,
+    )
+    .await
+    .map_err(|e| match e {
+        ShellError::Ssh(e) => ConnectFailure::from(e),
+        ShellError::State(message) => ConnectFailure::Error { message },
+    })?;
     // Saving is best effort: the connection already works.
     let saved_to_vault = match to_save {
         Some((kind, target, secret)) => vault.save(kind, &target, secret).unwrap_or(false),
@@ -344,6 +355,7 @@ enum ShellError {
 /// Opens an interactive shell on `client` and registers it as terminal session.
 async fn open_shell(
     state: &Terminals,
+    window: &str,
     client: Arc<setu_ssh::SshClient>,
     cols: u16,
     rows: u16,
@@ -351,18 +363,14 @@ async fn open_shell(
     on_exit: Channel<u32>,
 ) -> Result<u32, ShellError> {
     let id = state.next_id();
-    let sessions = Arc::clone(&state.sessions);
+    let pipes = state.pipes(id, on_output, on_exit, window);
+    let on_exit = state.exit_handler(id, Arc::clone(&pipes));
     let shell = client
         .open_shell(
             ShellSize { cols, rows },
-            output_sink(on_output),
-            move |code| {
-                // 255 is what OpenSSH reports when the connection drops without a status.
-                let _ = on_exit.send(code.unwrap_or(255));
-                if let Ok(mut map) = sessions.lock() {
-                    map.remove(&id);
-                }
-            },
+            output_sink(pipes),
+            // 255 is what OpenSSH reports when the connection drops without a status.
+            move |code| on_exit(code.unwrap_or(255)),
         )
         .await
         .map_err(ShellError::Ssh)?;
@@ -376,6 +384,7 @@ async fn open_shell(
 /// split pane: no new login, and it shares the connection's jump hosts.
 #[tauri::command]
 pub async fn ssh_open_shell(
+    window: tauri::Window,
     state: State<'_, Terminals>,
     terminal_id: u32,
     cols: u16,
@@ -386,12 +395,20 @@ pub async fn ssh_open_shell(
     let client = state
         .ssh_client(terminal_id)
         .ok_or("that pane is not an open SSH connection")?;
-    open_shell(&state, client, cols, rows, on_output, on_exit)
-        .await
-        .map_err(|e| match e {
-            ShellError::Ssh(e) => e.to_string(),
-            ShellError::State(message) => message,
-        })
+    open_shell(
+        &state,
+        window.label(),
+        client,
+        cols,
+        rows,
+        on_output,
+        on_exit,
+    )
+    .await
+    .map_err(|e| match e {
+        ShellError::Ssh(e) => e.to_string(),
+        ShellError::State(message) => message,
+    })
 }
 
 /// Records a host key the user explicitly accepted in the trust prompt.

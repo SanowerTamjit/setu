@@ -41,6 +41,28 @@ export interface OpenedTerminal {
  * Starts a shell in a new pseudo-terminal. Output arrives as raw bytes on
  * `onOutput`; `onExit` fires once with the exit code when the shell ends.
  */
+function channels(onOutput: (data: Uint8Array) => void, onExit: (code: number) => void) {
+  const output = new Channel<ArrayBuffer | number[]>();
+  output.onmessage = (msg) =>
+    onOutput(msg instanceof ArrayBuffer ? new Uint8Array(msg) : Uint8Array.from(msg));
+  const exit = new Channel<number>();
+  exit.onmessage = onExit;
+  return { onOutput: output, onExit: exit };
+}
+
+/** Keeps these sessions' output while their tab moves to another window. */
+export const terminalHold = (ids: number[]) => invoke<void>("terminal_hold", { ids });
+
+/** Shows a running session in this window, starting with what it printed meanwhile. */
+export function terminalAttach(id: number, onOutput: (data: Uint8Array) => void, onExit: (code: number) => void) {
+  return invoke<void>("terminal_attach", { id, ...channels(onOutput, onExit) });
+}
+
+/** Opens a new window for a tab; `payload` is handed to it once. */
+export const windowDetach = (payload: string, title: string) => invoke<void>("window_detach", { payload, title });
+
+export const windowTake = (token: string) => invoke<string | null>("window_take", { token });
+
 export function openTerminal(
   shellId: string | null,
   cols: number,

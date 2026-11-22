@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window. Setu's own terminal commands are app commands and need no plugin permissions.",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "Permissions for Setu's windows (the main one and tabs moved into their own). Setu's own terminal commands are app commands and need no plugin permissions.",
+  "windows": [
+    "main",
+    "detached-*"
+  ],
+  "permissions": [
+    "core:default"
+  ]
 }

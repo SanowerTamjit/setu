@@ -1,7 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
-import { appInfo, listShells, type ShellProfile } from "./ipc";
-import type { TerminalTab } from "./terminal-tab";
+import { appInfo, listShells, terminalHold, windowDetach, windowTake, type ShellProfile } from "./ipc";
+import type { MovedPane, TerminalTab } from "./terminal-tab";
 import { PaneTab, type Direction } from "./pane-tab";
 import { FilesTab } from "./files-tab";
 import type { Tab } from "./tab";
@@ -69,8 +69,78 @@ function snapshot(): Session {
 /** Set once the saved session has been put back, so it is not overwritten while loading. */
 let restoring = true;
 
+/** A window opened for a moved tab; only the main window saves the session. */
+const detachedToken = new URLSearchParams(location.search).get("detached");
+const isMainWindow = detachedToken === null;
+
+interface MovedTab {
+  layout: SavedTab;
+  panes: MovedPane[];
+}
+
+/** Moves a tab, with its running shells, into a new window of its own. */
+async function detachTab(tab: Tab | null = active) {
+  if (!(tab instanceof PaneTab)) return;
+  const panes = tab.panes;
+  const ids = panes.flatMap((p) => (p.sessionId !== null && !p.hasExited ? [p.sessionId] : []));
+  const payload: MovedTab = { layout: tab.save(), panes: panes.map((p) => p.handOver()) };
+  await terminalHold(ids);
+  try {
+    await windowDetach(JSON.stringify(payload), tab.title);
+  } catch (err) {
+    // The window did not open: keep the tab here, showing output again.
+    for (const p of panes) {
+      const moved = payload.panes[panes.indexOf(p)];
+      if (moved.sessionId !== null) void p.takeOver({ ...moved, scrollback: "" });
+    }
+    reportMoveError(tab, err);
+    return;
+  }
+  const i = tabs.indexOf(tab);
+  tabs.splice(i, 1);
+  await tab.dispose(true);
+  if (active === tab) {
+    active = null;
+    const next = tabs[Math.min(i, tabs.length - 1)];
+    if (next) activate(next);
+  }
+  if (tabs.length === 0) await newTab();
+  renderTabs();
+  renderStatus();
+}
+
+function reportMoveError(tab: PaneTab, err: unknown) {
+  tab.focused.term.write(`\r\n\x1b[31mCould not move this tab to a new window: ${String(err)}\x1b[0m\r\n`);
+}
+
+/** In a window opened for a moved tab: takes the tab over. */
+async function receiveTab(token: string): Promise<boolean> {
+  const text = await windowTake(token).catch(() => null);
+  if (!text) return false;
+  const moved = JSON.parse(text) as MovedTab;
+  let i = 0;
+  const groups = new Map<number, object>();
+  const tab: PaneTab = createPaneTab(moved.layout, (pane, s) => {
+    const m = moved.panes[i++];
+    if (s.kind === "ssh") {
+      if (!groups.has(s.group)) groups.set(s.group, {});
+      if (!m || m.sessionId === null) {
+        pane.waitForReconnect(s.connection, s.label, groups.get(s.group)!, () => reconnectPane(tab, pane));
+        return;
+      }
+      pane.connection = s.connection;
+      pane.label = s.label;
+      pane.connectionGroup = groups.get(s.group)!;
+    }
+    if (m) void pane.takeOver(m);
+  });
+  tabs.push(tab);
+  activate(tab);
+  return true;
+}
+
 function renderTabs() {
-  if (!restoring) scheduleSave(snapshot);
+  if (!restoring && isMainWindow) scheduleSave(snapshot);
   tabsEl.replaceChildren(
     ...tabs.map((tab, i) => {
       const el = document.createElement("div");
@@ -80,6 +150,18 @@ function renderTabs() {
       el.title = tab.tooltip;
       if (tab instanceof FilesTab) el.classList.add("files");
       el.onclick = () => activate(tab);
+      // Drag a tab out of the window to give it a window of its own.
+      if (tab instanceof PaneTab) {
+        el.draggable = true;
+        el.ondragend = (e) => {
+          const outside =
+            e.screenX < window.screenX ||
+            e.screenY < window.screenY ||
+            e.screenX > window.screenX + window.outerWidth ||
+            e.screenY > window.screenY + window.outerHeight;
+          if (outside && (e.screenX !== 0 || e.screenY !== 0)) void detachTab(tab);
+        };
+      }
       el.onauxclick = (e) => {
         if (e.button === 1) void closeTab(tab);
       };
@@ -377,6 +459,7 @@ for (const c of [
   { id: "pane.focusRight", title: "Focus pane on the right", category: "Pane", run: () => focusPane(1, 0) },
   { id: "pane.focusUp", title: "Focus pane above", category: "Pane", run: () => focusPane(0, -1) },
   { id: "pane.focusDown", title: "Focus pane below", category: "Pane", run: () => focusPane(0, 1) },
+  { id: "tab.detach", title: "Move tab to a new window", category: "Tab", keywords: "detach window", when: () => active instanceof PaneTab, run: () => detachTab() },
   { id: "tab.close", title: "Close tab", category: "Tab", run: () => (active ? closeTab(active) : undefined) },
   { id: "tab.next", title: "Next tab", category: "Tab", run: () => cycle(1) },
   { id: "tab.previous", title: "Previous tab", category: "Tab", run: () => cycle(-1) },
@@ -600,7 +683,12 @@ async function boot() {
   void vaultStatus().then(renderVault);
   statusVersion.textContent = `Setu ${info.version} · ${info.os}`;
   applyKeymap();
-  const session = await loadSession();
+  if (detachedToken !== null && (await receiveTab(detachedToken))) {
+    restoring = false;
+    renderTabs();
+    return;
+  }
+  const session = isMainWindow ? await loadSession() : null;
   if (session) {
     restoreSession(session);
   } else {

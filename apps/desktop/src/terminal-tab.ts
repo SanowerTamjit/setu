@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import type { Tab } from "./tab";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { FindBar } from "./find-bar";
 import { onSettingsChange, settings } from "./settings";
 import { terminalTheme } from "./themes";
@@ -14,6 +15,7 @@ import {
   resizeTerminal,
   sshConnect,
   sshOpenShell,
+  terminalAttach,
   writeTerminal,
   type ConnectRequest,
   type ShellProfile,
@@ -30,6 +32,7 @@ export class TerminalTab implements Tab {
   readonly element: HTMLDivElement;
   readonly term: Terminal;
   private readonly fit = new FitAddon();
+  private readonly serializer = new SerializeAddon();
   readonly findBar: FindBar;
   private id: number | null = null;
   private exited = false;
@@ -73,6 +76,7 @@ export class TerminalTab implements Tab {
       theme: terminalTheme(settings().theme),
     });
     this.term.loadAddon(this.fit);
+    this.term.loadAddon(this.serializer);
     this.term.open(this.element);
     this.findBar = new FindBar(this.element, this.term);
     this.unsubscribe = onSettingsChange((s, changed) => {
@@ -133,6 +137,41 @@ export class TerminalTab implements Tab {
     this.title = shell.name;
     this.detail = `${shell.name} · ${shell.program}`;
     this.events.onTitle(this);
+  }
+
+  /** What a new window needs to take this pane over, including its scrollback. */
+  handOver(): MovedPane {
+    return {
+      sessionId: this.exited ? null : this.id,
+      scrollback: this.serializer.serialize({ scrollback: 2000 }),
+      title: this.title,
+      detail: this.detail,
+      isRemote: this.isRemote,
+      shell: this.shell,
+      exited: this.exited,
+    };
+  }
+
+  /** Takes over a pane moved from another window: same session, same scrollback. */
+  async takeOver(moved: MovedPane) {
+    this.shell = moved.shell;
+    this.isRemote = moved.isRemote;
+    this.title = moved.title;
+    this.detail = moved.detail;
+    this.firstOutput = false;
+    await new Promise<void>((resolve) => this.term.write(moved.scrollback, resolve));
+    if (moved.sessionId !== null && !moved.exited) {
+      this.id = moved.sessionId;
+      await terminalAttach(
+        moved.sessionId,
+        (data) => this.write(data),
+        (code) => this.handleExit(code),
+      );
+    } else {
+      this.exited = true;
+    }
+    this.events.onTitle(this);
+    this.refit();
   }
 
   /** Connects over SSH. Rejects with a ConnectFailure the caller can act on. */
@@ -277,11 +316,24 @@ export class TerminalTab implements Tab {
     }, 30);
   }
 
-  async dispose() {
-    if (this.id !== null && !this.exited) await closeTerminal(this.id).catch(() => {});
+  /** `keepSession`: the session lives on in another window. */
+  async dispose(keepSession = false) {
+    if (!keepSession && this.id !== null && !this.exited) await closeTerminal(this.id).catch(() => {});
     this.unsubscribe();
     this.findBar.dispose();
     this.term.dispose();
     this.element.remove();
   }
+}
+
+/** A pane on its way to another window. */
+export interface MovedPane {
+  sessionId: number | null;
+  /** The visible screen and scrollback, as escape sequences. */
+  scrollback: string;
+  title: string;
+  detail: string;
+  isRemote: boolean;
+  shell: ShellProfile | null;
+  exited: boolean;
 }
