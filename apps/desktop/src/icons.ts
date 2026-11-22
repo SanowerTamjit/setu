@@ -32,6 +32,10 @@ const PATHS = {
   rename: "M4 17.5V20h2.5L17 9.5 14.5 7zM13 8.5l2.5 2.5M14 20h6",
   trash: "M5 7h14M9.5 7V4.5h5V7M7 7l1 13h8l1-13M10.5 10.5v6M13.5 10.5v6",
   play: "M8 5.5v13l10.5-6.5z",
+  layout: "M4 5h16v14H4zM9 5v14M9 10h11",
+  splitRight: "M4 5h16v14H4zM12 5v14",
+  splitDown: "M4 5h16v14H4zM4 12h16",
+  window: "M9 4h11v11M20 4l-9 9M15 20H4V9",
   retry: "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4",
 } as const;
 

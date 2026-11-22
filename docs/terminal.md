@@ -29,6 +29,15 @@ Ctrl+Shift+P opens one search box over everything: commands, saved hosts (`Conne
 
 Settings → Appearance has three themes, each covering the whole app and the terminal colours: **Dark** (the default), **Light** and **High contrast** (pure black and white with strong focus outlines). The terminal font size is set there too. Themes are also in the palette (`Theme`).
 
+## Layouts: Classic and Studio
+
+Settings → Appearance → **Layout** switches how the window is arranged. Both show the same tabs, hosts and dialogs, and switching keeps every shell and connection running.
+
+- **Classic** (the default): the icon rail on the left, tabs across the top, the hosts sidebar beside the terminal and a status bar at the bottom.
+- **Studio**: a title bar with a search box for everything (it opens the command palette), a **Terminals / Hosts** switch, and the vault, keys, snippets and settings on the right. The navigator on the left lists open sessions with their state (a green dot for a connected SSH session, amber while it waits to reconnect, red once it has exited), with the saved hosts tree under them. Above the terminal, a header shows the session's name, state, address and size, with buttons for Files, Split right, Split down, Find and Move to a new window. The button left of the Setu name hides or shows the navigator.
+
+Switch from the palette too (`Layout: Classic layout`, `Layout: Studio layout`), or with the layout button in the Classic rail and in the Studio title bar. The choice is saved as `"layout"` in `settings.json`.
+
 ## Rendering, fonts and ligatures
 
 Settings → Terminal → Rendering chooses how terminals are drawn:
