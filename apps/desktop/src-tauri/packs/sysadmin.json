@@ -1,0 +1,40 @@
+{
+  "format": 1,
+  "id": "setu.sysadmin",
+  "name": "System administrator",
+  "version": "1.0.0",
+  "description": "Everyday Linux checks: disks, memory, services, logs, logins, network and updates.",
+  "kind": "role-pack",
+  "roles": ["sysadmin"],
+  "os": ["linux", "macos", "windows"],
+  "permissions": [],
+  "contributes": {
+    "snippets": [
+      { "id": "disk-usage", "title": "Disk usage by filesystem", "command": "df -hT -x tmpfs -x devtmpfs", "tags": ["disk"] },
+      { "id": "inode-usage", "title": "Inode usage", "command": "df -i -x tmpfs -x devtmpfs", "tags": ["disk"] },
+      { "id": "largest-dirs", "title": "Largest folders here", "command": "du -xh --max-depth=1 . 2>/dev/null | sort -rh | head -20", "tags": ["disk"] },
+      { "id": "large-files", "title": "Files over 500 MB", "command": "find / -xdev -type f -size +500M -exec ls -lh {} + 2>/dev/null | sort -k5 -rh | head -20", "tags": ["disk"] },
+      { "id": "memory", "title": "Memory and swap", "command": "free -h && vmstat 1 5", "tags": ["memory"] },
+      { "id": "top-cpu", "title": "Processes using the most CPU", "command": "ps -eo pid,user,%cpu,%mem,etime,cmd --sort=-%cpu | head -15", "tags": ["processes"] },
+      { "id": "top-mem", "title": "Processes using the most memory", "command": "ps -eo pid,user,%mem,rss,etime,cmd --sort=-%mem | head -15", "tags": ["processes"] },
+      { "id": "uptime", "title": "Uptime, load and OS version", "command": "uptime && cat /etc/os-release | head -4 && uname -r", "tags": ["system"] },
+      { "id": "failed-units", "title": "Failed systemd services", "command": "systemctl --failed --no-pager", "tags": ["services"] },
+      { "id": "service-status", "title": "Status of a service", "command": "systemctl status SERVICE --no-pager", "description": "Replace SERVICE before pressing Enter.", "tags": ["services"] },
+      { "id": "service-restart", "title": "Restart a service and show its status", "command": "sudo systemctl restart SERVICE && systemctl status SERVICE --no-pager", "description": "Replace SERVICE before pressing Enter.", "tags": ["services"] },
+      { "id": "service-logs", "title": "Follow a service's logs", "command": "journalctl -u SERVICE -f -n 100", "description": "Replace SERVICE before pressing Enter.", "tags": ["logs", "services"] },
+      { "id": "boot-errors", "title": "Errors since boot", "command": "journalctl -b -p err --no-pager | tail -50", "tags": ["logs"] },
+      { "id": "kernel-messages", "title": "Recent kernel messages", "command": "dmesg -T --level=err,warn | tail -30", "tags": ["logs"] },
+      { "id": "auth-log", "title": "Recent sign-in attempts", "command": "journalctl -u ssh -u sshd --since '1 hour ago' --no-pager | tail -40", "tags": ["security", "logs"] },
+      { "id": "who", "title": "Who is signed in, and recent logins", "command": "w && last -n 10", "tags": ["security"] },
+      { "id": "listening-ports", "title": "Listening ports and their programs", "command": "sudo ss -tulpn", "tags": ["network"] },
+      { "id": "connections", "title": "Connections per remote address", "command": "ss -tn state established | awk 'NR>1 {split($4,a,\":\"); print a[1]}' | sort | uniq -c | sort -rn | head", "tags": ["network"] },
+      { "id": "dns-check", "title": "Check a name resolves", "command": "getent hosts NAME || dig +short NAME", "description": "Replace NAME before pressing Enter.", "tags": ["network"] },
+      { "id": "firewall", "title": "Firewall status", "command": "sudo ufw status verbose 2>/dev/null || sudo firewall-cmd --list-all 2>/dev/null || sudo iptables -S", "tags": ["network", "security"] },
+      { "id": "time-sync", "title": "Clock and time sync", "command": "timedatectl", "tags": ["system"] },
+      { "id": "cert-expiry", "title": "When a site's certificate expires", "command": "echo | openssl s_client -connect HOST:443 -servername HOST 2>/dev/null | openssl x509 -noout -dates -subject", "description": "Replace HOST before pressing Enter.", "tags": ["security", "network"] },
+      { "id": "updates-apt", "title": "Pending updates (Debian, Ubuntu)", "command": "sudo apt update && apt list --upgradable", "tags": ["updates"] },
+      { "id": "updates-dnf", "title": "Pending updates (RHEL, Fedora)", "command": "sudo dnf check-update", "tags": ["updates"] },
+      { "id": "reboot-needed", "title": "Is a reboot needed?", "command": "[ -f /var/run/reboot-required ] && cat /var/run/reboot-required* || needs-restarting -r 2>/dev/null || echo 'No reboot flag found'", "tags": ["updates"] }
+    ]
+  }
+}

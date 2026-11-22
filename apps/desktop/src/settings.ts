@@ -29,8 +29,10 @@ export interface Settings {
   shellProfiles: ShellProfileSetting[];
   /** Shell or profile id for new tabs; null means the system's default shell. */
   defaultShell: string | null;
-  /** The role chosen on first launch, or null before choosing. */
+  /** The role chosen on first launch ("none" when skipped), or null before choosing. */
   role: string | null;
+  /** Packs turned on or off by hand; others follow the default (see packs.ts). */
+  packs: Record<string, boolean>;
   fontSize: number;
 }
 
@@ -42,6 +44,7 @@ export const DEFAULTS: Settings = {
   shellProfiles: [],
   defaultShell: null,
   role: null,
+  packs: {},
   fontSize: 14,
 };
 
@@ -56,6 +59,11 @@ function sanitize(raw: unknown): Settings {
   if (r.keymap === "default" || r.keymap === "vim" || r.keymap === "emacs") s.keymap = r.keymap;
   if (typeof r.maskSecrets === "boolean") s.maskSecrets = r.maskSecrets;
   if (typeof r.defaultShell === "string") s.defaultShell = r.defaultShell;
+  if (r.packs && typeof r.packs === "object") {
+    for (const [k, v] of Object.entries(r.packs as Record<string, unknown>)) {
+      if (typeof v === "boolean") s.packs[k] = v;
+    }
+  }
   if (typeof r.role === "string" || r.role === null) s.role = r.role as string | null;
   if (typeof r.fontSize === "number" && r.fontSize >= 8 && r.fontSize <= 32) s.fontSize = r.fontSize;
   if (Array.isArray(r.shellProfiles)) {

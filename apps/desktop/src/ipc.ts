@@ -385,3 +385,36 @@ export interface KnownHost {
 export const knownHostsList = () => invoke<{ path: string; entries: KnownHost[] }>("known_hosts_list");
 
 export const knownHostsRemove = (line: number, raw: string) => invoke<void>("known_hosts_remove", { line, raw });
+
+// ---- Packs ----
+
+export interface Snippet {
+  id: string;
+  title: string;
+  command: string;
+  description?: string;
+  tags?: string[];
+}
+
+export interface PackManifest {
+  format: number;
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  kind: "role-pack" | "snippets";
+  roles: string[];
+  os: string[];
+  permissions: string[];
+  contributes: { snippets: Snippet[] };
+}
+
+export interface PackView extends PackManifest {
+  builtIn: boolean;
+}
+
+export const packsList = () => invoke<PackView[]>("packs_list");
+export const packInspect = (text: string) =>
+  invoke<{ manifest: PackManifest; replaces: string | null }>("pack_inspect", { text });
+export const packInstall = (text: string) => invoke<PackManifest>("pack_install", { text });
+export const packRemove = (id: string) => invoke<void>("pack_remove", { id });

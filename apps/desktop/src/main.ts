@@ -19,6 +19,7 @@ import { openKeyManager } from "./key-manager";
 import { copyText } from "./dom";
 import "./known-hosts";
 import { openJumpMap } from "./jump-map";
+import { loadPacks, openRolePicker, registerSnippets } from "./packs";
 import { loadSettings, onSettingsChange, settings, updateSettings } from "./settings";
 import { applyTheme, THEMES } from "./themes";
 import { dialogValues, describe, flushSave, loadSession, scheduleSave, SESSION_VERSION, type SavedPane, type SavedTab, type Session } from "./session";
@@ -518,6 +519,8 @@ for (const c of [
   { id: "secrets.toggle", title: "Hide secrets in output: turn on or off", category: "Terminal", keywords: "mask redact password token privacy", run: () => updateSettings({ maskSecrets: !settings().maskSecrets }) },
   { id: "hosts.jumpMap", title: "Jump-host map", category: "Hosts", keywords: "bastion proxyjump topology diagram", run: () => openJumpMap(hostsPanel.hosts, (h) => connectHost(h)).then(() => active?.focus()) },
   { id: "hosts.import", title: "Import hosts", category: "Hosts", keywords: "putty mobaxterm termius csv ansible inventory ssh config", run: () => hostsPanel.openImport() },
+  { id: "packs.open", title: "Packs and snippets", category: "Settings", keywords: "role pack install snippet", run: () => openSettings("packs").then(() => active?.focus()) },
+  { id: "role.choose", title: "Choose your role", category: "Settings", keywords: "sysadmin devops secops netops pack", run: () => openRolePicker().then(() => active?.focus()) },
   { id: "keys.open", title: "Manage SSH keys", category: "SSH", keywords: "keygen ed25519 rsa agent fingerprint public key", run: () => openKeyManager().then(() => active?.focus()) },
   { id: "knownHosts.open", title: "Known hosts", category: "SSH", keywords: "known_hosts host key fingerprint forget remove", run: () => openKeyManager("known-hosts").then(() => active?.focus()) },
   { id: "vault.open", title: "Open the vault", category: "Vault", run: () => openVaultDialog().then(() => active?.focus()) },
@@ -553,6 +556,13 @@ registerProvider(() =>
     run: () => connectHost(host),
   })),
 );
+registerSnippets((command) => {
+  const pane = terminalOf(active);
+  if (!pane) return;
+  // Typed, not run: the person reads it, edits placeholders, then presses Enter.
+  pane.term.paste(command);
+  pane.focus();
+});
 registerProvider(() =>
   launchable().map((shell) => ({
     id: `shell:${shell.id}`,
@@ -712,7 +722,7 @@ onSettingsChange((s, changed) => {
 });
 
 async function boot() {
-  const [info, found] = await Promise.all([appInfo(), listShells(), loadSettings()]);
+  const [info, found] = await Promise.all([appInfo(), listShells(), loadSettings(), loadPacks()]);
   applyTheme(settings().theme);
   shells = found;
   localUser = info.user;
@@ -742,6 +752,11 @@ async function boot() {
   }
   restoring = false;
   renderTabs();
+  // Asked once, over a working terminal, and easy to skip.
+  if (settings().role === null) {
+    await openRolePicker();
+    active?.focus();
+  }
 }
 
 void boot();

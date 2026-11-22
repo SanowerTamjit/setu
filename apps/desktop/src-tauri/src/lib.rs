@@ -7,6 +7,7 @@
 mod files;
 mod hosts;
 mod keys;
+mod packs;
 mod session;
 mod ssh;
 mod terminals;
@@ -90,6 +91,10 @@ pub fn run() {
             hosts::ssh_config_scan,
             hosts::ssh_config_import,
             hosts::hosts_parse_file,
+            packs::packs_list,
+            packs::pack_inspect,
+            packs::pack_install,
+            packs::pack_remove,
             vault::vault_status,
             vault::vault_create,
             vault::vault_unlock,
