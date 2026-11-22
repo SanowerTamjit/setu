@@ -116,6 +116,7 @@ pub fn run() {
             files::local_list,
             files::transfer,
             files::transfer_cancel,
+            files::transfer_pause,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

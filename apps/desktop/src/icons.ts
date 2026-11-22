@@ -26,6 +26,9 @@ const PATHS = {
   folder: "M3.5 7V18.5h17V8.5H11l-2-2.5H3.5z",
   chevronDown: "M7 10l5 5 5-5",
   chevronRight: "M10 7l5 5-5 5",
+  pause: "M9 6v12M15 6v12",
+  play: "M8 5.5v13l10.5-6.5z",
+  retry: "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4",
 } as const;
 
 export type IconName = keyof typeof PATHS;

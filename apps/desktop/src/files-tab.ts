@@ -12,10 +12,12 @@ import {
   localList,
   transfer,
   transferCancel,
+  transferPause,
   type FileEntry,
   type Listing,
   type TransferProgress,
 } from "./ipc";
+import { icon } from "./icons";
 import type { Tab } from "./tab";
 
 const FOLDER_ICON =
@@ -313,7 +315,7 @@ class Pane {
   }
 }
 
-type Status = "queued" | "running" | "done" | "failed" | "cancelled";
+type Status = "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
 
 interface Job {
   id: number;
@@ -323,8 +325,12 @@ interface Job {
   targetDir: string;
   status: Status;
   progress: TransferProgress | null;
+  /** Continue partial files and skip finished ones (set by Resume and Retry). */
+  resume: boolean;
   error?: string;
   started?: number;
+  /** Bytes done when this run started, so speed counts only this run. */
+  startBytes?: number;
   row?: HTMLElement;
 }
 
@@ -340,6 +346,8 @@ export class FilesTab implements Tab {
   private readonly queue: Job[] = [];
   private readonly queueList: HTMLDivElement;
   private readonly queueTitle: HTMLSpanElement;
+  private readonly pauseAll: HTMLButtonElement;
+  private readonly resumeAll: HTMLButtonElement;
   private running = false;
   private disposed = false;
 
@@ -376,14 +384,22 @@ export class FilesTab implements Tab {
     const clear = el("button", { className: "text-button" }, "Clear finished");
     clear.onclick = () => {
       for (let i = this.queue.length - 1; i >= 0; i--) {
-        if (["done", "failed", "cancelled"].includes(this.queue[i].status)) this.queue.splice(i, 1);
+        if (["done", "cancelled"].includes(this.queue[i].status)) this.queue.splice(i, 1);
       }
       this.renderQueue();
+    };
+    this.pauseAll = el("button", { className: "text-button" }, "Pause all");
+    this.pauseAll.onclick = () => {
+      for (const job of this.queue) if (job.status === "queued" || job.status === "running") this.pause(job);
+    };
+    this.resumeAll = el("button", { className: "text-button" }, "Resume all");
+    this.resumeAll.onclick = () => {
+      for (const job of this.queue) if (job.status === "paused" || job.status === "failed") this.resume(job);
     };
     this.queueList = el("div", { className: "queue-list" });
     this.element = el("div", { className: "files-tab" },
       el("div", { className: "panes" }, this.local.element, this.remote.element),
-      el("div", { className: "queue" }, el("div", { className: "queue-head" }, this.queueTitle, el("span", { className: "spacer" }), clear), this.queueList),
+      el("div", { className: "queue" }, el("div", { className: "queue-head" }, this.queueTitle, el("span", { className: "spacer" }), this.pauseAll, this.resumeAll, clear), this.queueList),
     );
     container.appendChild(this.element);
     this.renderQueue();
@@ -478,6 +494,7 @@ export class FilesTab implements Tab {
         targetDir: to.path,
         status: "queued",
         progress: null,
+        resume: false,
       });
     }
     this.renderQueue();
@@ -493,18 +510,23 @@ export class FilesTab implements Tab {
       while (!this.disposed && (job = this.queue.find((j) => j.status === "queued"))) {
         job.status = "running";
         job.started = performance.now();
+        job.startBytes = undefined;
+        job.error = undefined;
         this.renderQueue();
         const current = job;
         try {
-          current.progress = await transfer(this.id(), current.id, current.direction, current.source, current.targetDir, (p) => {
+          current.progress = await transfer(this.id(), current.id, current.direction, current.source, current.targetDir, current.resume, (p) => {
             current.progress = p;
+            current.startBytes ??= p.doneBytes;
             this.updateRow(current);
           });
           current.status = "done";
         } catch (err) {
           const text = errorText(err);
-          current.status = /cancelled/.test(text) ? "cancelled" : "failed";
-          current.error = text;
+          current.status = text === "paused" ? "paused" : /cancelled/.test(text) ? "cancelled" : "failed";
+          if (current.status === "failed") current.error = text;
+          // A paused or failed copy keeps its partial files; going on continues them.
+          if (current.status !== "cancelled") current.resume = true;
         }
         this.renderQueue();
         const target = current.direction === "upload" ? this.remote : this.local;
@@ -516,7 +538,7 @@ export class FilesTab implements Tab {
   }
 
   private cancel(job: Job) {
-    if (job.status === "queued") {
+    if (job.status === "queued" || job.status === "paused" || job.status === "failed") {
       job.status = "cancelled";
       this.renderQueue();
     } else if (job.status === "running") {
@@ -524,16 +546,44 @@ export class FilesTab implements Tab {
     }
   }
 
+  private pause(job: Job) {
+    if (job.status === "queued") {
+      job.status = "paused";
+      this.renderQueue();
+    } else if (job.status === "running") {
+      void transferPause(job.id);
+    }
+  }
+
+  /** Queues a paused, failed or cancelled copy again, continuing partial files. */
+  private resume(job: Job) {
+    if (job.status === "queued" || job.status === "running" || job.status === "done") return;
+    job.resume = job.status !== "cancelled" || job.resume;
+    job.status = "queued";
+    // Copies keep their order: a resumed one goes to the back of the line.
+    this.queue.splice(this.queue.indexOf(job), 1);
+    this.queue.push(job);
+    this.renderQueue();
+    void this.pump();
+  }
+
   private renderQueue() {
     const active = this.queue.filter((j) => j.status === "queued" || j.status === "running").length;
-    this.queueTitle.textContent = active ? `Transfers · ${active} in progress` : "Transfers";
+    const stopped = this.queue.filter((j) => j.status === "paused" || j.status === "failed").length;
+    this.queueTitle.textContent = [
+      "Transfers",
+      ...(active ? [`${active} in progress`] : []),
+      ...(stopped ? [`${stopped} paused or failed`] : []),
+    ].join(" · ");
+    this.pauseAll.hidden = active === 0;
+    this.resumeAll.hidden = stopped === 0;
     if (!this.queue.length) {
       this.queueList.replaceChildren(el("div", { className: "queue-empty muted" }, "Drag files between the two sides, or select them and use Upload or Download."));
       return;
     }
     // Running and waiting copies first, then finished ones, newest first.
-    const order = (j: Job) => (j.status === "running" ? 0 : j.status === "queued" ? 1 : 2);
-    const shown = [...this.queue].sort((a, b) => order(a) - order(b) || (order(a) === 2 ? b.id - a.id : a.id - b.id));
+    const order = (j: Job) => (j.status === "running" ? 0 : j.status === "queued" ? 1 : j.status === "paused" || j.status === "failed" ? 2 : 3);
+    const shown = [...this.queue].sort((a, b) => order(a) - order(b) || (order(a) === 3 ? b.id - a.id : 0));
     this.queueList.replaceChildren(
       ...shown.map((job) => {
         job.row = el("div", { className: `job ${job.status}` });
@@ -549,34 +599,65 @@ export class FilesTab implements Tab {
     const p = job.progress;
     const pct = p && p.totalBytes ? Math.min(100, (p.doneBytes / p.totalBytes) * 100) : job.status === "done" ? 100 : 0;
     const seconds = job.started ? (performance.now() - job.started) / 1000 : 0;
-    const speed = p && seconds > 0.3 ? `${formatSize(p.doneBytes / seconds)}/s` : "";
+    const moved = p ? p.doneBytes - (job.startBytes ?? p.doneBytes) : 0;
+    const speed = p && seconds > 0.3 && moved > 0 ? `${formatSize(moved / seconds)}/s` : "";
+    const of = p ? `${formatSize(p.doneBytes)} of ${formatSize(p.totalBytes)}` : "";
     let status: string;
     switch (job.status) {
       case "queued":
-        status = "Waiting";
+        status = job.resume && p ? `Waiting to resume · ${of}` : "Waiting";
         break;
       case "running":
-        status = p ? `${formatSize(p.doneBytes)} of ${formatSize(p.totalBytes)}${speed ? ` · ${speed}` : ""}` : "Starting…";
+        status = p ? `${of}${speed ? ` · ${speed}` : ""}${p.resumedBytes ? " · resumed" : ""}` : "Starting…";
+        break;
+      case "paused":
+        status = p ? `Paused · ${of}` : "Paused";
         break;
       case "done":
-        status = p ? `Done · ${p.filesTotal} ${p.filesTotal === 1 ? "file" : "files"}, ${formatSize(p.totalBytes)}` : "Done";
+        status = p
+          ? `Done · ${p.filesTotal} ${p.filesTotal === 1 ? "file" : "files"}, ${formatSize(p.totalBytes)}${p.resumedBytes ? " · resumed" : ""}`
+          : "Done";
         break;
       case "cancelled":
         status = "Cancelled";
         break;
       default:
-        status = job.error ?? "Failed";
+        status = `${job.error ?? "Failed"}${p ? ` · ${of} kept` : ""}`;
     }
-    const cancel = el("button", { className: "row-button", title: "Cancel", ariaLabel: `Cancel ${job.name}` }, "✕");
-    cancel.onclick = () => this.cancel(job);
+    const button = (name: "pause" | "play" | "retry" | "close", label: string, run: () => void) => {
+      const b = el("button", { className: "row-button", title: label, ariaLabel: `${label} ${job.name}` }, icon(name, 13));
+      b.onclick = run;
+      return b;
+    };
+    const buttons: HTMLButtonElement[] = [];
+    if (job.status === "running" || job.status === "queued") buttons.push(button("pause", "Pause", () => this.pause(job)));
+    if (job.status === "paused") buttons.push(button("play", "Resume", () => this.resume(job)));
+    if (job.status === "failed") buttons.push(button("retry", "Retry from where it stopped", () => this.resume(job)));
+    if (job.status === "cancelled") buttons.push(button("retry", "Start again", () => this.resume(job)));
+    if (job.status === "running" || job.status === "queued") buttons.push(button("close", "Cancel (deletes the partial file)", () => this.cancel(job)));
+    if (job.status === "paused" || job.status === "failed") {
+      buttons.push(
+        button("close", "Remove from the list (the .setu-part file stays until you resume or delete it)", () => {
+          this.queue.splice(this.queue.indexOf(job), 1);
+          this.renderQueue();
+        }),
+      );
+    }
     const sub = job.status === "running" && p && p.filesTotal > 1 ? `${p.filesDone + 1}/${p.filesTotal} · ${p.current}` : `to ${job.targetDir}`;
     row.className = `job ${job.status}`;
     row.replaceChildren(
       el("span", { className: "dir" }, job.direction === "upload" ? "↑" : "↓"),
       el("span", { className: "job-text" }, el("span", { className: "job-name" }, job.name), el("span", { className: "muted job-sub" }, sub)),
       el("span", { className: "bar" }, Object.assign(el("span", {}), { style: `width:${pct}%` })),
-      el("span", { className: "job-status muted" }, status),
-      ...(job.status === "queued" || job.status === "running" ? [cancel] : []),
+      el(
+        "span",
+        {
+          className: "job-status muted",
+          title: p?.resumedBytes ? `${status}\nContinued from ${formatSize(p.resumedBytes)} already copied before it stopped.` : status,
+        },
+        status,
+      ),
+      el("span", { className: "job-buttons" }, ...buttons),
     );
   }
 

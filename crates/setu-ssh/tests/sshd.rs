@@ -4,11 +4,10 @@
 //! keys. Tests are skipped (with a message) when `sshd` or `ssh-keygen` is not
 //! installed, for example on Windows CI.
 
-use setu_ssh::sftp::EntryKind;
+use setu_ssh::sftp::{EntryKind, TransferControl};
 use setu_ssh::{connect, known_hosts, Auth, ConnectOptions, ShellSize, SshError, Zeroizing};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -414,10 +413,10 @@ async fn sftp_browse_copy_rename_delete() {
     std::fs::write(site.join("assets/blob.bin"), &big).expect("write");
 
     let remote = remote_root.to_string_lossy().to_string();
-    let cancel = AtomicBool::new(false);
+    let control = TransferControl::default();
     let mut updates = 0;
     let done = sftp
-        .upload(&site, &remote, &cancel, |_| updates += 1)
+        .upload(&site, &remote, false, &control, |_| updates += 1)
         .await
         .expect("upload");
     assert_eq!(done.files_done, 2);
@@ -432,7 +431,7 @@ async fn sftp_browse_copy_rename_delete() {
         [("assets", EntryKind::Dir), ("index.html", EntryKind::File)]
     );
 
-    sftp.download(&format!("{remote}/site"), &back, &cancel, |_| {})
+    sftp.download(&format!("{remote}/site"), &back, false, &control, |_| {})
         .await
         .expect("download");
     assert_eq!(
@@ -452,11 +451,81 @@ async fn sftp_browse_copy_rename_delete() {
     assert!(!remote_root.join("site").exists());
 
     // A cancelled copy fails and leaves no partial file behind.
-    let cancelled = AtomicBool::new(true);
+    let cancelled = TransferControl::default();
+    cancelled.cancel();
     let err = sftp
-        .upload(&site.join("assets/blob.bin"), &remote, &cancelled, |_| {})
+        .upload(
+            &site.join("assets/blob.bin"),
+            &remote,
+            false,
+            &cancelled,
+            |_| {},
+        )
         .await
         .expect_err("cancelled");
     assert!(matches!(err, SshError::Cancelled));
     assert!(!remote_root.join("blob.bin").exists());
+    assert!(!remote_root.join("blob.bin.setu-part").exists());
+
+    // A paused copy keeps its partial file under the .setu-part name.
+    let paused = TransferControl::default();
+    paused.pause();
+    let err = sftp
+        .upload(
+            &site.join("assets/blob.bin"),
+            &remote,
+            false,
+            &paused,
+            |_| {},
+        )
+        .await
+        .expect_err("paused");
+    assert!(matches!(err, SshError::Cancelled) && paused.paused());
+    assert!(remote_root.join("blob.bin.setu-part").exists());
+    assert!(!remote_root.join("blob.bin").exists());
+
+    // Resuming an upload continues the partial file from where it stopped.
+    std::fs::write(remote_root.join("blob.bin.setu-part"), &big[..300_000]).expect("write");
+    let done = sftp
+        .upload(
+            &site.join("assets/blob.bin"),
+            &remote,
+            true,
+            &control,
+            |_| {},
+        )
+        .await
+        .expect("resume upload");
+    assert_eq!(done.resumed_bytes, 300_000);
+    assert_eq!(done.done_bytes, 700_000);
+    assert_eq!(
+        std::fs::read(remote_root.join("blob.bin")).expect("read"),
+        big
+    );
+    assert!(!remote_root.join("blob.bin.setu-part").exists());
+
+    // Resuming again skips the file, which is already complete.
+    let done = sftp
+        .upload(
+            &site.join("assets/blob.bin"),
+            &remote,
+            true,
+            &control,
+            |_| {},
+        )
+        .await
+        .expect("skip");
+    assert_eq!(done.resumed_bytes, 700_000);
+
+    // Resuming a download does the same on the local side.
+    let down = work.path().join("down");
+    std::fs::create_dir_all(&down).expect("mkdir");
+    std::fs::write(down.join("blob.bin.setu-part"), &big[..123_456]).expect("write");
+    let done = sftp
+        .download(&format!("{remote}/blob.bin"), &down, true, &control, |_| {})
+        .await
+        .expect("resume download");
+    assert_eq!(done.resumed_bytes, 123_456);
+    assert_eq!(std::fs::read(down.join("blob.bin")).expect("read"), big);
+    assert!(!down.join("blob.bin.setu-part").exists());
 }

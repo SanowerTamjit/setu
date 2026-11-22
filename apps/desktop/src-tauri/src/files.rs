@@ -3,11 +3,11 @@
 
 use crate::terminals::Terminals;
 use serde::{Deserialize, Serialize};
-use setu_ssh::sftp::{self, FileEntry, Progress, Sftp};
+use setu_ssh::sftp::{self, FileEntry, Progress, Sftp, TransferControl};
 use setu_ssh::{SshClient, SshError};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
@@ -22,8 +22,8 @@ struct FileSession {
 pub struct Files {
     next_id: AtomicU32,
     sessions: Mutex<HashMap<u32, Arc<FileSession>>>,
-    /// Cancel flags of running copies, keyed by the UI's transfer id.
-    transfers: Mutex<HashMap<u32, Arc<AtomicBool>>>,
+    /// Pause and cancel controls of running copies, keyed by the UI's transfer id.
+    transfers: Mutex<HashMap<u32, Arc<TransferControl>>>,
 }
 
 impl std::fmt::Debug for Files {
@@ -206,8 +206,9 @@ pub enum Direction {
 }
 
 /// Copies one file or folder; progress streams to `on_progress`. Resolves
-/// with the final progress, or rejects (with "the transfer was cancelled"
-/// after [`transfer_cancel`]).
+/// with the final progress, or rejects: with "the transfer was cancelled"
+/// after [`transfer_cancel`], or "paused" after [`transfer_pause`]. With
+/// `resume`, finished files are skipped and partial ones continued.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn transfer(
@@ -217,15 +218,16 @@ pub async fn transfer(
     direction: Direction,
     source: String,
     target_dir: String,
+    resume: bool,
     on_progress: Channel<Progress>,
 ) -> Result<Progress, String> {
     let session = files.get(id)?;
-    let cancel = Arc::new(AtomicBool::new(false));
+    let control = Arc::new(TransferControl::default());
     files
         .transfers
         .lock()
         .map_err(|_| "files lock poisoned")?
-        .insert(transfer_id, Arc::clone(&cancel));
+        .insert(transfer_id, Arc::clone(&control));
     let report = |p: &Progress| {
         let _ = on_progress.send(p.clone());
     };
@@ -233,29 +235,43 @@ pub async fn transfer(
         Direction::Download => {
             session
                 .sftp
-                .download(&source, Path::new(&target_dir), &cancel, report)
+                .download(&source, Path::new(&target_dir), resume, &control, report)
                 .await
         }
         Direction::Upload => {
             session
                 .sftp
-                .upload(Path::new(&source), &target_dir, &cancel, report)
+                .upload(Path::new(&source), &target_dir, resume, &control, report)
                 .await
         }
     };
     if let Ok(mut map) = files.transfers.lock() {
         map.remove(&transfer_id);
     }
-    result.map_err(err)
+    match result {
+        Err(SshError::Cancelled) if control.paused() => Err("paused".into()),
+        other => other.map_err(err),
+    }
 }
 
-#[tauri::command]
-pub fn transfer_cancel(files: State<'_, Files>, transfer_id: u32) {
+fn with_transfer(files: &Files, transfer_id: u32, f: impl FnOnce(&TransferControl)) {
     if let Ok(map) = files.transfers.lock() {
-        if let Some(flag) = map.get(&transfer_id) {
-            flag.store(true, Ordering::Relaxed);
+        if let Some(control) = map.get(&transfer_id) {
+            f(control);
         }
     }
+}
+
+/// Stops a copy and deletes its partial file.
+#[tauri::command]
+pub fn transfer_cancel(files: State<'_, Files>, transfer_id: u32) {
+    with_transfer(&files, transfer_id, TransferControl::cancel);
+}
+
+/// Stops a copy but keeps its partial file, so it can resume.
+#[tauri::command]
+pub fn transfer_pause(files: State<'_, Files>, transfer_id: u32) {
+    with_transfer(&files, transfer_id, TransferControl::pause);
 }
 
 #[cfg(test)]

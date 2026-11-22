@@ -299,6 +299,8 @@ export interface TransferProgress {
   filesDone: number;
   filesTotal: number;
   current: string;
+  /** Bytes already there from an earlier, stopped copy. */
+  resumedBytes: number;
 }
 
 export const filesOpen = (terminalId: number) =>
@@ -319,6 +321,7 @@ export function transfer(
   direction: "upload" | "download",
   source: string,
   targetDir: string,
+  resume: boolean,
   onProgress: (p: TransferProgress) => void,
 ): Promise<TransferProgress> {
   const channel = new Channel<TransferProgress>();
@@ -329,11 +332,13 @@ export function transfer(
     direction,
     source,
     targetDir,
+    resume,
     onProgress: channel,
   });
 }
 
 export const transferCancel = (transferId: number) => invoke<void>("transfer_cancel", { transferId });
+export const transferPause = (transferId: number) => invoke<void>("transfer_pause", { transferId });
 
 // ---- SSH keys ----
 

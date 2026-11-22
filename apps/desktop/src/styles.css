@@ -1307,7 +1307,7 @@ button.link-button {
 
 .job {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1.4fr) minmax(80px, 1fr) minmax(0, 1.2fr) 24px;
+  grid-template-columns: 18px minmax(0, 1.4fr) minmax(80px, 1fr) minmax(0, 1.4fr) 56px;
   gap: 10px;
   align-items: center;
   padding: 4px 12px;
@@ -1359,6 +1359,25 @@ button.link-button {
 .job.failed .bar span,
 .job.cancelled .bar span {
   background: var(--danger);
+}
+
+.job.paused .bar span {
+  background: var(--warn);
+}
+
+.job-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.job-buttons .row-button {
+  display: grid;
+  place-items: center;
+}
+
+.queue-head .text-button[hidden] {
+  display: none;
 }
 
 .job.failed .job-status {
