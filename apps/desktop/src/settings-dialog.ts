@@ -127,7 +127,7 @@ registerSettingsSection({
       el("h3", {}, "Privacy"),
       el(
         "label",
-        { className: "check-row" },
+        { className: "check-row remember-row" },
         mask,
         el(
           "span",
@@ -136,7 +136,7 @@ registerSettingsSection({
           el(
             "small",
             { className: "muted" },
-            "Covers things that look like keys, tokens and passwords (cloud keys, private key blocks, passwords in URLs) with a bar. Hover a bar to see what kind of secret it hid. Copying still copies the real text.",
+            "Covers things that look like keys, tokens and passwords (cloud keys, private key blocks, passwords in URLs) with a bar. Hover a bar to see what kind of secret it hid, or click it to show that one. Selecting and copying still gives the real text.",
           ),
         ),
       ),

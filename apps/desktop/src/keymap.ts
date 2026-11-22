@@ -27,6 +27,8 @@ const DEFAULT: Bindings = {
   "files.open": ["Ctrl+Shift+E"],
   "tab.detach": ["Ctrl+Shift+N"],
   "settings.open": ["Ctrl+,"],
+  "terminal.copy": ["Ctrl+Shift+C"],
+  "terminal.paste": ["Ctrl+Shift+V"],
 };
 
 /** Vim: Ctrl+Space, then a letter (h j k l move between panes). */

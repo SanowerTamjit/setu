@@ -6,6 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { FindBar } from "./find-bar";
+import { SecretMasker } from "./secret-mask";
 import { onSettingsChange, settings } from "./settings";
 import { terminalTheme } from "./themes";
 import { connectionOf, describe, type SavedConnection } from "./session";
@@ -34,6 +35,7 @@ export class TerminalTab implements Tab {
   private readonly fit = new FitAddon();
   private readonly serializer = new SerializeAddon();
   readonly findBar: FindBar;
+  readonly masker: SecretMasker;
   private id: number | null = null;
   private exited = false;
   private resizeTimer: number | undefined;
@@ -79,7 +81,9 @@ export class TerminalTab implements Tab {
     this.term.loadAddon(this.serializer);
     this.term.open(this.element);
     this.findBar = new FindBar(this.element, this.term);
+    this.masker = new SecretMasker(this.term, settings().maskSecrets);
     this.unsubscribe = onSettingsChange((s, changed) => {
+      if (changed.maskSecrets !== undefined) this.masker.setEnabled(s.maskSecrets);
       if (changed.theme) this.term.options.theme = terminalTheme(s.theme);
       if (changed.fontSize) {
         this.term.options.fontSize = s.fontSize;
@@ -330,6 +334,7 @@ export class TerminalTab implements Tab {
     if (!keepSession && this.id !== null && !this.exited) await closeTerminal(this.id).catch(() => {});
     this.unsubscribe();
     this.findBar.dispose();
+    this.masker.dispose();
     this.term.dispose();
     this.element.remove();
   }

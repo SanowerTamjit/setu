@@ -16,6 +16,7 @@ import { openPalette } from "./palette";
 import { openSettings } from "./settings-dialog";
 import "./settings-shells";
 import { openKeyManager } from "./key-manager";
+import { copyText } from "./dom";
 import "./known-hosts";
 import { loadSettings, onSettingsChange, settings, updateSettings } from "./settings";
 import { applyTheme, THEMES } from "./themes";
@@ -493,6 +494,27 @@ for (const c of [
   { id: "files.open", title: "Open Files (SFTP) on this server", category: "Files", when: isRemote, run: () => openFiles() },
   { id: "settings.open", title: "Open settings", category: "Settings", keywords: "preferences options", run: () => openSettings().then(() => active?.focus()) },
   { id: "settings.shells", title: "Shell profiles", category: "Settings", keywords: "wsl environment variables folder default shell", run: () => openSettings("shells").then(() => active?.focus()) },
+  {
+    id: "terminal.copy",
+    title: "Copy selection",
+    category: "Terminal",
+    run: async () => {
+      const text = terminalOf(active)?.term.getSelection();
+      if (text) await copyText(text);
+    },
+  },
+  {
+    id: "terminal.paste",
+    title: "Paste",
+    category: "Terminal",
+    run: async () => {
+      const pane = terminalOf(active);
+      const text = await navigator.clipboard.readText().catch(() => "");
+      if (pane && text) pane.term.paste(text);
+      pane?.focus();
+    },
+  },
+  { id: "secrets.toggle", title: "Hide secrets in output: turn on or off", category: "Terminal", keywords: "mask redact password token privacy", run: () => updateSettings({ maskSecrets: !settings().maskSecrets }) },
   { id: "keys.open", title: "Manage SSH keys", category: "SSH", keywords: "keygen ed25519 rsa agent fingerprint public key", run: () => openKeyManager().then(() => active?.focus()) },
   { id: "knownHosts.open", title: "Known hosts", category: "SSH", keywords: "known_hosts host key fingerprint forget remove", run: () => openKeyManager("known-hosts").then(() => active?.focus()) },
   { id: "vault.open", title: "Open the vault", category: "Vault", run: () => openVaultDialog().then(() => active?.focus()) },
