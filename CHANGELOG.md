@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- A more restrained look: the Dark and Light themes now use neutral graphite and white surfaces with a blue accent instead of amber, and host cards, avatars, tags and buttons are quieter (one neutral avatar style, Connect as a secondary button, flat cards, smaller corners). High contrast is unchanged.
 - A new look: a side rail for Hosts, Terminals, Keys, Snippets and the Vault; a slimmer host sidebar; rounded tabs; and one dialog layout (spacing, type sizes, a close button in the corner) for every dialog, built on shared design tokens across the Dark, Light and High contrast themes.
 - The hosts sidebar's **Import** now offers PuTTY, MobaXterm, CSV and Ansible as well as `~/.ssh/config`.
 - Files (SFTP) opens with Ctrl+Shift+E instead of Ctrl+Shift+F, which is now find, as in most terminals.

@@ -5,17 +5,17 @@ import type { ITheme } from "@xterm/xterm";
 import type { ThemeName } from "./settings";
 
 export const THEMES: { id: ThemeName; name: string; description: string }[] = [
-  { id: "dark", name: "Dark", description: "The default: soft contrast for long sessions" },
-  { id: "light", name: "Light", description: "Dark text on white, for bright rooms" },
+  { id: "dark", name: "Dark", description: "The default: graphite with a blue accent, easy on the eyes" },
+  { id: "light", name: "Light", description: "Clean white surfaces, for bright rooms" },
   { id: "high-contrast", name: "High contrast", description: "Black and white with strong focus outlines" },
 ];
 
 const DARK: ITheme = {
-  background: "#11151c",
-  foreground: "#d8dee9",
-  cursor: "#f5a524",
-  cursorAccent: "#11151c",
-  selectionBackground: "#3b4252",
+  background: "#111214",
+  foreground: "#e3e5e8",
+  cursor: "#4c8dff",
+  cursorAccent: "#111214",
+  selectionBackground: "#2b3a55",
   black: "#1c2129",
   red: "#e06c75",
   green: "#98c379",
@@ -35,10 +35,10 @@ const DARK: ITheme = {
 };
 
 const LIGHT: ITheme = {
-  background: "#fbfbfc",
-  foreground: "#1f2430",
-  cursor: "#b86e00",
-  cursorAccent: "#fbfbfc",
+  background: "#f7f8fa",
+  foreground: "#1b1f27",
+  cursor: "#2563eb",
+  cursorAccent: "#f7f8fa",
   selectionBackground: "#cfd8e8",
   black: "#1f2430",
   red: "#c4323f",
@@ -89,8 +89,8 @@ export function terminalTheme(name: ThemeName): ITheme {
 
 /** Match highlights for find, readable on each theme. */
 export function findColors(name: ThemeName) {
-  const active = name === "light" ? "#b86e00" : name === "high-contrast" ? "#ffd400" : "#f5a524";
-  const match = name === "light" ? "#e7d3b0" : name === "high-contrast" ? "#444444" : "#3b4252";
+  const active = name === "light" ? "#2563eb" : name === "high-contrast" ? "#ffd400" : "#4c8dff";
+  const match = name === "light" ? "#cddcf7" : name === "high-contrast" ? "#444444" : "#2b3a55";
   return {
     matchBackground: match,
     matchBorder: name === "high-contrast" ? "#ffffff" : "#7d8799",
