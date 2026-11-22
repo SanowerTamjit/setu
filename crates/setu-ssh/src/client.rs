@@ -52,7 +52,13 @@ impl Auth {
     /// default key files that exist in `ssh_dir`.
     pub fn defaults(ssh_dir: &Path) -> Vec<Auth> {
         let mut out = vec![Auth::Agent];
-        for name in ["id_ed25519", "id_ecdsa", "id_rsa"] {
+        for name in [
+            "id_ed25519",
+            "id_ecdsa",
+            "id_ed25519_sk",
+            "id_ecdsa_sk",
+            "id_rsa",
+        ] {
             let path = ssh_dir.join(name);
             if path.is_file() {
                 out.push(Auth::KeyFile {
@@ -336,14 +342,18 @@ async fn authenticate(
                         })
                     }
                 };
-                let hash = handle.best_supported_rsa_hash().await?.flatten();
-                handle
-                    .authenticate_publickey(
-                        &opts.user,
-                        PrivateKeyWithHashAlg::new(Arc::new(key), hash),
-                    )
-                    .await?
-                    .success()
+                if crate::keys::is_security_key(key.algorithm()) {
+                    try_security_key(handle, &opts.user, path, &key).await?
+                } else {
+                    let hash = handle.best_supported_rsa_hash().await?.flatten();
+                    handle
+                        .authenticate_publickey(
+                            &opts.user,
+                            PrivateKeyWithHashAlg::new(Arc::new(key), hash),
+                        )
+                        .await?
+                        .success()
+                }
             }
             Auth::Password(pw) => handle
                 .authenticate_password(&opts.user, pw.as_str())
@@ -361,22 +371,35 @@ async fn authenticate(
     })
 }
 
-/// Tries every key the agent holds. No agent running is not an error.
-async fn try_agent(handle: &mut Handle<Verifier>, user: &str) -> Result<bool, SshError> {
+type Agent = russh::keys::agent::client::AgentClient<
+    Box<dyn russh::keys::agent::client::AgentStream + Send + Unpin>,
+>;
+
+/// The running ssh-agent: `SSH_AUTH_SOCK` on Unix, the OpenSSH agent pipe
+/// or Pageant on Windows. `None` when there is none.
+async fn connect_agent() -> Option<Agent> {
+    use russh::keys::agent::client::AgentClient;
     #[cfg(unix)]
-    let agent = russh::keys::agent::client::AgentClient::connect_env().await;
-    #[cfg(windows)]
-    let agent = match russh::keys::agent::client::AgentClient::connect_named_pipe(
-        r"\\.\pipe\openssh-ssh-agent",
-    )
-    .await
     {
-        Ok(a) => Ok(a.dynamic()),
-        Err(_) => russh::keys::agent::client::AgentClient::connect_pageant()
-            .await
-            .map(|a| a.dynamic()),
-    };
-    let Ok(mut agent) = agent else {
+        AgentClient::connect_env().await.ok().map(|a| a.dynamic())
+    }
+    #[cfg(windows)]
+    {
+        match AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent").await {
+            Ok(a) => Some(a.dynamic()),
+            Err(_) => AgentClient::connect_pageant()
+                .await
+                .ok()
+                .map(|a| a.dynamic()),
+        }
+    }
+}
+
+/// Tries every key the agent holds. No agent running is not an error. A
+/// security key that cannot sign (unplugged, or not touched in time) is
+/// skipped so the agent's other keys still get their turn.
+async fn try_agent(handle: &mut Handle<Verifier>, user: &str) -> Result<bool, SshError> {
+    let Some(mut agent) = connect_agent().await else {
         return Ok(false);
     };
     let Ok(identities) = agent.request_identities().await else {
@@ -387,16 +410,60 @@ async fn try_agent(handle: &mut Handle<Verifier>, user: &str) -> Result<bool, Ss
         let russh::keys::agent::AgentIdentity::PublicKey { key, .. } = identity else {
             continue;
         };
+        let security_key = crate::keys::is_security_key(key.algorithm());
         match handle
             .authenticate_publickey_with(user, key, hash, &mut agent)
             .await
         {
             Ok(result) if result.success() => return Ok(true),
             Ok(_) => continue,
+            Err(_) if security_key => continue,
             Err(e) => return Err(SshError::Protocol(format!("ssh-agent: {e}"))),
         }
     }
     Ok(false)
+}
+
+/// Signs in with a FIDO2/U2F key file (`id_ed25519_sk` and the like). The
+/// file holds only a handle; the signature comes from the device, which
+/// OpenSSH's agent talks to. So the key is handed to the agent if it does
+/// not hold it yet, and the agent asks the device to sign.
+async fn try_security_key(
+    handle: &mut Handle<Verifier>,
+    user: &str,
+    path: &Path,
+    key: &russh::keys::PrivateKey,
+) -> Result<bool, SshError> {
+    let fail = |reason: String| SshError::SecurityKey {
+        path: path.to_path_buf(),
+        reason,
+    };
+    let mut agent = connect_agent().await.ok_or_else(|| {
+        fail("security keys sign through ssh-agent, and none is running. Start ssh-agent (on Windows, the OpenSSH Authentication Agent service) and try again".into())
+    })?;
+    let public = key.public_key().clone();
+    let held = agent
+        .request_identities()
+        .await
+        .map_err(|e| fail(format!("ssh-agent did not answer: {e}")))?
+        .into_iter()
+        .any(|id| matches!(id, russh::keys::agent::AgentIdentity::PublicKey { key, .. } if key.key_data() == public.key_data()));
+    if !held {
+        agent.add_identity(key, &[]).await.map_err(|e| {
+            fail(format!(
+                "ssh-agent would not take the key ({e}). Its OpenSSH may be older than 8.2, which added security keys"
+            ))
+        })?;
+    }
+    match handle
+        .authenticate_publickey_with(user, public, None, &mut agent)
+        .await
+    {
+        Ok(result) => Ok(result.success()),
+        Err(_) => Err(fail(
+            "the key did not sign. Check that it is plugged in, touch it when it blinks, and enter its PIN if asked".into(),
+        )),
+    }
 }
 
 impl SshClient {

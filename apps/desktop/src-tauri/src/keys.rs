@@ -24,6 +24,9 @@ pub struct KeyView {
     comment: Option<String>,
     public_line: Option<String>,
     in_agent: bool,
+    /// A FIDO2/U2F key (YubiKey and the like): the file is a handle, and
+    /// signing needs the device.
+    security_key: bool,
 }
 
 #[derive(Serialize)]
@@ -64,6 +67,10 @@ pub async fn ssh_keys_list() -> KeyList {
                 KeyState::Encrypted => ("encrypted", None),
                 KeyState::Unreadable(why) => ("unreadable", Some(why)),
             };
+            let security_key = f
+                .public
+                .as_ref()
+                .is_some_and(|p| p.algorithm.starts_with("sk-"));
             let in_agent = f
                 .public
                 .as_ref()
@@ -78,6 +85,7 @@ pub async fn ssh_keys_list() -> KeyList {
                 comment: f.public.as_ref().map(|p| p.comment.clone()),
                 public_line: f.public.map(|p| p.line),
                 in_agent,
+                security_key,
             }
         })
         .collect();
@@ -105,6 +113,21 @@ pub enum KindArg {
     Ed25519,
     Ecdsa,
     Rsa,
+    #[serde(rename = "ed25519-sk")]
+    Ed25519Sk,
+    #[serde(rename = "ecdsa-sk")]
+    EcdsaSk,
+}
+
+/// Choices that only apply to a key made on a security key.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityKeyArgs {
+    #[serde(default)]
+    resident: bool,
+    #[serde(default)]
+    verify_required: bool,
+    pin: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -121,22 +144,41 @@ pub async fn ssh_key_generate(
     kind: KindArg,
     comment: String,
     passphrase: Option<String>,
+    security_key: Option<SecurityKeyArgs>,
 ) -> Result<GeneratedKey, String> {
     let kind = match kind {
         KindArg::Ed25519 => KeyKind::Ed25519,
         KindArg::Ecdsa => KeyKind::EcdsaP256,
         KindArg::Rsa => KeyKind::Rsa4096,
+        KindArg::Ed25519Sk => KeyKind::Ed25519Sk,
+        KindArg::EcdsaSk => KeyKind::EcdsaSk,
     };
     let passphrase = passphrase.map(zeroize::Zeroizing::new);
-    // RSA takes a few seconds, so keep it off the main thread.
+    let sk = security_key.unwrap_or_default();
+    let options = keygen::SecurityKeyOptions {
+        resident: sk.resident,
+        verify_required: sk.verify_required,
+        pin: sk
+            .pin
+            .filter(|p| !p.is_empty())
+            .map(zeroize::Zeroizing::new),
+    };
+    // RSA takes a few seconds and a security key waits for a touch, so keep
+    // both off the main thread.
     tauri::async_runtime::spawn_blocking(move || {
-        keygen::generate(
-            &ssh_dir(),
-            name.trim(),
-            kind,
-            comment.trim(),
-            passphrase.as_deref().map(String::as_str),
-        )
+        let pass = passphrase.as_deref().map(String::as_str);
+        if kind.is_security_key() {
+            keygen::generate_security_key(
+                &ssh_dir(),
+                name.trim(),
+                kind,
+                comment.trim(),
+                pass,
+                &options,
+            )
+        } else {
+            keygen::generate(&ssh_dir(), name.trim(), kind, comment.trim(), pass)
+        }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -159,6 +201,25 @@ pub async fn ssh_key_add_to_agent(path: String, passphrase: Option<String>) -> R
     keygen::add_to_agent(&path, passphrase.as_deref().map(String::as_str))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Copies the keys stored on the plugged-in security key into `~/.ssh`
+/// (`ssh-keygen -K`). Returns the file names written.
+#[tauri::command]
+pub async fn ssh_key_load_resident(pin: Option<String>) -> Result<Vec<String>, String> {
+    let pin = pin.filter(|p| !p.is_empty()).map(zeroize::Zeroizing::new);
+    tauri::async_runtime::spawn_blocking(move || {
+        keygen::load_resident_keys(&ssh_dir(), pin.as_deref().map(String::as_str))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|paths| {
+        paths
+            .iter()
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect()
+    })
+    .map_err(|e| e.to_string())
 }
 
 fn known_hosts_path() -> Result<PathBuf, String> {

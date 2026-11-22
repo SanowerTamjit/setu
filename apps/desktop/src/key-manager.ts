@@ -3,7 +3,15 @@
 // copying a public key. A second tab manages known_hosts.
 
 import { copyText, el, errorText, field, modal } from "./dom";
-import { sshKeyAddToAgent, sshKeyGenerate, sshKeysList, type KeyKind, type KeyList, type KeyView } from "./ipc";
+import {
+  sshKeyAddToAgent,
+  sshKeyGenerate,
+  sshKeyLoadResident,
+  sshKeysList,
+  type KeyKind,
+  type KeyList,
+  type KeyView,
+} from "./ipc";
 
 /** Tabs other features add to this dialog, such as Known hosts. */
 export interface KeysTab {
@@ -22,26 +30,50 @@ const KINDS: { id: KeyKind; name: string; note: string }[] = [
   { id: "ed25519", name: "Ed25519", note: "Recommended. Short, fast and accepted by any recent server." },
   { id: "ecdsa", name: "ECDSA P-256", note: "For servers that require a NIST curve." },
   { id: "rsa", name: "RSA 4096", note: "Only for old servers that accept nothing newer. Takes a few seconds." },
+  {
+    id: "ed25519-sk",
+    name: "Security key (Ed25519)",
+    note: "Lives on a YubiKey or other FIDO2 key: you touch it to sign in, and the file alone is useless. Servers need OpenSSH 8.2 or newer.",
+  },
+  {
+    id: "ecdsa-sk",
+    name: "Security key (ECDSA)",
+    note: "For older security keys that cannot do Ed25519, such as some U2F-only keys.",
+  },
 ];
 
-const DEFAULT_NAMES: Record<KeyKind, string> = { ed25519: "id_ed25519", ecdsa: "id_ecdsa", rsa: "id_rsa" };
+const DEFAULT_NAMES: Record<KeyKind, string> = {
+  ed25519: "id_ed25519",
+  ecdsa: "id_ecdsa",
+  rsa: "id_rsa",
+  "ed25519-sk": "id_ed25519_sk",
+  "ecdsa-sk": "id_ecdsa_sk",
+};
+
+const isSecurityKey = (kind: KeyKind) => kind.endsWith("-sk");
 
 function shortType(algorithm: string | null) {
   if (!algorithm) return "unknown type";
   if (algorithm === "ssh-ed25519") return "Ed25519";
   if (algorithm.startsWith("ecdsa-sha2-")) return `ECDSA ${algorithm.slice(11).toUpperCase()}`;
   if (algorithm === "ssh-rsa") return "RSA";
+  if (algorithm === "sk-ssh-ed25519@openssh.com") return "Ed25519-SK";
+  if (algorithm === "sk-ecdsa-sha2-nistp256@openssh.com") return "ECDSA-SK";
   return algorithm;
 }
 
 function keyCard(key: KeyView, list: KeyList, flash: (t: string, e?: boolean) => void, refresh: () => void) {
   const badges = [
     el("span", { className: "badge" }, shortType(key.algorithm)),
-    key.state === "encrypted"
-      ? el("span", { className: "badge keyPassphrase" }, "Passphrase")
+    ...(key.securityKey ? [el("span", { className: "badge security-key" }, "Security key")] : []),
+    // A security key file without a passphrase is normal: it is useless without the device.
+    ...(key.state === "encrypted"
+      ? [el("span", { className: "badge keyPassphrase" }, "Passphrase")]
       : key.state === "plain"
-        ? el("span", { className: "badge changed" }, "No passphrase")
-        : el("span", { className: "badge danger" }, "Unreadable"),
+        ? key.securityKey
+          ? []
+          : [el("span", { className: "badge changed" }, "No passphrase")]
+        : [el("span", { className: "badge danger" }, "Unreadable")]),
     ...(key.inAgent ? [el("span", { className: "badge new" }, "In agent")] : []),
   ];
   const actions: HTMLElement[] = [];
@@ -126,6 +158,7 @@ function newKeyForm(onDone: (made: boolean) => void, flash: (t: string, e?: bool
       radio.onchange = () => {
         kind = k.id;
         if (!nameTouched) name.value = DEFAULT_NAMES[kind];
+        showKind();
       };
       return el(
         "label",
@@ -135,6 +168,44 @@ function newKeyForm(onDone: (made: boolean) => void, flash: (t: string, e?: bool
       );
     }),
   );
+  const resident = el("input", { type: "checkbox" });
+  const verify = el("input", { type: "checkbox" });
+  const pin = el("input", { type: "password", autocomplete: "off", placeholder: "Only if the key has one" });
+  const skOptions = el(
+    "div",
+    { className: "group sk-options", hidden: true },
+    el(
+      "p",
+      { className: "muted sk-hint" },
+      "Plug in your security key. When you click Make key it blinks: touch it. The file saved here only points at the key on the device.",
+    ),
+    el(
+      "label",
+      { className: "check-row" },
+      resident,
+      el(
+        "span",
+        {},
+        "Store it on the security key too",
+        el("small", { className: "muted" }, "So you can load it onto another computer with Load from security key. Needs a FIDO2 key with a PIN."),
+      ),
+    ),
+    el(
+      "label",
+      { className: "check-row" },
+      verify,
+      el(
+        "span",
+        {},
+        "Ask for the PIN every time, not just a touch",
+        el("small", { className: "muted" }, "Stronger, but the server must allow it (verify-required)."),
+      ),
+    ),
+    field("Security key PIN", pin, "Used once to make the key. It is not saved."),
+  );
+  const showKind = () => {
+    skOptions.hidden = !isSecurityKey(kind);
+  };
   const make = el("button", { type: "submit", className: "primary" }, "Make key");
   const cancel = el("button", { type: "button" }, "Cancel");
   cancel.onclick = () => onDone(false);
@@ -142,6 +213,7 @@ function newKeyForm(onDone: (made: boolean) => void, flash: (t: string, e?: bool
     "form",
     { className: "group" },
     kinds,
+    skOptions,
     el("div", { className: "row even" }, field("File name", name, "Saved in your .ssh folder"), field("Comment", comment, "Shown next to the key on servers")),
     el(
       "div",
@@ -155,10 +227,18 @@ function newKeyForm(onDone: (made: boolean) => void, flash: (t: string, e?: bool
     e.preventDefault();
     if (pass.value !== again.value) return flash("The two passphrases are different.", true);
     make.disabled = true;
-    make.textContent = kind === "rsa" ? "Making key (a few seconds)…" : "Making key…";
+    const sk = isSecurityKey(kind);
+    make.textContent = kind === "rsa" ? "Making key (a few seconds)…" : sk ? "Touch your security key…" : "Making key…";
+    if (sk) flash("Touch your security key now. It blinks while it waits.");
     try {
-      const made = await sshKeyGenerate(name.value, kind, comment.value, pass.value || null);
-      pass.value = again.value = "";
+      const made = await sshKeyGenerate(
+        name.value,
+        kind,
+        comment.value,
+        pass.value || null,
+        sk ? { resident: resident.checked, verifyRequired: verify.checked, pin: pin.value || null } : null,
+      );
+      pass.value = again.value = pin.value = "";
       flash(`Made ${made.path}. Its fingerprint is ${made.fingerprint}.`);
       onDone(true);
     } catch (err) {
@@ -205,6 +285,42 @@ export function openKeyManager(tabId = "keys"): Promise<void> {
         target.replaceChildren(el("p", { className: "muted" }, "Reading your .ssh folder…"));
         const list = await sshKeysList();
         const refresh = () => void show(keysTab);
+        const load = el("button", { type: "button" }, "Load from security key…");
+        load.title = "Copy keys stored on your YubiKey or other FIDO2 key into your .ssh folder";
+        load.onclick = () => {
+          const pin = el("input", { type: "password", autocomplete: "off", placeholder: "Security key PIN" });
+          const go = el("button", { type: "submit", className: "primary" }, "Load keys");
+          const cancel = el("button", { type: "button" }, "Cancel");
+          cancel.onclick = refresh;
+          const form = el(
+            "form",
+            { className: "group" },
+            el(
+              "p",
+              { className: "muted" },
+              "Plug in the security key and enter its PIN. Keys that were made with \u201cStore it on the security key too\u201d are copied into your .ssh folder; existing files are kept.",
+            ),
+            field("PIN", pin),
+            el("div", { className: "actions" }, el("span", { className: "spacer" }), cancel, go),
+          );
+          form.onsubmit = async (e) => {
+            e.preventDefault();
+            go.disabled = true;
+            go.textContent = "Touch your security key…";
+            try {
+              const names = await sshKeyLoadResident(pin.value || null);
+              pin.value = "";
+              flash(names.length ? `Loaded ${names.join(", ")} from the security key.` : "The security key holds no keys that are not here already.");
+              refresh();
+            } catch (err) {
+              flash(errorText(err), true);
+              go.disabled = false;
+              go.textContent = "Load keys";
+            }
+          };
+          target.replaceChildren(el("h3", {}, "Load from security key"), form);
+          pin.focus();
+        };
         const add = el("button", { type: "button" }, "New key…");
         add.onclick = () => {
           target.replaceChildren(
@@ -224,6 +340,7 @@ export function openKeyManager(tabId = "keys"): Promise<void> {
             { className: "keys-toolbar" },
             el("span", { className: "muted" }, list.dir),
             el("span", { className: "spacer" }),
+            load,
             add,
           ),
           ...(list.keys.length

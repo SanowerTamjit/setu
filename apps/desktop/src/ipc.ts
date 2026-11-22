@@ -383,6 +383,7 @@ export interface KeyView {
   comment: string | null;
   publicLine: string | null;
   inAgent: boolean;
+  securityKey: boolean;
 }
 
 export interface KeyList {
@@ -392,17 +393,33 @@ export interface KeyList {
   agentOnly: string[];
 }
 
-export type KeyKind = "ed25519" | "ecdsa" | "rsa";
+export type KeyKind = "ed25519" | "ecdsa" | "rsa" | "ed25519-sk" | "ecdsa-sk";
+
+export interface SecurityKeyChoices {
+  resident: boolean;
+  verifyRequired: boolean;
+  pin: string | null;
+}
 
 export const sshKeysList = () => invoke<KeyList>("ssh_keys_list");
 
-export const sshKeyGenerate = (name: string, kind: KeyKind, comment: string, passphrase: string | null) =>
+export const sshKeyGenerate = (
+  name: string,
+  kind: KeyKind,
+  comment: string,
+  passphrase: string | null,
+  securityKey: SecurityKeyChoices | null = null,
+) =>
   invoke<{ path: string; fingerprint: string; publicLine: string }>("ssh_key_generate", {
     name,
     kind,
     comment,
     passphrase,
+    securityKey,
   });
+
+/** Copies the keys stored on the plugged-in security key into ~/.ssh. */
+export const sshKeyLoadResident = (pin: string | null) => invoke<string[]>("ssh_key_load_resident", { pin });
 
 export const sshKeyAddToAgent = (path: string, passphrase: string | null) =>
   invoke<void>("ssh_key_add_to_agent", { path, passphrase });

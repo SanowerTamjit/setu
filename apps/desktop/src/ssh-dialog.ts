@@ -192,7 +192,8 @@ export function openSshDialog(connect: Connect, options: DialogOptions = {}): Pr
       trustPanel.classList.remove("danger-panel");
       mainActions.hidden = false;
       connectButton.disabled = true;
-      connectButton.textContent = "Connecting…";
+      const securityKey = authKind.value === "keyFile" && /_sk(_rk)?(_\d+)?$/.test(keyPath.value.trim());
+      connectButton.textContent = securityKey ? "Touch your security key…" : "Connecting…";
       try {
         await connect(request());
         close();

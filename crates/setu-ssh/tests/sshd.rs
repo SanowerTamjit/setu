@@ -47,6 +47,25 @@ fn keygen(path: &Path, passphrase: &str) {
     assert!(status.success(), "ssh-keygen failed");
 }
 
+/// Writes an `sk-ssh-ed25519@openssh.com` key file like one `ssh-keygen -t
+/// ed25519-sk` makes, with a made-up key handle, and returns its public line.
+fn fake_security_key(path: &Path) -> String {
+    use russh::keys::ssh_key::{private, public, LineEnding, PrivateKey};
+    let real = PrivateKey::random(&mut rand::rng(), russh::keys::Algorithm::Ed25519).expect("key");
+    let point = *real.public_key().key_data().ed25519().expect("ed25519");
+    let sk = private::SkEd25519::new(public::SkEd25519::new(point, "ssh:"), 0x01, vec![7u8; 64])
+        .expect("sk key");
+    let key = PrivateKey::new(private::KeypairData::from(sk), "setu-sk-test").expect("private key");
+    std::fs::write(
+        path,
+        key.to_openssh(LineEnding::LF).expect("encode").as_bytes(),
+    )
+    .expect("write");
+    let line = format!("{}\n", key.public_key().to_openssh().expect("public"));
+    std::fs::write(format!("{}.pub", path.display()), &line).expect("write pub");
+    line
+}
+
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .and_then(|l| l.local_addr())
@@ -380,11 +399,43 @@ async fn ssh_agent_authentication() {
 
     // Only this test reads SSH_AUTH_SOCK; the others name a key file explicitly.
     std::env::set_var("SSH_AUTH_SOCK", &sock);
+
+    // A security key file the server accepts. There is no device here, so
+    // Setu must hand it to the agent and then report that it did not sign.
+    let sk_path = sshd.path("id_ed25519_sk");
+    let sk_line = fake_security_key(&sk_path);
+    let mut authorized = std::fs::read_to_string(sshd.path("authorized_keys")).expect("read");
+    authorized.push_str(&sk_line);
+    std::fs::write(sshd.path("authorized_keys"), authorized).expect("write");
     let mut opts = sshd.opts();
+    opts.auth = vec![Auth::KeyFile {
+        path: sk_path,
+        passphrase: None,
+    }];
+    let sk_result = connect(&opts).await;
+    let listed = Command::new("ssh-add")
+        .arg("-l")
+        .env("SSH_AUTH_SOCK", &sock)
+        .output()
+        .expect("ssh-add -l");
+
+    // The agent now holds the security key first; agent sign-in must skip
+    // it (it cannot sign) and go on to the ordinary key.
     opts.auth = vec![Auth::Agent];
     let result = connect(&opts).await;
     let _ = agent.kill();
     let _ = agent.wait();
+    match sk_result {
+        Err(SshError::SecurityKey { reason, .. }) => {
+            assert!(reason.contains("did not sign"), "{reason}")
+        }
+        other => panic!("expected a security key error, got {other:?}"),
+    }
+    assert!(
+        String::from_utf8_lossy(&listed.stdout).contains("ED25519-SK"),
+        "the agent should hold the security key: {}",
+        String::from_utf8_lossy(&listed.stdout)
+    );
     let client = result.expect("connect with ssh-agent");
     let (out, _) = client.exec("echo agent-ok").await.expect("exec");
     assert_eq!(String::from_utf8_lossy(&out), "agent-ok\n");

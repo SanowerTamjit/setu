@@ -3063,3 +3063,29 @@ button.with-icon {
 .pane button.icon-tool.danger:hover {
   color: var(--danger-text);
 }
+
+/* Security keys (FIDO2) */
+.badge.security-key {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.sk-options {
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+}
+
+.sk-options .check-row {
+  align-items: flex-start;
+  margin-top: 0;
+}
+
+.sk-options .check-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sk-hint {
+  margin: 0;
+}
