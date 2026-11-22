@@ -163,7 +163,7 @@ pub async fn files_remove(
         .map_err(err)
 }
 
-fn home_dir() -> PathBuf {
+pub(crate) fn home_dir() -> PathBuf {
     let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
     std::env::var_os(var)
         .map(PathBuf::from)

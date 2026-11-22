@@ -1,7 +1,8 @@
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
-import { appInfo, listShells, type ShellProfile } from "./ipc";
-import { TerminalTab } from "./terminal-tab";
+import { appInfo, listShells, terminalHold, windowDetach, windowTake, type ShellProfile } from "./ipc";
+import type { MovedPane, TerminalTab } from "./terminal-tab";
+import { PaneTab, type Direction } from "./pane-tab";
 import { FilesTab } from "./files-tab";
 import type { Tab } from "./tab";
 import { openSshDialog, setDefaultUser, type DialogOptions } from "./ssh-dialog";
@@ -9,6 +10,19 @@ import { HostsPanel } from "./hosts-panel";
 import { vaultStatus, type Host, type VaultStatus } from "./ipc";
 import { onVaultChange, openVaultDialog } from "./vault-dialog";
 import { listen } from "@tauri-apps/api/event";
+import { registerCommand, registerProvider, runCommand, type Command } from "./commands";
+import { bindingsFor, KeyDispatcher, KEYMAPS, prefixBytes } from "./keymap";
+import { openPalette } from "./palette";
+import { openSettings } from "./settings-dialog";
+import "./settings-shells";
+import { openKeyManager } from "./key-manager";
+import { copyText } from "./dom";
+import "./known-hosts";
+import { openJumpMap } from "./jump-map";
+import { loadPacks, openRolePicker, registerSnippets } from "./packs";
+import { loadSettings, onSettingsChange, settings, updateSettings } from "./settings";
+import { applyTheme, THEMES } from "./themes";
+import { dialogValues, describe, flushSave, loadSession, scheduleSave, SESSION_VERSION, type SavedPane, type SavedTab, type Session } from "./session";
 
 const tabsEl = document.getElementById("tabs")!;
 const terminalsEl = document.getElementById("terminals")!;
@@ -29,7 +43,110 @@ let active: Tab | null = null;
 let shells: ShellProfile[] = [];
 let localUser = "";
 
+/** The terminal that keyboard actions apply to: the focused pane of a terminal tab. */
+function terminalOf(tab: Tab | null): TerminalTab | null {
+  return tab instanceof PaneTab ? tab.focused : null;
+}
+
+function createPaneTab(saved?: SavedTab, setUp?: (pane: TerminalTab, saved: SavedPane) => void) {
+  return new PaneTab(
+    terminalsEl,
+    {
+      onChange: () => {
+        renderTabs();
+        renderStatus();
+      },
+      onResize: (t) => {
+        if (t === active) renderStatus();
+      },
+    },
+    saved,
+    setUp,
+  );
+}
+
+/** The open terminal tabs as session.json stores them (Files tabs are not kept). */
+function snapshot(): Session {
+  const kept = tabs.filter((t): t is PaneTab => t instanceof PaneTab);
+  const activeIndex = active instanceof PaneTab ? kept.indexOf(active) : -1;
+  return { version: SESSION_VERSION, tabs: kept.map((t) => t.save()), active: Math.max(0, activeIndex) };
+}
+
+/** Set once the saved session has been put back, so it is not overwritten while loading. */
+let restoring = true;
+
+/** A window opened for a moved tab; only the main window saves the session. */
+const detachedToken = new URLSearchParams(location.search).get("detached");
+const isMainWindow = detachedToken === null;
+
+interface MovedTab {
+  layout: SavedTab;
+  panes: MovedPane[];
+}
+
+/** Moves a tab, with its running shells, into a new window of its own. */
+async function detachTab(tab: Tab | null = active) {
+  if (!(tab instanceof PaneTab)) return;
+  const panes = tab.panes;
+  const ids = panes.flatMap((p) => (p.sessionId !== null && !p.hasExited ? [p.sessionId] : []));
+  const payload: MovedTab = { layout: tab.save(), panes: panes.map((p) => p.handOver()) };
+  await terminalHold(ids);
+  try {
+    await windowDetach(JSON.stringify(payload), tab.title);
+  } catch (err) {
+    // The window did not open: keep the tab here, showing output again.
+    for (const p of panes) {
+      const moved = payload.panes[panes.indexOf(p)];
+      if (moved.sessionId !== null) void p.takeOver({ ...moved, scrollback: "" });
+    }
+    reportMoveError(tab, err);
+    return;
+  }
+  const i = tabs.indexOf(tab);
+  tabs.splice(i, 1);
+  await tab.dispose(true);
+  if (active === tab) {
+    active = null;
+    const next = tabs[Math.min(i, tabs.length - 1)];
+    if (next) activate(next);
+  }
+  if (tabs.length === 0) await newTab();
+  renderTabs();
+  renderStatus();
+}
+
+function reportMoveError(tab: PaneTab, err: unknown) {
+  tab.focused.term.write(`\r\n\x1b[31mCould not move this tab to a new window: ${String(err)}\x1b[0m\r\n`);
+}
+
+/** In a window opened for a moved tab: takes the tab over. */
+async function receiveTab(token: string): Promise<boolean> {
+  const text = await windowTake(token).catch(() => null);
+  if (!text) return false;
+  const moved = JSON.parse(text) as MovedTab;
+  let i = 0;
+  const groups = new Map<number, object>();
+  const tab: PaneTab = createPaneTab(moved.layout, (pane, s) => {
+    const m = moved.panes[i++];
+    if (s.kind === "ssh") {
+      if (!groups.has(s.group)) groups.set(s.group, {});
+      if (!m || m.sessionId === null) {
+        pane.waitForReconnect(s.connection, s.label, groups.get(s.group)!, () => reconnectPane(tab, pane));
+        return;
+      }
+      pane.connection = s.connection;
+      pane.label = s.label;
+      pane.connectionGroup = groups.get(s.group)!;
+    }
+    if (m) void pane.takeOver(m);
+  });
+  tabs.push(tab);
+  activate(tab);
+  return true;
+}
+
 function renderTabs() {
+  if (!restoring && isMainWindow) scheduleSave(snapshot);
   tabsEl.replaceChildren(
     ...tabs.map((tab, i) => {
       const el = document.createElement("div");
@@ -39,6 +156,18 @@ function renderTabs() {
       el.title = tab.tooltip;
       if (tab instanceof FilesTab) el.classList.add("files");
       el.onclick = () => activate(tab);
+      // Drag a tab out of the window to give it a window of its own.
+      if (tab instanceof PaneTab) {
+        el.draggable = true;
+        el.ondragend = (e) => {
+          const outside =
+            e.screenX < window.screenX ||
+            e.screenY < window.screenY ||
+            e.screenX > window.screenX + window.outerWidth ||
+            e.screenY > window.screenY + window.outerHeight;
+          if (outside && (e.screenX !== 0 || e.screenY !== 0)) void detachTab(tab);
+        };
+      }
       el.onauxclick = (e) => {
         if (e.button === 1) void closeTab(tab);
       };
@@ -61,7 +190,16 @@ function renderTabs() {
         void closeTab(tab);
       };
 
-      el.append(index, label, close);
+      if (tab instanceof PaneTab && tab.paneCount > 1) {
+        const panes = document.createElement("span");
+        panes.className = "tab-panes";
+        panes.textContent = `⊞ ${tab.paneCount}`;
+        panes.title = `${tab.paneCount} panes`;
+        label.after(panes);
+        el.append(index, label, panes, close);
+      } else {
+        el.append(index, label, close);
+      }
       return el;
     }),
   );
@@ -75,7 +213,8 @@ function renderStatus() {
   }
   statusShell.textContent = active.detail;
   statusSize.textContent = active.sizeLabel;
-  statusFiles.hidden = !(active instanceof TerminalTab && active.isRemote && !active.hasExited);
+  const term = terminalOf(active);
+  statusFiles.hidden = !(term && term.isRemote && !term.hasExited && term.sessionId !== null);
 }
 
 function activate(tab: Tab) {
@@ -87,19 +226,13 @@ function activate(tab: Tab) {
 }
 
 async function newTab(shellId: string | null = null) {
-  const tab = new TerminalTab(terminalsEl, {
-    onTitle: () => renderTabs(),
-    onExit: () => renderTabs(),
-    onResize: (t) => {
-      if (t === active) renderStatus();
-    },
-  });
+  const tab = createPaneTab();
   tabs.push(tab);
   activate(tab);
   try {
-    await tab.start(shellId);
+    await tab.focused.start(shellId ?? settings().defaultShell);
   } catch (err) {
-    tab.term.write(`\x1b[31mCould not start the shell: ${String(err)}\x1b[0m\r\n`);
+    tab.focused.term.write(`\x1b[31mCould not start the shell: ${String(err)}\x1b[0m\r\n`);
   }
   renderTabs();
   renderStatus();
@@ -111,22 +244,19 @@ async function newTab(shellId: string | null = null) {
  */
 async function newSshTab(options: DialogOptions = {}, label?: string, then?: (tab: TerminalTab) => void) {
   await openSshDialog(async (request) => {
-    const tab = new TerminalTab(terminalsEl, {
-      onTitle: () => renderTabs(),
-      onExit: () => renderTabs(),
-      onResize: (t) => {
-        if (t === active) renderStatus();
-      },
-    });
+    const tab = createPaneTab();
     const previous = active;
     tabs.push(tab);
     activate(tab);
     try {
-      await tab.startSsh(request);
-      if (label) tab.title = label;
+      await tab.focused.startSsh(request);
+      if (label) {
+        tab.title = label;
+        tab.focused.label = label;
+      }
       renderTabs();
       renderStatus();
-      then?.(tab);
+      then?.(tab.focused);
     } catch (err) {
       // Remove the half-open tab; the dialog shows what went wrong.
       tabs.splice(tabs.indexOf(tab), 1);
@@ -163,8 +293,8 @@ function connectHost(host: Host, then?: (tab: TerminalTab) => void) {
 }
 
 /** Opens a Files tab (SFTP) on an SSH tab's connection. */
-async function openFiles(from: Tab | null = active) {
-  if (!(from instanceof TerminalTab) || !from.isRemote || from.sessionId === null || from.hasExited) return;
+async function openFiles(from: TerminalTab | null = terminalOf(active)) {
+  if (!from || !from.isRemote || from.sessionId === null || from.hasExited) return;
   const tab = new FilesTab(terminalsEl, from.sessionId, from.title, () => {
     renderTabs();
     renderStatus();
@@ -232,10 +362,36 @@ async function closeTab(tab: Tab) {
   renderStatus();
 }
 
+/** Splits the active tab's focused pane. */
+async function splitActive(direction: Direction) {
+  if (!(active instanceof PaneTab)) return;
+  await active.split(direction);
+}
+
+/** Ctrl+Shift+W: closes the focused pane of a split, otherwise the tab. */
+async function closeActive() {
+  if (!active) return;
+  if (active instanceof PaneTab && (await active.closePane())) return;
+  await closeTab(active);
+}
+
 function cycle(delta: number) {
   if (!active || tabs.length < 2) return;
   const i = tabs.indexOf(active);
   activate(tabs[(i + delta + tabs.length) % tabs.length]);
+}
+
+/** Everything a new tab can start: your profiles first, then detected shells. */
+function launchable(): { id: string; name: string; detail: string }[] {
+  const names = new Map(shells.map((s) => [s.id, s.name]));
+  return [
+    ...settings().shellProfiles.map((p) => ({
+      id: p.id,
+      name: p.name,
+      detail: `${names.get(p.base) ?? p.base} profile`,
+    })),
+    ...shells.map((s) => ({ id: s.id, name: s.name, detail: s.program })),
+  ];
 }
 
 // Shell picker menu
@@ -250,16 +406,34 @@ function renderMenu() {
   };
   const separator = document.createElement("div");
   separator.className = "menu-separator";
+  const splitItem = (label: string, keys: string, direction: Direction) => {
+    const item = document.createElement("button");
+    item.className = "menu-item";
+    item.setAttribute("role", "menuitem");
+    item.innerHTML = `<span></span><span class="muted"></span>`;
+    item.children[0].textContent = label;
+    item.children[1].textContent = keys;
+    item.onclick = () => {
+      toggleMenu(false);
+      void splitActive(direction);
+    };
+    return item;
+  };
+  const separator2 = document.createElement("div");
+  separator2.className = "menu-separator";
   menuEl.replaceChildren(
     ssh,
+    separator2,
+    splitItem("Split right", shortcut("pane.splitRight") ?? "", "right"),
+    splitItem("Split down", shortcut("pane.splitDown") ?? "", "down"),
     separator,
-    ...shells.map((shell) => {
+    ...launchable().map((shell) => {
       const item = document.createElement("button");
       item.className = "menu-item";
       item.setAttribute("role", "menuitem");
       item.innerHTML = `<span></span><span class="muted"></span>`;
       item.children[0].textContent = shell.name;
-      item.children[1].textContent = shell.program;
+      item.children[1].textContent = shell.detail;
       item.onclick = () => {
         toggleMenu(false);
         void newTab(shell.id);
@@ -281,35 +455,208 @@ menuButton.onclick = (e) => {
 };
 document.addEventListener("click", () => toggleMenu(false));
 
-// Keyboard shortcuts. Ctrl+Shift (Cmd on macOS) keeps plain Ctrl keys for the shell.
+// ---- Commands, keymaps and the palette ----
+
+function focusPane(dx: number, dy: number) {
+  if (active instanceof PaneTab && active.paneCount > 1) active.focusNeighbour(dx, dy);
+}
+
+const isTerminal = () => terminalOf(active) !== null;
+const isRemote = () => {
+  const t = terminalOf(active);
+  return !!t && t.isRemote && t.sessionId !== null && !t.hasExited;
+};
+
+for (const c of [
+  { id: "palette.open", title: "Show all commands", run: () => showPalette() },
+  { id: "tab.new", title: "New tab", category: "Tab", run: () => newTab() },
+  { id: "ssh.new", title: "New SSH connection…", category: "Connect", run: () => newSshTab() },
+  { id: "pane.splitRight", title: "Split right", category: "Pane", when: isTerminal, run: () => splitActive("right") },
+  { id: "pane.splitDown", title: "Split down", category: "Pane", when: isTerminal, run: () => splitActive("down") },
+  { id: "pane.close", title: "Close pane", category: "Pane", run: () => closeActive() },
+  { id: "pane.focusLeft", title: "Focus pane on the left", category: "Pane", run: () => focusPane(-1, 0) },
+  { id: "pane.focusRight", title: "Focus pane on the right", category: "Pane", run: () => focusPane(1, 0) },
+  { id: "pane.focusUp", title: "Focus pane above", category: "Pane", run: () => focusPane(0, -1) },
+  { id: "pane.focusDown", title: "Focus pane below", category: "Pane", run: () => focusPane(0, 1) },
+  { id: "tab.detach", title: "Move tab to a new window", category: "Tab", keywords: "detach window", when: () => active instanceof PaneTab, run: () => detachTab() },
+  { id: "tab.close", title: "Close tab", category: "Tab", run: () => (active ? closeTab(active) : undefined) },
+  { id: "tab.next", title: "Next tab", category: "Tab", run: () => cycle(1) },
+  { id: "tab.previous", title: "Previous tab", category: "Tab", run: () => cycle(-1) },
+  {
+    id: "hosts.search",
+    title: "Search saved hosts",
+    category: "Hosts",
+    run: () => {
+      if (sidebarEl.hidden) setSidebar(true);
+      hostsPanel.focusSearch();
+    },
+  },
+  { id: "sidebar.toggle", title: "Show or hide the hosts sidebar", category: "View", run: () => setSidebar(sidebarEl.hidden) },
+  { id: "find.open", title: "Find in scrollback", category: "Terminal", when: isTerminal, run: () => terminalOf(active)?.findBar.open() },
+  { id: "files.open", title: "Open Files (SFTP) on this server", category: "Files", when: isRemote, run: () => openFiles() },
+  { id: "settings.open", title: "Open settings", category: "Settings", keywords: "preferences options", run: () => openSettings().then(() => active?.focus()) },
+  { id: "settings.shells", title: "Shell profiles", category: "Settings", keywords: "wsl environment variables folder default shell", run: () => openSettings("shells").then(() => active?.focus()) },
+  {
+    id: "terminal.copy",
+    title: "Copy selection",
+    category: "Terminal",
+    run: async () => {
+      const text = terminalOf(active)?.term.getSelection();
+      if (text) await copyText(text);
+    },
+  },
+  {
+    id: "terminal.paste",
+    title: "Paste",
+    category: "Terminal",
+    run: async () => {
+      const pane = terminalOf(active);
+      const text = await navigator.clipboard.readText().catch(() => "");
+      if (pane && text) pane.term.paste(text);
+      pane?.focus();
+    },
+  },
+  { id: "secrets.toggle", title: "Hide secrets in output: turn on or off", category: "Terminal", keywords: "mask redact password token privacy", run: () => updateSettings({ maskSecrets: !settings().maskSecrets }) },
+  { id: "hosts.jumpMap", title: "Jump-host map", category: "Hosts", keywords: "bastion proxyjump topology diagram", run: () => openJumpMap(hostsPanel.hosts, (h) => connectHost(h)).then(() => active?.focus()) },
+  { id: "hosts.import", title: "Import hosts", category: "Hosts", keywords: "putty mobaxterm termius csv ansible inventory ssh config", run: () => hostsPanel.openImport() },
+  { id: "packs.open", title: "Packs and snippets", category: "Settings", keywords: "role pack install snippet", run: () => openSettings("packs").then(() => active?.focus()) },
+  { id: "role.choose", title: "Choose your role", category: "Settings", keywords: "sysadmin devops secops netops pack", run: () => openRolePicker().then(() => active?.focus()) },
+  { id: "keys.open", title: "Manage SSH keys", category: "SSH", keywords: "keygen ed25519 rsa agent fingerprint public key", run: () => openKeyManager().then(() => active?.focus()) },
+  { id: "knownHosts.open", title: "Known hosts", category: "SSH", keywords: "known_hosts host key fingerprint forget remove", run: () => openKeyManager("known-hosts").then(() => active?.focus()) },
+  { id: "vault.open", title: "Open the vault", category: "Vault", run: () => openVaultDialog().then(() => active?.focus()) },
+] satisfies Command[]) {
+  registerCommand(c);
+}
+
+for (const t of THEMES) {
+  registerCommand({
+    id: `theme.${t.id}`,
+    title: t.name,
+    category: "Theme",
+    keywords: `color colour appearance ${t.description}`,
+    run: () => updateSettings({ theme: t.id }),
+  });
+}
+for (const k of KEYMAPS) {
+  registerCommand({
+    id: `keymap.${k.id}`,
+    title: k.name,
+    category: "Keybindings",
+    keywords: `keymap shortcuts ${k.description}`,
+    run: () => updateSettings({ keymap: k.id }),
+  });
+}
+
+registerProvider(() =>
+  hostsPanel.hosts.map((host) => ({
+    id: `connect:${host.name}`,
+    title: host.name,
+    category: "Connect",
+    keywords: `ssh ${host.user ?? ""}@${host.host} ${host.folder ?? ""} ${(host.tags ?? []).join(" ")}`,
+    run: () => connectHost(host),
+  })),
+);
+registerSnippets((command) => {
+  const pane = terminalOf(active);
+  if (!pane) return;
+  // Typed, not run: the person reads it, edits placeholders, then presses Enter.
+  pane.term.paste(command);
+  pane.focus();
+});
+registerProvider(() =>
+  launchable().map((shell) => ({
+    id: `shell:${shell.id}`,
+    title: shell.name,
+    category: "New tab",
+    keywords: shell.detail,
+    run: () => newTab(shell.id),
+  })),
+);
+registerProvider(() =>
+  tabs.map((tab, i) => ({
+    id: `goto:${i}`,
+    title: `${i + 1}. ${tab.title}`,
+    category: "Go to tab",
+    run: () => activate(tab),
+  })),
+);
+
+const statusPrefix = document.getElementById("status-prefix")!;
+const keys = new KeyDispatcher((prefix) => {
+  statusPrefix.hidden = !prefix;
+  statusPrefix.textContent = prefix ? `${prefix} …` : "";
+});
+let bindings = bindingsFor("default");
+
+function applyKeymap() {
+  bindings = bindingsFor(settings().keymap);
+  keys.setBindings(bindings);
+  renderMenu();
+}
+
+/** The first shortcut for a command in the active keymap, for menus and the palette. */
+function shortcut(id: string): string | undefined {
+  return bindings[id]?.[0];
+}
+
+const RECENT_KEY = "setu.recentCommands";
+function recentCommands(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as string[];
+  } catch {
+    return [];
+  }
+}
+function noteRecent(id: string) {
+  try {
+    const next = [id, ...recentCommands().filter((x) => x !== id)].slice(0, 12);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // Recent commands are a convenience.
+  }
+}
+
+let paletteOpen = false;
+async function showPalette(initial?: string) {
+  if (paletteOpen) return;
+  paletteOpen = true;
+  await openPalette({ shortcut, recent: recentCommands, onRun: noteRecent, initial });
+  paletteOpen = false;
+  if (!document.querySelector(".overlay")) active?.focus();
+}
+document.getElementById("status-palette")!.onclick = () => void showPalette();
+document.getElementById("status-settings")!.onclick = () => void runCommand("settings.open");
+
+// Keyboard shortcuts come from the active keymap. Ctrl+Shift (Cmd on macOS)
+// and the Vim/Emacs prefixes keep plain keys for the shell.
 document.addEventListener(
   "keydown",
   (e) => {
-    const mod = (e.ctrlKey || e.metaKey) && e.shiftKey;
-    if (mod && e.code === "KeyT") {
-      e.preventDefault();
-      void newTab();
-    } else if (mod && e.code === "KeyW") {
-      e.preventDefault();
-      if (active) void closeTab(active);
-    } else if (mod && e.code === "KeyH") {
-      e.preventDefault();
-      if (sidebarEl.hidden) setSidebar(true);
-      hostsPanel.focusSearch();
-    } else if (mod && e.code === "KeyF") {
-      e.preventDefault();
-      if (active instanceof TerminalTab) active.findBar.open();
-    } else if (mod && e.code === "KeyE") {
-      e.preventDefault();
-      void openFiles();
-    } else if (mod && e.code === "KeyO") {
-      e.preventDefault();
-      void newSshTab();
-    } else if (e.ctrlKey && e.code === "Tab") {
-      e.preventDefault();
-      cycle(e.shiftKey ? -1 : 1);
-    } else if (e.key === "Escape" && !menuEl.hidden) {
+    if (e.key === "Escape" && !menuEl.hidden) {
       toggleMenu(false);
+      return;
+    }
+    // Dialogs and the palette handle their own keys.
+    if (document.querySelector(".overlay")) return;
+    // In a text field (hosts search, find), Ctrl+X and friends keep their usual meaning.
+    const t = e.target as HTMLElement | null;
+    const inField = !!t && (t.tagName === "INPUT" || (t.tagName === "TEXTAREA" && !t.classList.contains("xterm-helper-textarea")));
+    const result = keys.handle(e, !inField);
+    if (!result) return;
+    if ("passPrefix" in result) {
+      const term = terminalOf(active);
+      const bytes = prefixBytes(result.passPrefix);
+      if (term && bytes) {
+        e.preventDefault();
+        term.term.input(bytes);
+      }
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if ("command" in result) {
+      noteRecent(result.command);
+      void runCommand(result.command);
     }
   },
   { capture: true },
@@ -317,8 +664,66 @@ document.addEventListener(
 
 new ResizeObserver(() => active?.refit()).observe(terminalsEl);
 
+/**
+ * Reconnects a restored SSH pane: the connect dialog stays hidden unless it
+ * needs something (a password, a passphrase, a new host key). The other
+ * panes of the tab that shared this connection then open shells on it.
+ */
+function reconnectPane(tab: PaneTab, pane: TerminalTab) {
+  const connection = pane.connection;
+  const group = pane.connectionGroup;
+  if (!connection) return;
+  const name = pane.label ?? describe(connection);
+  void openSshDialog(
+    async (request) => {
+      await pane.startSsh(request);
+      pane.connectionGroup = group;
+      if (pane.label) pane.title = pane.label;
+      renderTabs();
+      renderStatus();
+      for (const other of tab.panes) {
+        if (other !== pane && other.awaitingReconnect && other.connectionGroup === group) {
+          void other.startSshFrom(pane).catch((err) => {
+            other.term.write(`\x1b[31mCould not open the pane: ${String(err)}\x1b[0m\r\n`);
+          });
+        }
+      }
+    },
+    { title: `Reconnect to ${name}`, autoConnect: true, prefill: dialogValues(connection) },
+  ).then(() => pane.focus());
+}
+
+/** Reopens last time's tabs: local shells start, SSH panes wait for Enter. */
+function restoreSession(session: Session) {
+  for (const saved of session.tabs) {
+    // One object per saved connection group, shared by its panes.
+    const groups = new Map<number, object>();
+    const tab: PaneTab = createPaneTab(saved, (pane, s) => {
+      if (s.kind === "local") {
+        void pane.start(s.shellId).catch((err) => {
+          pane.term.write(`\x1b[31mCould not start the shell: ${String(err)}\x1b[0m\r\n`);
+        });
+      } else {
+        if (!groups.has(s.group)) groups.set(s.group, {});
+        pane.waitForReconnect(s.connection, s.label, groups.get(s.group)!, () => reconnectPane(tab, pane));
+      }
+    });
+    tabs.push(tab);
+  }
+  activate(tabs[session.active] ?? tabs[0]);
+}
+
+window.addEventListener("beforeunload", () => flushSave());
+
+onSettingsChange((s, changed) => {
+  if (changed.theme) applyTheme(s.theme);
+  if (changed.keymap) applyKeymap();
+  if (changed.shellProfiles) renderMenu();
+});
+
 async function boot() {
-  const [info, found] = await Promise.all([appInfo(), listShells()]);
+  const [info, found] = await Promise.all([appInfo(), listShells(), loadSettings(), loadPacks()]);
+  applyTheme(settings().theme);
   shells = found;
   localUser = info.user;
   setDefaultUser(info.user);
@@ -332,9 +737,26 @@ async function boot() {
   void hostsPanel.reload();
   void vaultStatus().then(renderVault);
   statusVersion.textContent = `Setu ${info.version} · ${info.os}`;
-  renderMenu();
-  // Plug and play: a working terminal on first launch, no wizard.
-  await newTab();
+  applyKeymap();
+  if (detachedToken !== null && (await receiveTab(detachedToken))) {
+    restoring = false;
+    renderTabs();
+    return;
+  }
+  const session = isMainWindow ? await loadSession() : null;
+  if (session) {
+    restoreSession(session);
+  } else {
+    // Plug and play: a working terminal on first launch, no wizard.
+    await newTab();
+  }
+  restoring = false;
+  renderTabs();
+  // Asked once, over a working terminal, and easy to skip.
+  if (settings().role === null) {
+    await openRolePicker();
+    active?.focus();
+  }
 }
 
 void boot();

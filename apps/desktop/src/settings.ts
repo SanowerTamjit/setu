@@ -1,0 +1,121 @@
+// Preferences, saved as settings.json in Setu's config folder. Everything has
+// a default, so a missing or older file just means defaults.
+
+import { invoke } from "@tauri-apps/api/core";
+
+export type ThemeName = "dark" | "light" | "high-contrast";
+export type KeymapName = "default" | "vim" | "emacs";
+
+/** A shell profile the user defined: a base shell plus its own settings. */
+export interface ShellProfileSetting {
+  /** Stable id, `custom:<n>`. */
+  id: string;
+  name: string;
+  /** Id of a detected shell (`bash`, `wsl:Ubuntu`, …) to start from. */
+  base: string;
+  args: string[];
+  /** Starting folder; empty means your home folder. */
+  cwd: string;
+  /** Extra environment variables, `NAME` → value. */
+  env: Record<string, string>;
+}
+
+export interface Settings {
+  version: 1;
+  theme: ThemeName;
+  keymap: KeymapName;
+  /** Hide things that look like secrets in terminal output. */
+  maskSecrets: boolean;
+  shellProfiles: ShellProfileSetting[];
+  /** Shell or profile id for new tabs; null means the system's default shell. */
+  defaultShell: string | null;
+  /** The role chosen on first launch ("none" when skipped), or null before choosing. */
+  role: string | null;
+  /** Packs turned on or off by hand; others follow the default (see packs.ts). */
+  packs: Record<string, boolean>;
+  fontSize: number;
+}
+
+export const DEFAULTS: Settings = {
+  version: 1,
+  theme: "dark",
+  keymap: "default",
+  maskSecrets: true,
+  shellProfiles: [],
+  defaultShell: null,
+  role: null,
+  packs: {},
+  fontSize: 14,
+};
+
+let current: Settings = structuredClone(DEFAULTS);
+const listeners = new Set<(s: Settings, changed: Partial<Settings>) => void>();
+
+function sanitize(raw: unknown): Settings {
+  const s = structuredClone(DEFAULTS);
+  if (!raw || typeof raw !== "object") return s;
+  const r = raw as Record<string, unknown>;
+  if (r.theme === "dark" || r.theme === "light" || r.theme === "high-contrast") s.theme = r.theme;
+  if (r.keymap === "default" || r.keymap === "vim" || r.keymap === "emacs") s.keymap = r.keymap;
+  if (typeof r.maskSecrets === "boolean") s.maskSecrets = r.maskSecrets;
+  if (typeof r.defaultShell === "string") s.defaultShell = r.defaultShell;
+  if (r.packs && typeof r.packs === "object") {
+    for (const [k, v] of Object.entries(r.packs as Record<string, unknown>)) {
+      if (typeof v === "boolean") s.packs[k] = v;
+    }
+  }
+  if (typeof r.role === "string" || r.role === null) s.role = r.role as string | null;
+  if (typeof r.fontSize === "number" && r.fontSize >= 8 && r.fontSize <= 32) s.fontSize = r.fontSize;
+  if (Array.isArray(r.shellProfiles)) {
+    s.shellProfiles = r.shellProfiles.flatMap((p): ShellProfileSetting[] => {
+      if (!p || typeof p !== "object") return [];
+      const q = p as Record<string, unknown>;
+      if (typeof q.id !== "string" || typeof q.name !== "string" || typeof q.base !== "string") return [];
+      const env: Record<string, string> = {};
+      if (q.env && typeof q.env === "object") {
+        for (const [k, v] of Object.entries(q.env as Record<string, unknown>)) {
+          if (typeof v === "string") env[k] = v;
+        }
+      }
+      return [
+        {
+          id: q.id,
+          name: q.name,
+          base: q.base,
+          args: Array.isArray(q.args) ? q.args.filter((a): a is string => typeof a === "string") : [],
+          cwd: typeof q.cwd === "string" ? q.cwd : "",
+          env,
+        },
+      ];
+    });
+  }
+  return s;
+}
+
+export async function loadSettings(): Promise<Settings> {
+  try {
+    const text = await invoke<string | null>("settings_load");
+    current = sanitize(text ? JSON.parse(text) : null);
+  } catch {
+    current = structuredClone(DEFAULTS);
+  }
+  return current;
+}
+
+export function settings(): Readonly<Settings> {
+  return current;
+}
+
+/** Changes some settings, saves them, and tells listeners. */
+export function updateSettings(patch: Partial<Settings>) {
+  current = sanitize({ ...current, ...patch });
+  void invoke("settings_save", { json: JSON.stringify(current, null, 2) }).catch(() => {
+    // Preferences still apply for this run.
+  });
+  for (const l of listeners) l(current, patch);
+}
+
+export function onSettingsChange(listener: (s: Settings, changed: Partial<Settings>) => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}

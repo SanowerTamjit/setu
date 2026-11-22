@@ -24,6 +24,7 @@
 mod error;
 pub mod import;
 mod model;
+pub mod sources;
 pub mod ssh_config;
 mod store;
 

@@ -4,15 +4,8 @@
 import type { Terminal } from "@xterm/xterm";
 import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
 import { el } from "./dom";
-
-const DECORATIONS = {
-  matchBackground: "#3b4252",
-  matchBorder: "#5c6370",
-  matchOverviewRuler: "#7d8799",
-  activeMatchBackground: "#f5a524",
-  activeMatchBorder: "#f5a524",
-  activeMatchColorOverviewRuler: "#f5a524",
-};
+import { settings } from "./settings";
+import { findColors } from "./themes";
 
 /** Matches beyond this many are found but not all highlighted, to stay fast. */
 const HIGHLIGHT_LIMIT = 1000;
@@ -140,7 +133,7 @@ export class FindBar {
       regex: this.regex,
       wholeWord: this.wholeWord,
       incremental,
-      decorations: DECORATIONS,
+      decorations: findColors(settings().theme),
     };
   }
 

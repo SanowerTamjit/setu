@@ -41,8 +41,38 @@ export interface OpenedTerminal {
  * Starts a shell in a new pseudo-terminal. Output arrives as raw bytes on
  * `onOutput`; `onExit` fires once with the exit code when the shell ends.
  */
+function channels(onOutput: (data: Uint8Array) => void, onExit: (code: number) => void) {
+  const output = new Channel<ArrayBuffer | number[]>();
+  output.onmessage = (msg) =>
+    onOutput(msg instanceof ArrayBuffer ? new Uint8Array(msg) : Uint8Array.from(msg));
+  const exit = new Channel<number>();
+  exit.onmessage = onExit;
+  return { onOutput: output, onExit: exit };
+}
+
+/** Keeps these sessions' output while their tab moves to another window. */
+export const terminalHold = (ids: number[]) => invoke<void>("terminal_hold", { ids });
+
+/** Shows a running session in this window, starting with what it printed meanwhile. */
+export function terminalAttach(id: number, onOutput: (data: Uint8Array) => void, onExit: (code: number) => void) {
+  return invoke<void>("terminal_attach", { id, ...channels(onOutput, onExit) });
+}
+
+/** Opens a new window for a tab; `payload` is handed to it once. */
+export const windowDetach = (payload: string, title: string) => invoke<void>("window_detach", { payload, title });
+
+export const windowTake = (token: string) => invoke<string | null>("window_take", { token });
+
+/** What a shell profile changes about its base shell. */
+export interface Launch {
+  args: string[];
+  cwd: string;
+  env: [string, string][];
+}
+
 export function openTerminal(
   shellId: string | null,
+  launch: Launch | null,
   cols: number,
   rows: number,
   onOutput: (data: Uint8Array) => void,
@@ -55,6 +85,7 @@ export function openTerminal(
   exit.onmessage = onExit;
   return invoke<OpenedTerminal>("open_terminal", {
     shellId,
+    launch,
     cols,
     rows,
     onOutput: output,
@@ -123,6 +154,22 @@ export function sshConnect(
   return invoke<OpenedSsh>("ssh_connect", { request, cols, rows, onOutput: output, onExit: exit });
 }
 
+/** Opens another shell on SSH terminal `terminalId`'s connection (for a split pane). */
+export function sshOpenShell(
+  terminalId: number,
+  cols: number,
+  rows: number,
+  onOutput: (data: Uint8Array) => void,
+  onExit: (code: number) => void,
+): Promise<number> {
+  const output = new Channel<ArrayBuffer | number[]>();
+  output.onmessage = (msg) =>
+    onOutput(msg instanceof ArrayBuffer ? new Uint8Array(msg) : Uint8Array.from(msg));
+  const exit = new Channel<number>();
+  exit.onmessage = onExit;
+  return invoke<number>("ssh_open_shell", { terminalId, cols, rows, onOutput: output, onExit: exit });
+}
+
 export const sshTrustHost = (key: HostKeyInfo) => invoke<void>("ssh_trust_host", { key });
 
 // ---- Saved hosts (src-tauri/src/hosts.rs) ----
@@ -170,6 +217,15 @@ export interface SshConfigScan {
 }
 
 export const sshConfigScan = () => invoke<SshConfigScan>("ssh_config_scan");
+
+export interface FileScan {
+  format: string;
+  candidates: ImportCandidate[];
+  skipped: string[];
+}
+
+export const hostsParseFile = (fileName: string, bytes: Uint8Array) =>
+  invoke<FileScan>("hosts_parse_file", { fileName, bytes: Array.from(bytes) });
 
 export interface Imported {
   summary: { added: number; updated: number };
@@ -278,3 +334,87 @@ export function transfer(
 }
 
 export const transferCancel = (transferId: number) => invoke<void>("transfer_cancel", { transferId });
+
+// ---- SSH keys ----
+
+export interface KeyView {
+  path: string;
+  name: string;
+  state: "plain" | "encrypted" | "unreadable";
+  problem: string | null;
+  algorithm: string | null;
+  fingerprint: string | null;
+  comment: string | null;
+  publicLine: string | null;
+  inAgent: boolean;
+}
+
+export interface KeyList {
+  dir: string;
+  keys: KeyView[];
+  agent: "none" | "unreachable" | "running";
+  agentOnly: string[];
+}
+
+export type KeyKind = "ed25519" | "ecdsa" | "rsa";
+
+export const sshKeysList = () => invoke<KeyList>("ssh_keys_list");
+
+export const sshKeyGenerate = (name: string, kind: KeyKind, comment: string, passphrase: string | null) =>
+  invoke<{ path: string; fingerprint: string; publicLine: string }>("ssh_key_generate", {
+    name,
+    kind,
+    comment,
+    passphrase,
+  });
+
+export const sshKeyAddToAgent = (path: string, passphrase: string | null) =>
+  invoke<void>("ssh_key_add_to_agent", { path, passphrase });
+
+export interface KnownHost {
+  line: number;
+  hosts: string[];
+  hashed: boolean;
+  marker: string | null;
+  algorithm: string;
+  fingerprint: string;
+  comment: string;
+  raw: string;
+}
+
+export const knownHostsList = () => invoke<{ path: string; entries: KnownHost[] }>("known_hosts_list");
+
+export const knownHostsRemove = (line: number, raw: string) => invoke<void>("known_hosts_remove", { line, raw });
+
+// ---- Packs ----
+
+export interface Snippet {
+  id: string;
+  title: string;
+  command: string;
+  description?: string;
+  tags?: string[];
+}
+
+export interface PackManifest {
+  format: number;
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  kind: "role-pack" | "snippets";
+  roles: string[];
+  os: string[];
+  permissions: string[];
+  contributes: { snippets: Snippet[] };
+}
+
+export interface PackView extends PackManifest {
+  builtIn: boolean;
+}
+
+export const packsList = () => invoke<PackView[]>("packs_list");
+export const packInspect = (text: string) =>
+  invoke<{ manifest: PackManifest; replaces: string | null }>("pack_inspect", { text });
+export const packInstall = (text: string) => invoke<PackManifest>("pack_install", { text });
+export const packRemove = (id: string) => invoke<void>("pack_remove", { id });

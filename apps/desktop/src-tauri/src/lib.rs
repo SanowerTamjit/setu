@@ -2,13 +2,17 @@
 //!
 //! The web view only renders. Shells, SSH sessions, saved hosts and the
 //! vault run in Rust and talk to the UI through the commands in [`terminals`],
-//! [`ssh`], [`files`], [`hosts`] and [`vault`].
+//! [`ssh`], [`files`], [`hosts`], [`vault`] and [`session`].
 
 mod files;
 mod hosts;
+mod keys;
+mod packs;
+mod session;
 mod ssh;
 mod terminals;
 mod vault;
+mod windows;
 
 use serde::Serialize;
 
@@ -37,6 +41,9 @@ pub fn run() {
         .manage(hosts::Hosts::from_env())
         .manage(vault::VaultState::from_env())
         .manage(files::Files::default())
+        .manage(session::SessionFile::from_env())
+        .manage(session::SettingsFile::from_env())
+        .manage(windows::Detached::default())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             let vault = app.state::<vault::VaultState>().inner().clone();
@@ -50,6 +57,15 @@ pub fn run() {
             });
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // A closed window ends the shells it was showing.
+            if let tauri::WindowEvent::Destroyed = event {
+                use tauri::Manager;
+                window
+                    .state::<terminals::Terminals>()
+                    .close_shown_in(window.label());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             app_info,
             terminals::list_shells,
@@ -57,13 +73,28 @@ pub fn run() {
             terminals::write_terminal,
             terminals::resize_terminal,
             terminals::close_terminal,
+            terminals::terminal_hold,
+            terminals::terminal_attach,
+            windows::window_detach,
+            windows::window_take,
             ssh::ssh_connect,
+            ssh::ssh_open_shell,
             ssh::ssh_trust_host,
+            keys::ssh_keys_list,
+            keys::ssh_key_generate,
+            keys::ssh_key_add_to_agent,
+            keys::known_hosts_list,
+            keys::known_hosts_remove,
             hosts::hosts_list,
             hosts::host_save,
             hosts::host_delete,
             hosts::ssh_config_scan,
             hosts::ssh_config_import,
+            hosts::hosts_parse_file,
+            packs::packs_list,
+            packs::pack_inspect,
+            packs::pack_install,
+            packs::pack_remove,
             vault::vault_status,
             vault::vault_create,
             vault::vault_unlock,
@@ -71,6 +102,11 @@ pub fn run() {
             vault::vault_remember,
             vault::vault_remove,
             vault::vault_change_password,
+            session::session_load,
+            session::session_save,
+            session::session_clear,
+            session::settings_load,
+            session::settings_save,
             files::files_open,
             files::files_close,
             files::files_list,

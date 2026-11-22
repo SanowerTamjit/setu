@@ -20,6 +20,7 @@
 
 mod client;
 mod error;
+pub mod keygen;
 pub mod keys;
 pub mod known_hosts;
 pub mod sftp;

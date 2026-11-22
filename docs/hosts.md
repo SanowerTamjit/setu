@@ -53,3 +53,20 @@ A file with a higher `version` than Setu understands is never overwritten.
 - `Match` blocks are skipped with a warning.
 
 Hosts that are already saved show as **Saved** (same settings) or **Update** (the config has different settings). Importing an update changes only the connection settings and keeps your folder, tags and notes.
+
+## Importing from other tools
+
+**Import** in the hosts sidebar (or `Import hosts` in the palette) asks where your hosts are now:
+
+| Source | File | What comes across |
+|--------|------|-------------------|
+| PuTTY | A `.reg` export of its saved sessions. PuTTY keeps them in the Windows registry; export them with `reg export HKCU\Software\SimonTatham\PuTTY\Sessions putty.reg` | Host, port, user (also from `user@host`), key file. Telnet, serial and raw sessions are listed as left out |
+| MobaXterm | A `.mxtsessions` export | Host, port, user, key file, SSH gateway as the jump host, and the bookmark folder |
+| Termius or any CSV | A CSV whose first row names the columns: `name`/`label`, `host`/`address`/`ip`, `port`, `user`/`username`, `group`/`folder`, `tags`, `key`, `jump` (any order, commas or semicolons) | Those fields |
+| Ansible | An inventory in INI or YAML | `ansible_host`, `ansible_port`, `ansible_user`, `ansible_ssh_private_key_file`, and a jump host from `-J` or `ProxyJump` in `ansible_ssh_common_args`; group and parent-group variables apply; ranges such as `web[01:03]` expand. The first group becomes the folder, other groups become tags. Hosts with a non-SSH `ansible_connection` are left out |
+
+Saved passwords are never read, even where the other tool stores them. As with `~/.ssh/config`, you choose which hosts to import, and hosts keep the folders they had in the other tool (inside the folder you name, if you name one). Hosts whose names are already saved only update their connection settings.
+
+## Jump-host map
+
+`Jump-host map` in the palette draws how your saved hosts are reached: this computer on the left, then each bastion, then the hosts behind it. Jump hosts that are not saved hosts are drawn dashed. Click a host to connect.

@@ -4,40 +4,24 @@ import { Terminal } from "@xterm/xterm";
 import type { Tab } from "./tab";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { FindBar } from "./find-bar";
+import { SecretMasker } from "./secret-mask";
+import { onSettingsChange, settings } from "./settings";
+import { terminalTheme } from "./themes";
+import { connectionOf, describe, type SavedConnection } from "./session";
 import {
   closeTerminal,
   openTerminal,
   resizeTerminal,
   sshConnect,
+  sshOpenShell,
+  terminalAttach,
   writeTerminal,
   type ConnectRequest,
   type ShellProfile,
 } from "./ipc";
 
-const THEME = {
-  background: "#11151c",
-  foreground: "#d8dee9",
-  cursor: "#f5a524",
-  cursorAccent: "#11151c",
-  selectionBackground: "#3b4252",
-  black: "#1c2129",
-  red: "#e06c75",
-  green: "#98c379",
-  yellow: "#e5c07b",
-  blue: "#61afef",
-  magenta: "#c678dd",
-  cyan: "#56b6c2",
-  white: "#d8dee9",
-  brightBlack: "#5c6370",
-  brightRed: "#ff7a85",
-  brightGreen: "#b5e890",
-  brightYellow: "#ffd68a",
-  brightBlue: "#82c4ff",
-  brightMagenta: "#de9bf0",
-  brightCyan: "#7fd6e0",
-  brightWhite: "#ffffff",
-};
 
 export interface TabEvents {
   onTitle: (tab: TerminalTab) => void;
@@ -49,15 +33,29 @@ export class TerminalTab implements Tab {
   readonly element: HTMLDivElement;
   readonly term: Terminal;
   private readonly fit = new FitAddon();
+  private readonly serializer = new SerializeAddon();
   readonly findBar: FindBar;
+  readonly masker: SecretMasker;
   private id: number | null = null;
   private exited = false;
   private resizeTimer: number | undefined;
+  private readonly unsubscribe: () => void;
   shell: ShellProfile | null = null;
   /** Shown in the status bar: the shell program or `ssh user@host`. */
   detail = "";
   isRemote = false;
   title = "Terminal";
+  /** How this SSH pane connected (no secrets), to reconnect after a restart. */
+  connection: SavedConnection | null = null;
+  /** The tab name a saved host gave this pane. */
+  label: string | undefined;
+  /**
+   * Panes holding the same object share one SSH connection (split panes);
+   * session restore uses it to log in once for all of them.
+   */
+  connectionGroup: object | null = null;
+  /** Set while the pane waits for Enter to reconnect after a restart. */
+  private reconnect: (() => void) | null = null;
 
   constructor(
     container: HTMLElement,
@@ -74,16 +72,30 @@ export class TerminalTab implements Tab {
       cursorBlink: true,
       fontFamily:
         '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
-      fontSize: 14,
+      fontSize: settings().fontSize,
       lineHeight: 1.15,
       scrollback: 10000,
-      theme: THEME,
+      theme: terminalTheme(settings().theme),
     });
     this.term.loadAddon(this.fit);
+    this.term.loadAddon(this.serializer);
     this.term.open(this.element);
     this.findBar = new FindBar(this.element, this.term);
+    this.masker = new SecretMasker(this.term, settings().maskSecrets);
+    this.unsubscribe = onSettingsChange((s, changed) => {
+      if (changed.maskSecrets !== undefined) this.masker.setEnabled(s.maskSecrets);
+      if (changed.theme) this.term.options.theme = terminalTheme(s.theme);
+      if (changed.fontSize) {
+        this.term.options.fontSize = s.fontSize;
+        this.refit();
+      }
+    });
 
     this.term.onData((data) => {
+      if (this.reconnect) {
+        if (data.includes("\r")) this.reconnect();
+        return;
+      }
       if (this.id !== null && !this.exited) void writeTerminal(this.id, data);
     });
     this.term.onTitleChange((title) => {
@@ -117,18 +129,62 @@ export class TerminalTab implements Tab {
 
   async start(shellId: string | null) {
     this.fit.fit();
-    const { id, shell } = await openTerminal(
-      shellId,
+    // A profile from Settings starts its base shell with its own folder,
+    // arguments and variables.
+    const profile = shellId?.startsWith("custom:")
+      ? settings().shellProfiles.find((p) => p.id === shellId)
+      : undefined;
+    if (shellId?.startsWith("custom:") && !profile) throw new Error("That shell profile no longer exists.");
+    const launch = profile ? { args: profile.args, cwd: profile.cwd, env: Object.entries(profile.env) } : null;
+    const { id, shell: base } = await openTerminal(
+      profile ? profile.base : shellId,
+      launch,
       this.term.cols,
       this.term.rows,
       (data) => this.write(data),
       (code) => this.handleExit(code),
     );
+    const shell = profile ? { ...base, id: profile.id, name: profile.name } : base;
     this.id = id;
     this.shell = shell;
     this.title = shell.name;
     this.detail = `${shell.name} · ${shell.program}`;
     this.events.onTitle(this);
+  }
+
+  /** What a new window needs to take this pane over, including its scrollback. */
+  handOver(): MovedPane {
+    return {
+      sessionId: this.exited ? null : this.id,
+      scrollback: this.serializer.serialize({ scrollback: 2000 }),
+      title: this.title,
+      detail: this.detail,
+      isRemote: this.isRemote,
+      shell: this.shell,
+      exited: this.exited,
+    };
+  }
+
+  /** Takes over a pane moved from another window: same session, same scrollback. */
+  async takeOver(moved: MovedPane) {
+    this.shell = moved.shell;
+    this.isRemote = moved.isRemote;
+    this.title = moved.title;
+    this.detail = moved.detail;
+    this.firstOutput = false;
+    await new Promise<void>((resolve) => this.term.write(moved.scrollback, resolve));
+    if (moved.sessionId !== null && !moved.exited) {
+      this.id = moved.sessionId;
+      await terminalAttach(
+        moved.sessionId,
+        (data) => this.write(data),
+        (code) => this.handleExit(code),
+      );
+    } else {
+      this.exited = true;
+    }
+    this.events.onTitle(this);
+    this.refit();
   }
 
   /** Connects over SSH. Rejects with a ConnectFailure the caller can act on. */
@@ -143,12 +199,62 @@ export class TerminalTab implements Tab {
     );
     this.id = id;
     this.isRemote = true;
+    this.reconnect = null;
+    this.connection = connectionOf(request);
+    this.connectionGroup = {};
     this.title = title;
     const port = request.port && request.port !== 22 ? `:${request.port}` : "";
     const via = request.jump ? ` via ${request.jump}` : "";
     this.detail = `ssh ${title}${port}${via}`;
     this.events.onTitle(this);
     this.refit();
+  }
+
+  /** Opens another shell on `from`'s SSH connection, for a split pane. */
+  async startSshFrom(from: TerminalTab) {
+    if (from.id === null) throw new Error("that pane is not connected");
+    this.fit.fit();
+    this.id = await sshOpenShell(
+      from.id,
+      this.term.cols,
+      this.term.rows,
+      (data) => this.write(data),
+      (code) => this.handleExit(code),
+    );
+    this.isRemote = true;
+    this.reconnect = null;
+    this.connection = from.connection;
+    this.connectionGroup = from.connectionGroup;
+    this.label = from.label;
+    this.title = from.title;
+    this.detail = from.detail;
+    this.events.onTitle(this);
+    this.refit();
+  }
+
+  /**
+   * Shows a restored SSH pane that is not connected yet; Enter calls
+   * `onEnter` (which connects, asking only for what it must).
+   */
+  waitForReconnect(connection: SavedConnection, label: string | undefined, group: object, onEnter: () => void) {
+    this.connection = connection;
+    this.label = label;
+    this.connectionGroup = group;
+    this.isRemote = true;
+    this.title = label ?? describe(connection);
+    const via = connection.jump ? ` via ${connection.jump}` : "";
+    this.detail = `ssh ${describe(connection)}${via} · not connected`;
+    this.reconnect = onEnter;
+    this.term.write(
+      `\x1b[2mRestored from your last session.\x1b[0m\r\n` +
+        `Press \x1b[1;33mEnter\x1b[0m to reconnect to \x1b[1m${describe(connection)}\x1b[0m${via}.\r\n`,
+    );
+    this.events.onTitle(this);
+  }
+
+  /** Waiting for Enter to reconnect (a restored SSH pane). */
+  get awaitingReconnect() {
+    return this.reconnect !== null;
   }
 
   private firstOutput = true;
@@ -197,11 +303,12 @@ export class TerminalTab implements Tab {
     return this.exited;
   }
 
-  show() {
+  /** `focus: false` shows a pane of a split without taking focus from its sibling. */
+  show(focus = true) {
     this.element.classList.add("active");
     this.loadRenderer();
     this.refit();
-    this.term.focus();
+    if (focus) this.term.focus();
   }
 
   hide() {
@@ -222,10 +329,25 @@ export class TerminalTab implements Tab {
     }, 30);
   }
 
-  async dispose() {
-    if (this.id !== null && !this.exited) await closeTerminal(this.id).catch(() => {});
+  /** `keepSession`: the session lives on in another window. */
+  async dispose(keepSession = false) {
+    if (!keepSession && this.id !== null && !this.exited) await closeTerminal(this.id).catch(() => {});
+    this.unsubscribe();
     this.findBar.dispose();
+    this.masker.dispose();
     this.term.dispose();
     this.element.remove();
   }
+}
+
+/** A pane on its way to another window. */
+export interface MovedPane {
+  sessionId: number | null;
+  /** The visible screen and scrollback, as escape sequences. */
+  scrollback: string;
+  title: string;
+  detail: string;
+  isRemote: boolean;
+  shell: ShellProfile | null;
+  exited: boolean;
 }
