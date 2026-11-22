@@ -1,7 +1,8 @@
 // A Files tab: this computer on the left, the server on the right (SFTP on
 // an SSH tab's connection), and a transfer queue below.
 
-import { el, errorText, field, modal } from "./dom";
+import { confirmDialog, el, errorText, field, modal } from "./dom";
+import { enabled } from "./features";
 import {
   filesClose,
   filesList,
@@ -82,23 +83,6 @@ function askName(title: string, label: string, initial = "", action = "OK"): Pro
       e.preventDefault();
       if (!input.value.trim()) return;
       value = input.value.trim();
-      close();
-    };
-  });
-}
-
-function confirmDialog(title: string, text: string, action: string, danger = false): Promise<boolean> {
-  return new Promise((resolve) => {
-    let yes = false;
-    const ok = el("button", { type: "submit", className: danger ? "danger-solid" : "primary" }, action);
-    const cancel = el("button", { type: "button" }, "Cancel");
-    const form = el("form", { className: "dialog small" }, el("h2", {}, title), el("p", {}, text), el("div", { className: "actions" }, cancel, ok));
-    const { close } = modal(form, () => resolve(yes));
-    cancel.onclick = close;
-    ok.focus();
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      yes = true;
       close();
     };
   });
@@ -421,7 +405,7 @@ export class FilesTab implements Tab {
           void this.rename(pane);
           return true;
         }
-        if (e.key === "F4") {
+        if (e.key === "F4" && enabled("remoteEdit")) {
           void this.edit(pane);
           return true;
         }
@@ -483,7 +467,7 @@ export class FilesTab implements Tab {
     const mk = tool("folderPlus", "New folder", () => void this.mkdir(pane));
     const rn = tool("rename", "Rename (F2)", () => void this.rename(pane));
     const rm = tool("trash", "Delete (Delete)", () => void this.remove(pane), true);
-    return [ed, pm, mk, rn, rm];
+    return enabled("remoteEdit") ? [ed, pm, mk, rn, rm] : [pm, mk, rn, rm];
   }
 
   private async permissions(pane: Pane) {

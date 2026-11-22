@@ -51,6 +51,25 @@ export function modal(content: HTMLElement, onClose: () => void) {
   return { overlay, close };
 }
 
+/** A small yes-or-no dialog; resolves true when the action is chosen. */
+export function confirmDialog(title: string, text: string | HTMLElement, action: string, danger = false): Promise<boolean> {
+  return new Promise((resolve) => {
+    let yes = false;
+    const ok = el("button", { type: "submit", className: danger ? "danger-solid" : "primary" }, action);
+    const cancel = el("button", { type: "button" }, "Cancel");
+    const body = typeof text === "string" ? el("p", {}, text) : text;
+    const form = el("form", { className: "dialog small" }, el("h2", {}, title), body, el("div", { className: "actions" }, cancel, ok));
+    const { close } = modal(form, () => resolve(yes));
+    cancel.onclick = close;
+    ok.focus();
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      yes = true;
+      close();
+    };
+  });
+}
+
 /** The close button in a dialog's top corner. */
 export function addCloseButton(dialog: HTMLElement, close: () => void) {
   if (dialog.querySelector(":scope > .dialog-close")) return;

@@ -42,6 +42,8 @@ export interface Settings {
   renderer: RendererName;
   /** Command that opens remote files for editing; empty uses the system's default app. */
   editor: string;
+  /** Feature flags turned on or off by hand; others use their default (see features.ts). */
+  features: Record<string, boolean>;
 }
 
 export type RendererName = "auto" | "gpu" | "dom";
@@ -60,6 +62,7 @@ export const DEFAULTS: Settings = {
   ligatures: true,
   renderer: "auto",
   editor: "",
+  features: {},
 };
 
 let current: Settings = structuredClone(DEFAULTS);
@@ -76,6 +79,11 @@ function sanitize(raw: unknown): Settings {
   if (r.packs && typeof r.packs === "object") {
     for (const [k, v] of Object.entries(r.packs as Record<string, unknown>)) {
       if (typeof v === "boolean") s.packs[k] = v;
+    }
+  }
+  if (r.features && typeof r.features === "object") {
+    for (const [k, v] of Object.entries(r.features as Record<string, unknown>).slice(0, 100)) {
+      if (typeof v === "boolean" && /^[A-Za-z][A-Za-z0-9]{0,40}$/.test(k)) s.features[k] = v;
     }
   }
   if (typeof r.role === "string" || r.role === null) s.role = r.role as string | null;
