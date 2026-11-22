@@ -12,10 +12,10 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
 
-struct FileSession {
-    sftp: Sftp,
+pub(crate) struct FileSession {
+    pub(crate) sftp: Sftp,
     /// Keeps the connection open even if its terminal tab is closed.
-    _client: Arc<SshClient>,
+    pub(crate) _client: Arc<SshClient>,
 }
 
 #[derive(Default)]
@@ -33,7 +33,7 @@ impl std::fmt::Debug for Files {
 }
 
 impl Files {
-    fn get(&self, id: u32) -> Result<Arc<FileSession>, String> {
+    pub(crate) fn get(&self, id: u32) -> Result<Arc<FileSession>, String> {
         self.sessions
             .lock()
             .map_err(|_| "files lock poisoned".to_string())?

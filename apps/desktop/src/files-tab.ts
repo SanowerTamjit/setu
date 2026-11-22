@@ -13,11 +13,18 @@ import {
   transfer,
   transferCancel,
   transferPause,
+  remoteEditOpen,
+  remoteEditPush,
+  remoteEditStop,
+  type RemoteEditEvent,
   type FileEntry,
   type Listing,
   type TransferProgress,
 } from "./ipc";
 import { icon } from "./icons";
+import { listen } from "@tauri-apps/api/event";
+import { settings, updateSettings } from "./settings";
+import { registerSettingsSection } from "./settings-dialog";
 import type { Tab } from "./tab";
 
 const FOLDER_ICON =
@@ -336,6 +343,39 @@ interface Job {
 
 let nextTransferId = 1;
 
+/** A remote file open in a local editor; saves go back to the server. */
+interface Editing {
+  editId: number;
+  name: string;
+  remote: string;
+  local: string;
+  state: "open" | "saved" | "conflict" | "error";
+  at?: number;
+  message?: string;
+}
+
+registerSettingsSection({
+  id: "files",
+  title: "Files",
+  render(body) {
+    const editor = el("input", {
+      type: "text",
+      value: settings().editor,
+      placeholder: "System default app",
+      spellcheck: false,
+    });
+    editor.onchange = () => updateSettings({ editor: editor.value.trim() });
+    body.append(
+      el("h3", {}, "Editing remote files"),
+      field(
+        "Editor",
+        editor,
+        "The command that opens a file, such as code, subl, gedit or \"C:\\Program Files\\Notepad++\\notepad++.exe\". Put {file} where the path goes if it is not last. Leave empty to use the app your system opens the file with.",
+      ),
+    );
+  },
+});
+
 export class FilesTab implements Tab {
   readonly element: HTMLDivElement;
   title: string;
@@ -345,6 +385,9 @@ export class FilesTab implements Tab {
   private readonly remote: Pane;
   private readonly queue: Job[] = [];
   private readonly queueList: HTMLDivElement;
+  private readonly edits: Editing[] = [];
+  private readonly editList: HTMLDivElement;
+  private unlistenEdits: (() => void) | null = null;
   private readonly queueTitle: HTMLSpanElement;
   private readonly pauseAll: HTMLButtonElement;
   private readonly resumeAll: HTMLButtonElement;
@@ -377,6 +420,10 @@ export class FilesTab implements Tab {
           void this.rename(pane);
           return true;
         }
+        if (e.key === "F4") {
+          void this.edit(pane);
+          return true;
+        }
         return false;
       },
     });
@@ -397,8 +444,14 @@ export class FilesTab implements Tab {
       for (const job of this.queue) if (job.status === "paused" || job.status === "failed") this.resume(job);
     };
     this.queueList = el("div", { className: "queue-list" });
+    this.editList = el("div", { className: "edit-list", hidden: true });
+    void listen<RemoteEditEvent>("remote-edit", (e) => this.onEditEvent(e.payload)).then((un) => {
+      if (this.disposed) un();
+      else this.unlistenEdits = un;
+    });
     this.element = el("div", { className: "files-tab" },
       el("div", { className: "panes" }, this.local.element, this.remote.element),
+      this.editList,
       el("div", { className: "queue" }, el("div", { className: "queue-head" }, this.queueTitle, el("span", { className: "spacer" }), this.pauseAll, this.resumeAll, clear), this.queueList),
     );
     container.appendChild(this.element);
@@ -424,7 +477,106 @@ export class FilesTab implements Tab {
     rn.onclick = () => void this.rename(pane);
     const rm = el("button", { className: "tool danger", title: "Delete (Delete)" }, "Delete");
     rm.onclick = () => void this.remove(pane);
-    return [mk, rn, rm];
+    const ed = el("button", { className: "tool", title: "Open in your editor; saving writes it back to the server (F4)" }, "Edit");
+    ed.onclick = () => void this.edit(pane);
+    return [ed, mk, rn, rm];
+  }
+
+  /** Opens the selected remote file in the local editor. */
+  private async edit(pane: Pane) {
+    const [entry] = pane.selection;
+    if (!entry || entry.kind === "dir") {
+      pane.showError("Select a file to edit.");
+      return;
+    }
+    const remote = joinPath(pane.path, entry.name, true);
+    const already = this.edits.find((e) => e.remote === remote);
+    if (already) {
+      await remoteEditStop(already.editId).catch(() => {});
+      this.edits.splice(this.edits.indexOf(already), 1);
+    }
+    try {
+      const { editId, local } = await remoteEditOpen(this.id(), remote, settings().editor);
+      this.edits.push({ editId, name: entry.name, remote, local, state: "open" });
+      this.renderEdits();
+    } catch (err) {
+      pane.showError(errorText(err));
+    }
+  }
+
+  private onEditEvent(ev: RemoteEditEvent) {
+    const edit = this.edits.find((e) => e.editId === ev.editId);
+    if (!edit) return;
+    edit.state = ev.state;
+    edit.at = ev.state === "saved" ? ev.at : edit.at;
+    edit.message = ev.state === "error" ? ev.message : undefined;
+    this.renderEdits();
+    if (ev.state === "saved" && this.remote.path === edit.remote.slice(0, edit.remote.lastIndexOf("/") || 1)) void this.remote.refresh();
+  }
+
+  private async stopEdit(edit: Editing) {
+    await remoteEditStop(edit.editId).catch(() => {});
+    this.edits.splice(this.edits.indexOf(edit), 1);
+    this.renderEdits();
+  }
+
+  private renderEdits() {
+    this.editList.hidden = this.edits.length === 0;
+    const time = (secs: number) => new Date(secs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    this.editList.replaceChildren(
+      el("div", { className: "queue-head" }, el("span", {}, `Editing · ${this.edits.length}`)),
+      ...this.edits.map((edit) => {
+        let status: string;
+        const buttons: HTMLElement[] = [];
+        switch (edit.state) {
+          case "open":
+            status = "Open in your editor. Each save is written back to the server.";
+            break;
+          case "saved":
+            status = `Saved to the server at ${time(edit.at ?? 0)}`;
+            break;
+          case "conflict": {
+            status = "Changed on the server since you opened it. Your save was not written.";
+            const force = el("button", { className: "text-button danger" }, "Overwrite the server's copy");
+            force.onclick = async () => {
+              try {
+                this.onEditEvent(await remoteEditPush(edit.editId));
+              } catch (err) {
+                this.onEditEvent({ state: "error", editId: edit.editId, message: errorText(err) });
+              }
+            };
+            const reopen = el("button", { className: "text-button" }, "Open the server's copy");
+            reopen.onclick = async () => {
+              await this.stopEdit(edit);
+              const dir = edit.remote.slice(0, edit.remote.lastIndexOf("/")) || "/";
+              await this.remote.open(dir, edit.name);
+              await this.edit(this.remote);
+            };
+            buttons.push(force, reopen);
+            break;
+          }
+          default:
+            status = edit.message ?? "Could not save to the server.";
+        }
+        const stop = el("button", { className: "text-button" }, "Stop editing");
+        stop.title = "Stop writing saves back and delete the local copy";
+        stop.onclick = () => void this.stopEdit(edit);
+        return el(
+          "div",
+          { className: `edit-row ${edit.state}` },
+          icon("edit", 14),
+          el(
+            "span",
+            { className: "job-text" },
+            el("span", { className: "job-name", title: edit.remote }, edit.name),
+            el("span", { className: "muted job-sub", title: edit.local }, status),
+          ),
+          el("span", { className: "spacer" }),
+          ...buttons,
+          stop,
+        );
+      }),
+    );
   }
 
   private async mkdir(pane: Pane) {
@@ -692,6 +844,8 @@ export class FilesTab implements Tab {
   async dispose() {
     this.disposed = true;
     for (const job of this.queue) if (job.status === "running") void transferCancel(job.id);
+    for (const edit of this.edits) void remoteEditStop(edit.editId).catch(() => {});
+    this.unlistenEdits?.();
     if (this.sftpId !== null) await filesClose(this.sftpId).catch(() => {});
     this.element.remove();
   }

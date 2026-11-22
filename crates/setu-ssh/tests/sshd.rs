@@ -529,3 +529,68 @@ async fn sftp_browse_copy_rename_delete() {
     assert_eq!(std::fs::read(down.join("blob.bin")).expect("read"), big);
     assert!(!down.join("blob.bin.setu-part").exists());
 }
+
+// Unix only: it checks modes through std::os::unix.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn sftp_edit_in_place_and_permissions() {
+    use setu_ssh::sftp::Change;
+    use std::os::unix::fs::PermissionsExt;
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let client = connect(&sshd.opts()).await.expect("connect");
+    let sftp = client.sftp().await.expect("sftp");
+    let work = tempfile::tempdir().expect("tempdir");
+    let conf = work.path().join("app.conf");
+    std::fs::write(&conf, b"port = 80\n").expect("write");
+    std::fs::set_permissions(&conf, std::fs::Permissions::from_mode(0o640)).expect("chmod");
+    let path = conf.to_string_lossy().to_string();
+
+    // Editing in place keeps the file's mode.
+    assert_eq!(
+        sftp.read_file(&path, 1_000_000).await.expect("read"),
+        b"port = 80\n"
+    );
+    sftp.write_file(&path, b"port = 8080\n")
+        .await
+        .expect("write");
+    assert_eq!(std::fs::read(&conf).expect("read"), b"port = 8080\n");
+    let stat = sftp.stat(&path).await.expect("stat");
+    assert_eq!(stat.permissions, Some(0o640));
+    assert_eq!(stat.size, 12);
+    assert!(sftp.read_file(&path, 4).await.is_err(), "over the limit");
+
+    // One file, then a whole tree where folders stay enterable.
+    let change = Change {
+        mode: Some(0o600),
+        owner: None,
+    };
+    sftp.set_attributes(&path, change, false)
+        .await
+        .expect("chmod");
+    assert_eq!(
+        std::fs::metadata(&conf).expect("meta").permissions().mode() & 0o7777,
+        0o600
+    );
+
+    let site = work.path().join("site");
+    std::fs::create_dir_all(site.join("css")).expect("mkdir");
+    std::fs::write(site.join("index.html"), b"hi").expect("write");
+    std::fs::write(site.join("css/app.css"), b"body{}").expect("write");
+    let stat = sftp.stat(&path).await.expect("stat");
+    let owner = (stat.uid.expect("uid"), stat.gid.expect("gid"));
+    let tree = Change {
+        mode: Some(0o640),
+        owner: Some(owner),
+    };
+    let done = sftp
+        .set_attributes(&site.to_string_lossy(), tree, true)
+        .await
+        .expect("chmod -R");
+    assert_eq!(done.items, 4);
+    let mode = |p: &Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o7777;
+    assert_eq!(mode(&site), 0o750);
+    assert_eq!(mode(&site.join("css")), 0o750);
+    assert_eq!(mode(&site.join("index.html")), 0o640);
+    assert_eq!(mode(&site.join("css/app.css")), 0o640);
+}

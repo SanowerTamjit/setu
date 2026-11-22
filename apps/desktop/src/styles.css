@@ -1097,12 +1097,14 @@ button.link-button {
 
 .pane-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 8px 10px 4px;
 }
 
 .pane-label {
+  min-width: 5em;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2898,4 +2900,49 @@ button.with-icon {
 /* The search box's frame shows focus, so the field inside needs no second outline. */
 :root[data-theme="high-contrast"] .home-search-input:focus-visible {
   outline: none;
+}
+
+/* Remote files open in a local editor */
+.edit-list {
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+  padding-bottom: 6px;
+}
+
+.edit-list[hidden] {
+  display: none;
+}
+
+.edit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.edit-row > .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.edit-row .spacer {
+  flex: 1;
+}
+
+.edit-row.saved .job-sub {
+  color: var(--success-text);
+}
+
+.edit-row.conflict .job-sub {
+  color: var(--warn-text);
+}
+
+.edit-row.error .job-sub {
+  color: var(--danger-text);
+}
+
+.edit-row .text-button.danger {
+  color: var(--danger-text);
 }

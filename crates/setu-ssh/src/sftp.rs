@@ -285,6 +285,39 @@ impl<F: FnMut(&Progress)> Reporter<F> {
     }
 }
 
+/// One remote file's details, for the permissions editor and remote edits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stat {
+    pub kind: EntryKind,
+    pub size: u64,
+    pub modified: Option<u64>,
+    /// Mode bits without the file type (`0o7777` at most).
+    pub permissions: Option<u32>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+}
+
+/// What to change with [`Sftp::set_attributes`]; `None` leaves it alone.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Change {
+    pub mode: Option<u32>,
+    /// User and group ids; SFTP sets both together.
+    pub owner: Option<(u32, u32)>,
+}
+
+/// The mode a folder gets when a file mode is applied to a whole tree: like
+/// `chmod -R u=rw,go=r,a+X`, anyone who may read the folder may also enter it.
+pub fn folder_mode(mode: u32) -> u32 {
+    (mode | ((mode & 0o444) >> 2)) & 0o7777
+}
+
+/// How many items [`Sftp::set_attributes`] changed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct Changed {
+    pub items: usize,
+}
+
 /// An SFTP session on an SSH connection.
 pub struct Sftp {
     session: SftpSession,
@@ -322,6 +355,131 @@ impl Sftp {
             .canonicalize(path)
             .await
             .map_err(|e| files_err(path, e))
+    }
+
+    /// Details of one remote item; a symlink reports what it points to, but
+    /// keeps the `symlink` kind.
+    pub async fn stat(&self, path: &str) -> Result<Stat, SshError> {
+        let link = self
+            .session
+            .symlink_metadata(path)
+            .await
+            .map_err(|e| files_err(path, e))?;
+        let meta = if link.is_symlink() {
+            self.session
+                .metadata(path)
+                .await
+                .map_err(|e| files_err(path, e))?
+        } else {
+            link.clone()
+        };
+        Ok(Stat {
+            kind: kind_of(link.file_type()),
+            size: meta.size.unwrap_or(0),
+            modified: meta.mtime.map(u64::from),
+            permissions: meta.permissions.map(|p| p & 0o7777),
+            uid: meta.uid,
+            gid: meta.gid,
+        })
+    }
+
+    /// Reads a whole remote file, refusing files over `limit` bytes.
+    pub async fn read_file(&self, path: &str, limit: u64) -> Result<Vec<u8>, SshError> {
+        let size = self.stat(path).await?.size;
+        if size > limit {
+            return Err(files_err(
+                path,
+                format!(
+                    "is {} MB; files over {} MB are not opened for editing",
+                    size / 1_000_000,
+                    limit / 1_000_000
+                ),
+            ));
+        }
+        let mut file = self
+            .session
+            .open(path)
+            .await
+            .map_err(|e| files_err(path, e))?;
+        let mut out = Vec::with_capacity(usize::try_from(size).unwrap_or(0));
+        file.read_to_end(&mut out)
+            .await
+            .map_err(|e| files_err(path, e))?;
+        Ok(out)
+    }
+
+    /// Replaces a remote file's contents in place, so it keeps its owner,
+    /// group and permissions (unlike writing a new file and renaming it).
+    pub async fn write_file(&self, path: &str, data: &[u8]) -> Result<(), SshError> {
+        let mut file = self
+            .session
+            .open_with_flags(
+                path,
+                OpenFlags::WRITE | OpenFlags::TRUNCATE | OpenFlags::CREATE,
+            )
+            .await
+            .map_err(|e| files_err(path, e))?;
+        file.write_all(data).await.map_err(|e| files_err(path, e))?;
+        file.shutdown().await.map_err(|e| files_err(path, e))
+    }
+
+    async fn set_one(
+        &self,
+        path: &str,
+        mode: Option<u32>,
+        owner: Option<(u32, u32)>,
+    ) -> Result<(), SshError> {
+        let mut attrs = russh_sftp::protocol::FileAttributes::empty();
+        attrs.permissions = mode.map(|m| m & 0o7777);
+        if let Some((uid, gid)) = owner {
+            attrs.uid = Some(uid);
+            attrs.gid = Some(gid);
+        }
+        self.session
+            .set_metadata(path, attrs)
+            .await
+            .map_err(|e| files_err(path, e))
+    }
+
+    /// Changes mode and/or owner of `path`, and with `recursive` of
+    /// everything inside a folder. Inside a tree, folders get
+    /// [`folder_mode`] so they stay enterable; symlinks are left alone.
+    pub async fn set_attributes(
+        &self,
+        path: &str,
+        change: Change,
+        recursive: bool,
+    ) -> Result<Changed, SshError> {
+        let top = self.stat(path).await?;
+        let is_dir = top.kind == EntryKind::Dir;
+        let top_mode = match (change.mode, is_dir && recursive) {
+            (Some(m), true) => Some(folder_mode(m)),
+            (m, _) => m,
+        };
+        self.set_one(path, top_mode, change.owner).await?;
+        let mut changed = Changed { items: 1 };
+        if !(is_dir && recursive) {
+            return Ok(changed);
+        }
+        let mut stack = vec![path.to_string()];
+        while let Some(dir) = stack.pop() {
+            for entry in self.list(&dir).await? {
+                let child = join_remote(&dir, &entry.name);
+                match entry.kind {
+                    EntryKind::Dir => {
+                        self.set_one(&child, change.mode.map(folder_mode), change.owner)
+                            .await?;
+                        stack.push(child);
+                    }
+                    EntryKind::File | EntryKind::Other => {
+                        self.set_one(&child, change.mode, change.owner).await?
+                    }
+                    EntryKind::Symlink => continue,
+                }
+                changed.items += 1;
+            }
+        }
+        Ok(changed)
     }
 
     /// Lists a remote folder, without `.` and `..`.
@@ -715,6 +873,14 @@ fn partial_local(dst: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folders_stay_enterable() {
+        assert_eq!(folder_mode(0o644), 0o755);
+        assert_eq!(folder_mode(0o640), 0o750);
+        assert_eq!(folder_mode(0o600), 0o700);
+        assert_eq!(folder_mode(0o4755), 0o4755);
+    }
 
     #[test]
     fn resume_decisions() {

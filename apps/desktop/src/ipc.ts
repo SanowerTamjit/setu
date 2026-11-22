@@ -340,6 +340,18 @@ export function transfer(
 export const transferCancel = (transferId: number) => invoke<void>("transfer_cancel", { transferId });
 export const transferPause = (transferId: number) => invoke<void>("transfer_pause", { transferId });
 
+// ---- Remote edit ----
+
+export type RemoteEditEvent =
+  | { state: "saved"; editId: number; at: number; bytes: number }
+  | { state: "conflict"; editId: number }
+  | { state: "error"; editId: number; message: string };
+
+export const remoteEditOpen = (id: number, remote: string, editor: string) =>
+  invoke<{ editId: number; local: string }>("remote_edit_open", { id, remote, editor });
+export const remoteEditPush = (editId: number) => invoke<RemoteEditEvent>("remote_edit_push", { editId });
+export const remoteEditStop = (editId: number) => invoke<void>("remote_edit_stop", { editId });
+
 // ---- SSH keys ----
 
 export interface KeyView {

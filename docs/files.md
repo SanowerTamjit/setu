@@ -31,8 +31,17 @@ The Files tab keeps the connection open even if you close its SSH tab.
 - **Cancel** (✕ on a running or waiting copy) stops it and deletes the partial file. Removing a paused or failed copy from the list leaves its `.setu-part` file in place, so you can resume later by copying the same item again and pressing Retry, or delete it.
 - Resuming trusts what is on disk: a finished file with the same size as the source counts as done, and a partial file is continued if it is not larger than the source. Like `rsync --partial`, it does not re-check bytes already copied.
 
+## Editing a remote file in your editor
+
+Select a file on the server side and click **Edit** (or press **F4**). Setu copies it to a private temporary folder (`setu-edit` in your system's temp folder, readable only by you) and opens it in your editor. Every time you save, Setu writes it back to the server. The **Editing** list shows when each file was last saved.
+
+- Choose the editor in Settings → Files → **Editor**: a command such as `code`, `subl`, `gedit`, or `"C:\Program Files\Notepad++\notepad++.exe"`. Put `{file}` where the path goes if it is not last (for example `xterm -e vim {file}`). Empty means the app your system opens that kind of file with.
+- Saves replace the file's contents in place, so the file keeps its owner, group and permissions.
+- Before each save Setu checks the server's copy. If it changed since you opened it (someone else edited it, or a deploy replaced it), your save is **not** written and the list says so: choose **Overwrite the server's copy** or **Open the server's copy** to start again from the new version.
+- **Stop editing** stops writing saves back and deletes the local copy. Closing the Files tab does the same. Copies left by a crash are deleted after a week.
+- Files over 50 MB are not opened for editing.
+
 ## Limits in this version
 
 - Permissions and modification times are not copied; new files get the server's or your system's defaults.
 - No copy between two remote hosts. The queue lives in the open Files tab; it is not kept after Setu restarts (the partial files are).
-- No editing of remote files in place yet.
