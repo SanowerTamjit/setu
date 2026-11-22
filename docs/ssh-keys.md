@@ -14,7 +14,7 @@ Lists the private keys in `~/.ssh` with their type, SHA-256 fingerprint and comm
 
 A security key keeps the private key on the device: the file in `~/.ssh` only points at it, so a copied file is useless without the key, and every sign-in needs a touch. Setu uses the same `sk-ssh-ed25519@openssh.com` and `sk-ecdsa-sha2-nistp256@openssh.com` keys as OpenSSH 8.2 and newer, so the server side is the usual `authorized_keys` line.
 
-- **New key → Security key (Ed25519)** (or ECDSA, for older U2F-only keys) makes the key with OpenSSH's `ssh-keygen`, which must be installed. Plug the key in, click **Make key** and touch it when it blinks. Options:
+- **New key → Security key (Ed25519)** (or ECDSA, for older U2F-only keys) makes the key with OpenSSH's `ssh-keygen`, which must be installed and built with security key support. macOS's own OpenSSH is not, so on a Mac install it from Homebrew (`brew install openssh`). Plug the key in, click **Make key** and touch it when it blinks. Options:
   - **Store it on the security key too** (`-O resident`) so you can load it on another computer. Needs a FIDO2 key with a PIN.
   - **Ask for the PIN every time** (`-O verify-required`) for a PIN or fingerprint on each sign-in, not just a touch. The server must allow it.
   - **Security key PIN**, if the key has one. It is used once and not saved. On Windows the system's own security key window asks for the PIN and touch instead.

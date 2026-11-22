@@ -316,6 +316,12 @@ pub fn explain_device_failure(stderr: &str) -> String {
         || lower.contains("not supported") && lower.contains("-sk")
     {
         "This version of OpenSSH cannot make security keys. Install OpenSSH 8.2 or newer.".into()
+    } else if lower.contains("enrollment failed: invalid format")
+        || lower.contains("no fido sk provider")
+        || lower.contains("built without")
+    {
+        // macOS's own OpenSSH is built without security key support.
+        "This OpenSSH cannot make security keys (it was built without FIDO support, as macOS's own is). Install OpenSSH from Homebrew (brew install openssh) and try again.".into()
     } else if lower.contains("timeout")
         || lower.contains("action timeout")
         || lower.contains("user presence")
@@ -694,6 +700,7 @@ mod tests {
             ("Key enrollment failed: invalid PIN\n", "PIN is wrong"),
             ("Key enrollment failed: PIN required\n", "needs the security key's PIN"),
             ("unknown key type ed25519-sk\n", "cannot make security keys"),
+            ("Key enrollment failed: invalid format\n", "Homebrew"),
             (
                 "You may need to touch your authenticator to authorize key generation.\nsomething odd\n",
                 "something odd",
