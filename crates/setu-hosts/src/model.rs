@@ -117,6 +117,21 @@ impl Host {
                 self.host
             )));
         }
+        // These would mean something else in known_hosts (patterns, markers,
+        // lists of hosts); no real address contains them.
+        if let Some(c) = self.host.chars().find(|c| {
+            c.is_control()
+                || matches!(
+                    c,
+                    ',' | '*' | '?' | '!' | '|' | '@' | '[' | ']' | '#' | '/' | '\\'
+                )
+        }) {
+            return Err(HostsError::Invalid(format!(
+                "the address `{}` contains `{}`, which no host name or address has",
+                self.host.escape_debug(),
+                c.escape_debug()
+            )));
+        }
         if self.port == 0 {
             return Err(HostsError::Invalid(
                 "the port must be from 1 to 65535".into(),
@@ -268,6 +283,10 @@ mod tests {
         assert!(Host::new("", "a").normalize().is_err());
         assert!(Host::new("a", "").normalize().is_err());
         assert!(Host::new("a", "b c").normalize().is_err());
+        for bad in ["*", "*.corp", "a,b", "|1|x", "@ca", "[h]:22", "h\u{7}"] {
+            assert!(Host::new("a", bad).normalize().is_err(), "{bad:?}");
+        }
+        assert!(Host::new("a", "2001:db8::1").normalize().is_ok());
         let mut h = Host::new("a", "b");
         h.port = 0;
         assert!(h.normalize().is_err());

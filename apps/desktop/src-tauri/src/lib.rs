@@ -46,6 +46,7 @@ pub fn run() {
         .manage(session::SessionFile::from_env())
         .manage(session::SettingsFile::from_env())
         .manage(windows::Detached::default())
+        .manage(ssh::OfferedKeys::default())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             let vault = app.state::<vault::VaultState>().inner().clone();
