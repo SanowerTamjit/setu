@@ -119,6 +119,8 @@ pub fn run() {
             files::transfer,
             files::transfer_cancel,
             files::transfer_pause,
+            files::files_stat,
+            files::files_set_attributes,
             remote_edit::remote_edit_open,
             remote_edit::remote_edit_push,
             remote_edit::remote_edit_stop,

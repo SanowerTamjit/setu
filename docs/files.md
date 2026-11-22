@@ -41,6 +41,15 @@ Select a file on the server side and click **Edit** (or press **F4**). Setu copi
 - **Stop editing** stops writing saves back and deletes the local copy. Closing the Files tab does the same. Copies left by a crash are deleted after a week.
 - Files over 50 MB are not opened for editing.
 
+## Changing permissions and owner
+
+Select one or more items on the server side and click the **lock** button. The dialog shows the first item's current settings:
+
+- A grid of read, write and execute for owner, group and others, plus set user ID, set group ID and sticky. The **Mode** box shows the same thing as octal (for example `644` or `2775`) and you can type it directly; the symbolic form (`-rw-r--r--`) updates as you change it.
+- **User** and **Group** take a name or a number. Names are looked up on the server with `getent`. Changing them usually needs root on the server.
+- For folders, **Also apply to everything inside** changes the whole tree. Files inside get the mode as set; folders get it with execute added wherever read is allowed, so they can still be opened. Symbolic links are left alone.
+- The dialog shows the equivalent `chmod`/`chown` command, so you can see exactly what Apply will do.
+
 ## Limits in this version
 
 - Permissions and modification times are not copied; new files get the server's or your system's defaults.

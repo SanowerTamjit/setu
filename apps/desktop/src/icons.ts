@@ -27,6 +27,10 @@ const PATHS = {
   chevronDown: "M7 10l5 5 5-5",
   chevronRight: "M10 7l5 5-5 5",
   pause: "M9 6v12M15 6v12",
+  lock: "M6.5 11h11v9h-11zM8.5 11V8a3.5 3.5 0 0 1 7 0v3M12 14.5v2",
+  folderPlus: "M3.5 7V18.5h17V8.5H11l-2-2.5H3.5zM12 11v5M9.5 13.5h5",
+  rename: "M4 17.5V20h2.5L17 9.5 14.5 7zM13 8.5l2.5 2.5M14 20h6",
+  trash: "M5 7h14M9.5 7V4.5h5V7M7 7l1 13h8l1-13M10.5 10.5v6M13.5 10.5v6",
   play: "M8 5.5v13l10.5-6.5z",
   retry: "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4",
 } as const;

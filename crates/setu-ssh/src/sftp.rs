@@ -302,8 +302,8 @@ pub struct Stat {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Change {
     pub mode: Option<u32>,
-    /// User and group ids; SFTP sets both together.
-    pub owner: Option<(u32, u32)>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
 }
 
 /// The mode a folder gets when a file mode is applied to a whole tree: like
@@ -427,13 +427,19 @@ impl Sftp {
         &self,
         path: &str,
         mode: Option<u32>,
-        owner: Option<(u32, u32)>,
+        uid: Option<u32>,
+        gid: Option<u32>,
     ) -> Result<(), SshError> {
         let mut attrs = russh_sftp::protocol::FileAttributes::empty();
         attrs.permissions = mode.map(|m| m & 0o7777);
-        if let Some((uid, gid)) = owner {
-            attrs.uid = Some(uid);
-            attrs.gid = Some(gid);
+        // SFTP sets user and group together, so keep this item's other one.
+        if uid.is_some() != gid.is_some() {
+            let now = self.stat(path).await?;
+            attrs.uid = uid.or(now.uid);
+            attrs.gid = gid.or(now.gid);
+        } else {
+            attrs.uid = uid;
+            attrs.gid = gid;
         }
         self.session
             .set_metadata(path, attrs)
@@ -456,7 +462,7 @@ impl Sftp {
             (Some(m), true) => Some(folder_mode(m)),
             (m, _) => m,
         };
-        self.set_one(path, top_mode, change.owner).await?;
+        self.set_one(path, top_mode, change.uid, change.gid).await?;
         let mut changed = Changed { items: 1 };
         if !(is_dir && recursive) {
             return Ok(changed);
@@ -467,12 +473,13 @@ impl Sftp {
                 let child = join_remote(&dir, &entry.name);
                 match entry.kind {
                     EntryKind::Dir => {
-                        self.set_one(&child, change.mode.map(folder_mode), change.owner)
+                        self.set_one(&child, change.mode.map(folder_mode), change.uid, change.gid)
                             .await?;
                         stack.push(child);
                     }
                     EntryKind::File | EntryKind::Other => {
-                        self.set_one(&child, change.mode, change.owner).await?
+                        self.set_one(&child, change.mode, change.uid, change.gid)
+                            .await?
                     }
                     EntryKind::Symlink => continue,
                 }

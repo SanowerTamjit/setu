@@ -3,7 +3,7 @@
 
 use crate::terminals::Terminals;
 use serde::{Deserialize, Serialize};
-use setu_ssh::sftp::{self, FileEntry, Progress, Sftp, TransferControl};
+use setu_ssh::sftp::{self, Change, FileEntry, Progress, Sftp, Stat, TransferControl};
 use setu_ssh::{SshClient, SshError};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use tauri::State;
 pub(crate) struct FileSession {
     pub(crate) sftp: Sftp,
     /// Keeps the connection open even if its terminal tab is closed.
-    pub(crate) _client: Arc<SshClient>,
+    pub(crate) client: Arc<SshClient>,
 }
 
 #[derive(Default)]
@@ -70,13 +70,7 @@ pub async fn files_open(
         .sessions
         .lock()
         .map_err(|_| "files lock poisoned")?
-        .insert(
-            id,
-            Arc::new(FileSession {
-                sftp,
-                _client: client,
-            }),
-        );
+        .insert(id, Arc::new(FileSession { sftp, client }));
     Ok(OpenedFiles { id, home })
 }
 
@@ -254,6 +248,120 @@ pub async fn transfer(
     }
 }
 
+/// A user or group name that is safe to pass to `getent` on the server.
+fn valid_account_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with('-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '$'))
+}
+
+/// Looks up `getent <db> <key>` on the server: (name, id) when found.
+async fn getent(client: &SshClient, db: &str, key: &str) -> Option<(String, u32)> {
+    let (out, code) = client.exec(&format!("getent {db} '{key}'")).await.ok()?;
+    if code != Some(0) {
+        return None;
+    }
+    let line = String::from_utf8_lossy(&out);
+    let mut fields = line.trim().split(':');
+    let name = fields.next()?.to_string();
+    let id = fields.nth(1)?.parse().ok()?;
+    Some((name, id))
+}
+
+/// A user or group typed in the permissions editor: a number, or a name the
+/// server knows.
+async fn account_id(client: &SshClient, db: &str, typed: &str) -> Result<u32, String> {
+    let typed = typed.trim();
+    if let Ok(id) = typed.parse::<u32>() {
+        return Ok(id);
+    }
+    let what = if db == "passwd" { "user" } else { "group" };
+    if !valid_account_name(typed) {
+        return Err(format!("`{typed}` is not a valid {what} name"));
+    }
+    getent(client, db, typed)
+        .await
+        .map(|(_, id)| id)
+        .ok_or_else(|| format!("the server has no {what} called `{typed}`"))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatView {
+    #[serde(flatten)]
+    stat: Stat,
+    /// Names for the ids, when the server can tell (`getent`).
+    user: Option<String>,
+    group: Option<String>,
+}
+
+/// Mode, owner and group of one remote item, with names where known.
+#[tauri::command]
+pub async fn files_stat(
+    files: State<'_, Files>,
+    id: u32,
+    path: String,
+) -> Result<StatView, String> {
+    let session = files.get(id)?;
+    let stat = session.sftp.stat(&path).await.map_err(err)?;
+    let name = |db: &'static str, id: Option<u32>| {
+        let client = Arc::clone(&session.client);
+        async move {
+            match id {
+                Some(id) => getent(&client, db, &id.to_string()).await.map(|(n, _)| n),
+                None => None,
+            }
+        }
+    };
+    let (user, group) = tokio::join!(name("passwd", stat.uid), name("group", stat.gid));
+    Ok(StatView { stat, user, group })
+}
+
+/// Changes mode, user and/or group of `names` in `dir`; `None` leaves that
+/// part alone. With `recursive`, folders' contents change too. Returns how
+/// many items changed.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn files_set_attributes(
+    files: State<'_, Files>,
+    id: u32,
+    dir: String,
+    names: Vec<String>,
+    mode: Option<u32>,
+    user: Option<String>,
+    group: Option<String>,
+    recursive: bool,
+) -> Result<usize, String> {
+    let session = files.get(id)?;
+    if mode.is_some_and(|m| m > 0o7777) {
+        return Err("that is not a valid mode".into());
+    }
+    let uid = match user.as_deref().filter(|u| !u.trim().is_empty()) {
+        Some(u) => Some(account_id(&session.client, "passwd", u).await?),
+        None => None,
+    };
+    let gid = match group.as_deref().filter(|g| !g.trim().is_empty()) {
+        Some(g) => Some(account_id(&session.client, "group", g).await?),
+        None => None,
+    };
+    let change = Change { mode, uid, gid };
+    let mut items = 0;
+    for name in &names {
+        sftp::check_name(name).map_err(err)?;
+        let path = sftp::join_remote(&dir, name);
+        items += session
+            .sftp
+            .set_attributes(&path, change, recursive)
+            .await
+            .map_err(err)?
+            .items;
+    }
+    Ok(items)
+}
+
 fn with_transfer(files: &Files, transfer_id: u32, f: impl FnOnce(&TransferControl)) {
     if let Ok(map) = files.transfers.lock() {
         if let Some(control) = map.get(&transfer_id) {
@@ -286,6 +394,16 @@ mod tests {
         assert!(listing.path.ends_with('a'));
         assert_eq!(listing.entries[0].name, "b");
         assert!(listing.parent.is_some());
+    }
+
+    #[test]
+    fn account_names_are_checked() {
+        for ok in ["www-data", "deploy", "svc_app", "web.ops", "machine$"] {
+            assert!(valid_account_name(ok), "{ok}");
+        }
+        for bad in ["", "-x", "a b", "x'; rm -rf /", "a/b", "$(id)"] {
+            assert!(!valid_account_name(bad), "{bad}");
+        }
     }
 
     #[test]

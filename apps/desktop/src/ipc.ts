@@ -340,6 +340,25 @@ export function transfer(
 export const transferCancel = (transferId: number) => invoke<void>("transfer_cancel", { transferId });
 export const transferPause = (transferId: number) => invoke<void>("transfer_pause", { transferId });
 
+export interface RemoteStat {
+  kind: EntryKind;
+  size: number;
+  modified: number | null;
+  permissions: number | null;
+  uid: number | null;
+  gid: number | null;
+  user: string | null;
+  group: string | null;
+}
+
+export const filesStat = (id: number, path: string) => invoke<RemoteStat>("files_stat", { id, path });
+export const filesSetAttributes = (
+  id: number,
+  dir: string,
+  names: string[],
+  change: { mode: number | null; user: string | null; group: string | null; recursive: boolean },
+) => invoke<number>("files_set_attributes", { id, dir, names, ...change });
+
 // ---- Remote edit ----
 
 export type RemoteEditEvent =

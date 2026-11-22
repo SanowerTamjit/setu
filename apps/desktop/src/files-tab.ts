@@ -23,6 +23,7 @@ import {
 } from "./ipc";
 import { icon } from "./icons";
 import { listen } from "@tauri-apps/api/event";
+import { openPermissions } from "./permissions-dialog";
 import { settings, updateSettings } from "./settings";
 import { registerSettingsSection } from "./settings-dialog";
 import type { Tab } from "./tab";
@@ -471,15 +472,32 @@ export class FilesTab implements Tab {
   }
 
   private remoteActions(pane: Pane) {
-    const mk = el("button", { className: "tool", title: "New folder" }, "New folder");
-    mk.onclick = () => void this.mkdir(pane);
-    const rn = el("button", { className: "tool", title: "Rename (F2)" }, "Rename");
-    rn.onclick = () => void this.rename(pane);
-    const rm = el("button", { className: "tool danger", title: "Delete (Delete)" }, "Delete");
-    rm.onclick = () => void this.remove(pane);
-    const ed = el("button", { className: "tool", title: "Open in your editor; saving writes it back to the server (F4)" }, "Edit");
-    ed.onclick = () => void this.edit(pane);
-    return [ed, mk, rn, rm];
+    const tool = (name: Parameters<typeof icon>[0], label: string, run: () => void, danger = false) => {
+      const b = el("button", { className: `tool icon-tool${danger ? " danger" : ""}`, title: label }, icon(name, 15));
+      b.setAttribute("aria-label", label);
+      b.onclick = run;
+      return b;
+    };
+    const ed = tool("edit", "Edit in your editor; each save goes back to the server (F4)", () => void this.edit(pane));
+    const pm = tool("lock", "Permissions, user and group", () => void this.permissions(pane));
+    const mk = tool("folderPlus", "New folder", () => void this.mkdir(pane));
+    const rn = tool("rename", "Rename (F2)", () => void this.rename(pane));
+    const rm = tool("trash", "Delete (Delete)", () => void this.remove(pane), true);
+    return [ed, pm, mk, rn, rm];
+  }
+
+  private async permissions(pane: Pane) {
+    const sel = pane.selection;
+    if (!sel.length) {
+      pane.showError("Select the files or folders to change.");
+      return;
+    }
+    try {
+      if (await openPermissions(this.id(), pane.path, sel)) await pane.refresh();
+    } catch (err) {
+      pane.showError(errorText(err));
+    }
+    pane.focus();
   }
 
   /** Opens the selected remote file in the local editor. */

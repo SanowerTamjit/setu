@@ -563,7 +563,7 @@ async fn sftp_edit_in_place_and_permissions() {
     // One file, then a whole tree where folders stay enterable.
     let change = Change {
         mode: Some(0o600),
-        owner: None,
+        ..Change::default()
     };
     sftp.set_attributes(&path, change, false)
         .await
@@ -578,10 +578,10 @@ async fn sftp_edit_in_place_and_permissions() {
     std::fs::write(site.join("index.html"), b"hi").expect("write");
     std::fs::write(site.join("css/app.css"), b"body{}").expect("write");
     let stat = sftp.stat(&path).await.expect("stat");
-    let owner = (stat.uid.expect("uid"), stat.gid.expect("gid"));
     let tree = Change {
         mode: Some(0o640),
-        owner: Some(owner),
+        uid: None,
+        gid: stat.gid,
     };
     let done = sftp
         .set_attributes(&site.to_string_lossy(), tree, true)
