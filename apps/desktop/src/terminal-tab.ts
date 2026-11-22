@@ -10,6 +10,7 @@ import {
   openTerminal,
   resizeTerminal,
   sshConnect,
+  sshOpenShell,
   writeTerminal,
   type ConnectRequest,
   type ShellProfile,
@@ -151,6 +152,24 @@ export class TerminalTab implements Tab {
     this.refit();
   }
 
+  /** Opens another shell on `from`'s SSH connection, for a split pane. */
+  async startSshFrom(from: TerminalTab) {
+    if (from.id === null) throw new Error("that pane is not connected");
+    this.fit.fit();
+    this.id = await sshOpenShell(
+      from.id,
+      this.term.cols,
+      this.term.rows,
+      (data) => this.write(data),
+      (code) => this.handleExit(code),
+    );
+    this.isRemote = true;
+    this.title = from.title;
+    this.detail = from.detail;
+    this.events.onTitle(this);
+    this.refit();
+  }
+
   private firstOutput = true;
 
   private write(data: Uint8Array) {
@@ -197,11 +216,12 @@ export class TerminalTab implements Tab {
     return this.exited;
   }
 
-  show() {
+  /** `focus: false` shows a pane of a split without taking focus from its sibling. */
+  show(focus = true) {
     this.element.classList.add("active");
     this.loadRenderer();
     this.refit();
-    this.term.focus();
+    if (focus) this.term.focus();
   }
 
   hide() {

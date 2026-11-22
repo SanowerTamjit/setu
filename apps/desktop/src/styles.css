@@ -1361,3 +1361,61 @@ button.link-button {
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* Split panes */
+.pane-tab {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+}
+
+.pane-tab.active {
+  visibility: visible;
+}
+
+.pane-tab .terminal-pane {
+  right: auto;
+  bottom: auto;
+}
+
+.pane-tab.split .terminal-pane {
+  padding: 6px 4px 0 8px;
+  opacity: 0.72;
+  transition: opacity 120ms;
+}
+
+.pane-tab.split .terminal-pane.focused {
+  opacity: 1;
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.pane-divider {
+  position: absolute;
+  z-index: 4;
+  touch-action: none;
+}
+
+.pane-divider.vertical {
+  width: 7px;
+  transform: translateX(-3px);
+  cursor: col-resize;
+  background: linear-gradient(to right, transparent 3px, var(--border) 3px, var(--border) 4px, transparent 4px);
+}
+
+.pane-divider.horizontal {
+  height: 7px;
+  transform: translateY(-3px);
+  cursor: row-resize;
+  background: linear-gradient(to bottom, transparent 3px, var(--border) 3px, var(--border) 4px, transparent 4px);
+}
+
+.pane-divider:hover,
+.pane-divider.dragging {
+  background-color: rgba(245, 165, 36, 0.25);
+}
+
+.tab-panes {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}

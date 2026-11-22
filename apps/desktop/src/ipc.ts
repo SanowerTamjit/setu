@@ -123,6 +123,22 @@ export function sshConnect(
   return invoke<OpenedSsh>("ssh_connect", { request, cols, rows, onOutput: output, onExit: exit });
 }
 
+/** Opens another shell on SSH terminal `terminalId`'s connection (for a split pane). */
+export function sshOpenShell(
+  terminalId: number,
+  cols: number,
+  rows: number,
+  onOutput: (data: Uint8Array) => void,
+  onExit: (code: number) => void,
+): Promise<number> {
+  const output = new Channel<ArrayBuffer | number[]>();
+  output.onmessage = (msg) =>
+    onOutput(msg instanceof ArrayBuffer ? new Uint8Array(msg) : Uint8Array.from(msg));
+  const exit = new Channel<number>();
+  exit.onmessage = onExit;
+  return invoke<number>("ssh_open_shell", { terminalId, cols, rows, onOutput: output, onExit: exit });
+}
+
 export const sshTrustHost = (key: HostKeyInfo) => invoke<void>("ssh_trust_host", { key });
 
 // ---- Saved hosts (src-tauri/src/hosts.rs) ----

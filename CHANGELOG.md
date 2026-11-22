@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Split panes: split a terminal tab side by side (Ctrl+Shift+D) or stacked (Ctrl+Alt+Shift+D), as often as you like; drag the dividers to resize, move focus with Alt+Arrow keys, and close a pane with Ctrl+Shift+W. Splitting an SSH pane opens another shell over the same connection, with no new login. See `docs/terminal.md`.
 - Find in a terminal's scrollback (Ctrl+Shift+F): matches highlighted as you type, a match counter, next and previous, and match case, whole word and regular expression options. See `docs/terminal.md`.
 - Vault: **Unlock automatically on this computer** keeps the vault key in the macOS Keychain, Windows Credential Manager or the Linux Secret Service, so the vault opens at start-up and after the idle timeout without the master password. Off by default; **Lock now** still requires the password, and turning it off deletes the stored key. See `docs/vault.md`.
 - Nightly builds: a scheduled workflow builds the desktop app (`.dmg`, `.msi`, `-setup.exe`, `.AppImage`, `.deb`, `.rpm`) and the `setu` CLI for macOS (universal), Windows and Linux, and publishes them as the rolling `nightly` pre-release with `SHA256SUMS` and GitHub build-provenance attestations. macOS signing and notarization and Windows Authenticode switch on when their secrets are added; until then macOS builds are ad-hoc signed. See `docs/releasing.md`.
