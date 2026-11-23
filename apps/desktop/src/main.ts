@@ -10,7 +10,7 @@ import { HostsPanel } from "./hosts-panel";
 import { vaultStatus, type Host, type VaultStatus } from "./ipc";
 import { onVaultChange, openVaultDialog } from "./vault-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { registerCommand, registerProvider, runCommand, type Command } from "./commands";
+import { command, registerCommand, registerProvider, runCommand, type Command } from "./commands";
 import { bindingsFor, KeyDispatcher, KEYMAPS, prefixBytes } from "./keymap";
 import { openPalette } from "./palette";
 import { openSettings } from "./settings-dialog";
@@ -646,6 +646,8 @@ function focusPane(dx: number, dy: number) {
 }
 
 const isTerminal = () => terminalOf(active) !== null;
+// Alt+arrow keys move cards on the task board, so pane focus only takes them in the terminals view.
+const inTerminals = () => view === "terminals";
 const isRemote = () => {
   const t = terminalOf(active);
   return !!t && t.isRemote && t.sessionId !== null && !t.hasExited;
@@ -658,10 +660,10 @@ for (const c of [
   { id: "pane.splitRight", title: "Split right", category: "Pane", when: isTerminal, run: () => splitActive("right") },
   { id: "pane.splitDown", title: "Split down", category: "Pane", when: isTerminal, run: () => splitActive("down") },
   { id: "pane.close", title: "Close pane", category: "Pane", run: () => closeActive() },
-  { id: "pane.focusLeft", title: "Focus pane on the left", category: "Pane", run: () => focusPane(-1, 0) },
-  { id: "pane.focusRight", title: "Focus pane on the right", category: "Pane", run: () => focusPane(1, 0) },
-  { id: "pane.focusUp", title: "Focus pane above", category: "Pane", run: () => focusPane(0, -1) },
-  { id: "pane.focusDown", title: "Focus pane below", category: "Pane", run: () => focusPane(0, 1) },
+  { id: "pane.focusLeft", when: inTerminals, title: "Focus pane on the left", category: "Pane", run: () => focusPane(-1, 0) },
+  { id: "pane.focusRight", when: inTerminals, title: "Focus pane on the right", category: "Pane", run: () => focusPane(1, 0) },
+  { id: "pane.focusUp", when: inTerminals, title: "Focus pane above", category: "Pane", run: () => focusPane(0, -1) },
+  { id: "pane.focusDown", when: inTerminals, title: "Focus pane below", category: "Pane", run: () => focusPane(0, 1) },
   { id: "tab.detach", title: "Move tab to a new window", category: "Tab", keywords: "detach window", when: () => active instanceof PaneTab, run: () => detachTab() },
   { id: "tab.close", title: "Close tab", category: "Tab", run: () => (active ? closeTab(active) : undefined) },
   { id: "tab.next", title: "Next tab", category: "Tab", run: () => cycle(1) },
@@ -679,6 +681,18 @@ for (const c of [
   { id: "view.hosts", title: "Go to hosts", category: "View", keywords: "cards home servers", run: () => showView("hosts") },
   { id: "view.terminals", title: "Go to terminals", category: "View", run: () => showView("terminals") },
   { id: "view.workflows", title: "Go to workflows", category: "View", keywords: "automation runbook pipeline flow", when: () => enabled("workflows"), run: () => showView("workflows") },
+  {
+    id: "view.board",
+    title: "Open the task board",
+    category: "View",
+    keywords: "kanban todo cards tasks jobs",
+    when: () => enabled("workflows"),
+    run: () => {
+      showView("workflows");
+      workflows.setMode("board");
+      workflows.focus();
+    },
+  },
   {
     id: "workflow.new",
     title: "New workflow",
@@ -862,6 +876,8 @@ document.addEventListener(
       }
       return;
     }
+    // A shortcut whose command does not apply here leaves the key to the page.
+    if ("command" in result && command(result.command)?.when?.() === false) return;
     e.preventDefault();
     e.stopPropagation();
     if ("command" in result) {

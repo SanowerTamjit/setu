@@ -136,6 +136,8 @@ pub fn run() {
             workflows::workflow_cancel,
             workflows::workflow_history,
             workflows::workflow_history_clear,
+            workflows::board_load,
+            workflows::board_save,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

@@ -35,6 +35,7 @@
 //! a [`engine::Runner`] that does the real work (SSH in the desktop app, a
 //! fake in tests), and [`store`] keeps workflows and run history on disk.
 
+pub mod board;
 pub mod engine;
 mod error;
 mod model;

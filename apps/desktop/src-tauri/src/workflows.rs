@@ -13,6 +13,7 @@ use serde::Serialize;
 use setu_core::paths::{self, Os, ProcessEnv};
 use setu_hosts::Host;
 use setu_ssh::SshClient;
+use setu_workflow::board::Board;
 use setu_workflow::engine::{self, Event, ExecOutput, RunRecord, Runner, Targets, MAX_OUTPUT};
 use setu_workflow::store::{Broken, WorkflowStore};
 use setu_workflow::{resolve_targets, templates, Kind, Workflow};
@@ -114,6 +115,28 @@ pub fn workflow_history(state: State<'_, Workflows>) -> Result<Vec<RunRecord>, S
 #[tauri::command]
 pub fn workflow_history_clear(state: State<'_, Workflows>) -> Result<(), String> {
     state.store()?.clear_history().map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize)]
+pub struct BoardView {
+    board: Board,
+    path: String,
+}
+
+/// The task board. A board file that does not parse is an error, so a
+/// save never overwrites cards the person could still fix by hand.
+#[tauri::command]
+pub fn board_load(state: State<'_, Workflows>) -> Result<BoardView, String> {
+    let store = state.store()?;
+    Ok(BoardView {
+        board: store.load_board().map_err(|e| e.to_string())?,
+        path: store.board_path().display().to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn board_save(state: State<'_, Workflows>, board: Board) -> Result<(), String> {
+    state.store()?.save_board(&board).map_err(|e| e.to_string())
 }
 
 /// Expands every command step's targets against the saved hosts.

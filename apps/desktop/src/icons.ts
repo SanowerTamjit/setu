@@ -38,6 +38,8 @@ const PATHS = {
   window: "M9 4h11v11M20 4l-9 9M15 20H4V9",
   retry: "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4",
   // Three boxes joined by arrows: a workflow.
+  calendar: "M4.5 6h15v14h-15zM4.5 10h15M8.5 4v4M15.5 4v4",
+  board: "M4 5h16v14H4zM9.33 5v14M14.67 5v14M5.8 8h2M11 8h2M16.4 8h2M5.8 11h2M11 11h2",
   workflow: "M3.5 4.5h6v5h-6zM14.5 4.5h6v5h-6zM9 17h6v4H9zM9.5 7h5M17.5 9.5v3.5H12V17M6.5 9.5v3.5H12",
 } as const;
 

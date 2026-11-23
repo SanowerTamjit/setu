@@ -566,3 +566,27 @@ export function workflowRun(id: string, onEvent: (e: RunEvent) => void) {
   channel.onmessage = onEvent;
   return invoke<{ runId: string; targets: Record<string, string[]> }>("workflow_run", { id, onEvent: channel });
 }
+
+// ---- Task board (board.toml) ----
+
+export type BoardColumn = "todo" | "doing" | "done";
+export type CardPriority = "low" | "normal" | "high";
+
+export interface BoardCard {
+  id: string;
+  title: string;
+  column: BoardColumn;
+  notes?: string;
+  hosts?: string[];
+  workflow?: string | null;
+  priority?: CardPriority;
+  due?: string | null;
+}
+
+export interface Board {
+  version?: number;
+  card: BoardCard[];
+}
+
+export const boardLoad = () => invoke<{ board: Board; path: string }>("board_load");
+export const boardSave = (board: Board) => invoke<void>("board_save", { board });

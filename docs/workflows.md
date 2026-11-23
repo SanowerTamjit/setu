@@ -36,6 +36,34 @@ Runs never ask for anything, because nobody may be watching:
 - Passwords and key passphrases come from the vault (unlock it first), or use ssh-agent. Keys and jump hosts set on the saved host are used as usual.
 - Each host gets one connection for the whole run, closed when the run ends.
 
+## Task board
+
+The **Board** tab next to **Workflows** (or **Open the task board** in the command palette) is a simple board for ops work: cards in **To do**, **Doing** and **Done**.
+
+- **Add card** (or **+** on a column) opens the card editor: title, notes, column, priority, due date, the hosts or `tag:`s it is about, and the workflow that does the job.
+- Drag a card to another column or place, or focus it and use **Alt+←/→** to move it between columns and **Alt+↑/↓** to reorder. **Enter** or a click opens it.
+- A card with a workflow shows that workflow's last run (green succeeded, red failed); click the chip to open the workflow in the builder.
+- High-priority cards have a red edge, and a due date in the past turns red until the card is done.
+- **Filter cards** matches titles, notes, hosts and workflow names.
+
+The board saves as you go to `board.toml` in Setu's config folder, readable only by you. Cards never run anything on their own: a linked workflow runs only when you open it and press **Run**. If the file can't be read (for example after a hand edit with a mistake), the board says so and doesn't write over it.
+
+```toml
+version = 1
+
+[[card]]
+id = "c1"
+title = "Rotate TLS certificates on web servers"
+column = "todo"            # todo | doing | done
+notes = "Expires on the 30th."
+hosts = ["tag:web"]
+workflow = "deploy-web"    # optional
+priority = "high"          # low | normal | high
+due = "2026-11-30"         # optional, YYYY-MM-DD
+```
+
+Limits: 500 cards, 200-character titles, 4000-character notes, 50 hosts per card.
+
 ## Files
 
 Each workflow is a TOML file in `workflows/` in Setu's config folder (`~/.config/setu/workflows` on Linux), so you can keep it in Git or share it. Runs are kept in `workflow-runs.json` next to it (the last 100 runs, the last 8 KiB of output per host). Both are readable only by you. **Clear run history** in the list removes them.

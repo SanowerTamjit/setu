@@ -5040,7 +5040,8 @@ button.with-icon {
   border-color: var(--warn);
 }
 
-.workflows-view .wf-chip-x {
+.workflows-view .wf-chip-x,
+.bd-dialog .wf-chip-x {
   display: inline-grid;
   place-items: center;
   width: 18px;
@@ -5051,7 +5052,8 @@ button.with-icon {
   background: transparent;
 }
 
-.workflows-view .wf-chip-x:hover {
+.workflows-view .wf-chip-x:hover,
+.bd-dialog .wf-chip-x:hover {
   background: var(--bg-hover);
 }
 
@@ -5268,4 +5270,395 @@ button.with-icon {
 
 :root[data-layout="studio"] .workflows-view {
   grid-template-columns: 200px 1fr;
+}
+
+/* ---- Workflows | Board switch ---- */
+.wf-mode {
+  display: flex;
+  gap: 2px;
+  margin: var(--space-3) var(--space-3) 0;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.workflows-view .wf-mode-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+}
+
+.workflows-view .wf-mode-tab.on {
+  color: var(--text);
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.workflows-view .wf-mode-tab:not(.on):hover {
+  color: var(--text);
+}
+
+/* ---- Task board ---- */
+.workflows-view.board-mode {
+  grid-template-columns: 1fr;
+}
+
+.bd-board {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.bd-board[hidden] {
+  display: none;
+}
+
+.bd-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.bd-header .wf-mode {
+  margin: 0;
+  width: 220px;
+}
+
+.bd-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-right: auto;
+}
+
+.bd-title h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+
+.bd-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bd-search {
+  width: 200px;
+  height: 30px;
+  padding: 0 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.bd-state {
+  font-size: var(--fs-sm);
+  min-width: 52px;
+  text-align: right;
+}
+
+.bd-error {
+  flex-basis: 100%;
+}
+
+.bd-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  overflow: auto;
+  user-select: none;
+}
+
+.bd-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.bd-col-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 10px 8px 12px;
+}
+
+.bd-col-head h3 {
+  margin: 0;
+  font-size: var(--fs-md, 14px);
+  font-weight: 600;
+}
+
+.bd-col-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.bd-col-dot.doing {
+  background: var(--accent);
+}
+
+.bd-col-dot.done {
+  background: var(--success);
+}
+
+.bd-count {
+  padding: 0 7px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  background: var(--bg-hover);
+  border-radius: 999px;
+}
+
+.workflows-view .bd-col-add {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border-color: transparent;
+}
+
+.workflows-view .bd-col-add:not(:disabled):hover {
+  background: var(--bg-hover);
+}
+
+.bd-cards {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 60px;
+  padding: 2px 8px 10px;
+  overflow-y: auto;
+}
+
+.bd-empty {
+  margin: 4px 4px 0;
+  padding: 14px 10px;
+  font-size: var(--fs-sm);
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.bd-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 11px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 4px var(--shadow);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.bd-card.prio-high {
+  border-left-color: var(--danger);
+}
+
+.bd-card.prio-normal {
+  border-left-color: var(--accent);
+}
+
+.bd-card:hover {
+  border-color: color-mix(in srgb, var(--text) 25%, var(--border));
+}
+
+.bd-card.prio-high:hover {
+  border-left-color: var(--danger);
+}
+
+.bd-card.prio-normal:hover {
+  border-left-color: var(--accent);
+}
+
+.bd-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.bd-card.bd-dragging {
+  opacity: 0.35;
+}
+
+.bd-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  transform: rotate(1.5deg);
+  box-shadow: 0 10px 28px var(--shadow);
+  cursor: grabbing;
+}
+
+.bd-marker {
+  height: 3px;
+  margin: -2px 2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.bd-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.bd-card-title {
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.bd-prio {
+  flex: none;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--danger-text);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-radius: 4px;
+}
+
+.bd-notes {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bd-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bd-chip,
+.workflows-view .bd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bd-chip.unknown {
+  color: var(--warn-text);
+  border-style: dashed;
+}
+
+.workflows-view .bd-workflow {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.workflows-view .bd-workflow.unknown {
+  color: var(--muted);
+  cursor: default;
+}
+
+.bd-due.overdue {
+  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
+}
+
+.bd-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.bd-dialog .wf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.bd-dialog .wf-chips:empty {
+  display: none;
+}
+
+.bd-dialog textarea {
+  resize: vertical;
+}
+
+/* Studio: board sits in the same glass panel */
+:root[data-layout="studio"] .bd-header,
+:root[data-layout="studio"] .bd-column {
+  background: transparent;
+}
+
+:root[data-layout="studio"] .bd-column {
+  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
+}
+
+:root[data-theme="high-contrast"] .bd-card,
+:root[data-theme="high-contrast"] .bd-ghost {
+  box-shadow: none;
+}
+
+@media (max-width: 900px) {
+  .bd-columns {
+    grid-template-columns: repeat(3, minmax(200px, 1fr));
+  }
+
+  .bd-header .wf-mode {
+    width: auto;
+  }
+}
+
+/* The Studio list is narrower: the switch drops its icons to fit. */
+:root[data-layout="studio"] .wf-list .wf-mode-tab {
+  padding: 0 6px;
+}
+
+:root[data-layout="studio"] .wf-list .wf-mode-tab svg {
+  display: none;
+}
+
+:root[data-layout] .workflows-view.board-mode {
+  grid-template-columns: minmax(0, 1fr);
 }

@@ -12,6 +12,7 @@
 
 import { confirmDialog, el, errorText, field } from "./dom";
 import { icon, type IconName } from "./icons";
+import { BoardView } from "./board-view";
 import {
   workflowAnswer,
   workflowCancel,
@@ -183,6 +184,9 @@ export class WorkflowsView {
   private readonly inspector: HTMLElement;
   private readonly toolbar: HTMLElement;
   private readonly banner: HTMLElement;
+  /** Which half of the view shows: the workflow builder or the task board. */
+  private mode: "workflows" | "board" = "workflows";
+  private readonly board: BoardView;
 
   constructor(
     private readonly root: HTMLElement,
@@ -231,7 +235,14 @@ export class WorkflowsView {
       this.banner,
       el("div", { className: "wf-body" }, el("div", { className: "wf-stage" }, this.canvas, zoomBar), this.inspector),
     );
-    this.root.replaceChildren(this.list, this.main);
+    this.board = new BoardView({
+      hosts: actions.hosts,
+      workflows: () => this.data?.workflows ?? [],
+      lastRun: (id) => this.history.find((r) => r.workflow === id)?.status,
+      openWorkflow: (id) => void this.openById(id),
+      tabs: () => this.modeTabs(),
+    });
+    this.root.replaceChildren(this.list, this.main, this.board.element);
 
     this.canvas.onpointerdown = (e) => {
       if (e.target === this.canvas || e.target === this.surface || e.target === this.edges) {
@@ -260,14 +271,63 @@ export class WorkflowsView {
       this.error = errorText(err);
     }
     this.render();
+    // Workflow names and last runs on the cards may have changed.
+    if (this.mode === "board") await this.board.refresh();
   }
 
   focus() {
-    this.canvas.focus({ preventScroll: true });
+    if (this.mode === "board") this.board.focus();
+    else this.canvas.focus({ preventScroll: true });
+  }
+
+  /** Shows the builder or the task board. */
+  setMode(mode: "workflows" | "board") {
+    this.mode = mode;
+    const board = mode === "board";
+    this.root.classList.toggle("board-mode", board);
+    this.list.hidden = board;
+    this.main.hidden = board;
+    this.board.element.hidden = !board;
+    if (board) void this.board.refresh();
+    this.render();
+  }
+
+  /** Opens a saved workflow from a board card. */
+  private async openById(id: string) {
+    const w = this.data?.workflows.find((x) => x.id === id);
+    if (!w) return;
+    if ((this.savedId ?? this.current?.id) !== id) {
+      if (!(await this.leave())) return;
+      this.open(w);
+    }
+    this.setMode("workflows");
+    this.focus();
+  }
+
+  /** The Workflows | Board switch, shown at the top of each half. */
+  private modeTabs() {
+    const tab = (mode: "workflows" | "board", label: string, ic: IconName) => {
+      const on = this.mode === mode;
+      const b = el("button", { type: "button", className: "wf-mode-tab" + (on ? " on" : "") }, icon(ic, 14), label);
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(on));
+      b.onclick = () => {
+        if (!on) {
+          this.setMode(mode);
+          this.focus();
+        }
+      };
+      return b;
+    };
+    const bar = el("div", { className: "wf-mode" }, tab("workflows", "Workflows", "workflow"), tab("board", "Board", "board"));
+    bar.setAttribute("role", "tablist");
+    bar.setAttribute("aria-label", "Workflows or task board");
+    return bar;
   }
 
   /** Starts a new workflow from a template, or blank. */
   async create(template?: Workflow) {
+    if (this.mode === "board") this.setMode("workflows");
     if (!(await this.leave())) return;
     const base = template ? clone(template) : { id: "", name: "New workflow", step: [], link: [] };
     const taken = new Set(this.data?.workflows.map((w) => w.id));
@@ -345,6 +405,8 @@ export class WorkflowsView {
   }
 
   private renderList() {
+    // The board draws itself; redrawing it here would break a drag.
+    if (this.mode === "board") return;
     const header = el(
       "div",
       { className: "wf-list-header" },
@@ -426,6 +488,7 @@ export class WorkflowsView {
         ? el("p", { className: "muted wf-list-empty" }, "No workflows yet. Start from a template or a blank canvas.")
         : null;
     this.list.replaceChildren(
+      this.modeTabs(),
       header,
       el("div", { className: "wf-items" }, ...items, ...(empty ? [empty] : [])),
       ...broken,

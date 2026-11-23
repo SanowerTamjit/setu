@@ -4,6 +4,7 @@
 //! Files are written atomically (temp file + rename) and readable only by
 //! you: workflows hold commands and host names, history holds command output.
 
+use crate::board::{Board, BOARD_VERSION};
 use crate::engine::{tail, RunRecord};
 use crate::error::{invalid, WorkflowError};
 use crate::model::{Workflow, FORMAT_VERSION};
@@ -23,6 +24,7 @@ pub const MAX_WORKFLOWS: usize = 500;
 pub struct WorkflowStore {
     dir: PathBuf,
     history: PathBuf,
+    board: PathBuf,
 }
 
 const HEADER: &str =
@@ -121,6 +123,7 @@ impl WorkflowStore {
         WorkflowStore {
             dir: config_dir.join("workflows"),
             history: config_dir.join("workflow-runs.json"),
+            board: config_dir.join("board.toml"),
         }
     }
 
@@ -273,6 +276,46 @@ impl WorkflowStore {
     }
 }
 
+const BOARD_HEADER: &str =
+    "# Setu task board. Edit it in Setu (Workflows → Board) or by hand; see docs/workflows.md.\n";
+
+impl WorkflowStore {
+    /// The task board; a missing file is an empty board.
+    pub fn load_board(&self) -> Result<Board, WorkflowError> {
+        if !self.board.exists() {
+            return Ok(Board::default());
+        }
+        let text = read_capped(&self.board)?;
+        let board: Board = toml::from_str(&text).map_err(|e| WorkflowError::Parse {
+            path: self.board.clone(),
+            message: e.message().to_string(),
+        })?;
+        if board.version > BOARD_VERSION {
+            return Err(WorkflowError::NewerFormat {
+                path: self.board.clone(),
+                found: board.version,
+            });
+        }
+        board.validate().map_err(|e| WorkflowError::Parse {
+            path: self.board.clone(),
+            message: e.to_string(),
+        })?;
+        Ok(board)
+    }
+
+    pub fn save_board(&self, board: &Board) -> Result<(), WorkflowError> {
+        board.validate()?;
+        let mut b = board.clone();
+        b.version = BOARD_VERSION;
+        let body = toml::to_string(&b).map_err(|e| invalid(e.to_string()))?;
+        write_atomic(&self.board, format!("{BOARD_HEADER}{body}").as_bytes())
+    }
+
+    pub fn board_path(&self) -> &Path {
+        &self.board
+    }
+}
+
 /// History can hold up to 100 runs of trimmed output; allow for that.
 fn read_capped_history(path: &Path) -> std::io::Result<String> {
     let meta = std::fs::metadata(path)?;
@@ -378,6 +421,47 @@ mod tests {
         assert!(
             broken.iter().any(|b| b.error.contains("loop")),
             "{broken:?}"
+        );
+    }
+
+    #[test]
+    fn board_saves_privately_and_loads_back() {
+        use crate::board::{Card, Column, Priority};
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = WorkflowStore::in_dir(dir.path());
+        assert!(store.load_board().expect("empty").cards.is_empty());
+        let board = Board {
+            version: 1,
+            cards: vec![Card {
+                id: "c1".into(),
+                title: "Rotate TLS certs".into(),
+                column: Column::Doing,
+                notes: "before Friday".into(),
+                hosts: vec!["tag:web".into()],
+                workflow: None,
+                priority: Priority::High,
+                due: None,
+            }],
+        };
+        store.save_board(&board).expect("save");
+        assert_eq!(store.load_board().expect("load"), board);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(store.board_path())
+                .expect("meta")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        std::fs::write(
+            store.board_path(),
+            "[[card]]\nid = \"../x\"\ntitle = \"t\"\n",
+        )
+        .expect("write");
+        assert!(
+            store.load_board().is_err(),
+            "a bad file is reported, not loaded"
         );
     }
 
