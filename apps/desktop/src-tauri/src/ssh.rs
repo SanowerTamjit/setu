@@ -290,6 +290,28 @@ pub async fn ssh_connect(
     window: tauri::Window,
     state: State<'_, Terminals>,
     vault: State<'_, VaultState>,
+    offered: State<'_, OfferedKeys>,
+    request: ConnectRequest,
+    cols: u16,
+    rows: u16,
+    on_output: Channel<InvokeResponseBody>,
+    on_exit: Channel<u32>,
+) -> Result<OpenedSsh, ConnectFailure> {
+    let result = connect_and_open(
+        window, &state, &vault, request, cols, rows, on_output, on_exit,
+    )
+    .await;
+    if let Err(ConnectFailure::UnknownHostKey { key }) = &result {
+        offered.offer(key);
+    }
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn connect_and_open(
+    window: tauri::Window,
+    state: &Terminals,
+    vault: &VaultState,
     request: ConnectRequest,
     cols: u16,
     rows: u16,
@@ -297,7 +319,7 @@ pub async fn ssh_connect(
     on_exit: Channel<u32>,
 ) -> Result<OpenedSsh, ConnectFailure> {
     let title = format!("{}@{}", user_or_local(&request.user), request.host.trim());
-    let (opts, to_save) = build_options(request, &vault)?;
+    let (opts, to_save) = build_options(request, vault)?;
     let needs_passphrase = |path: PathBuf| ConnectFailure::NeedsPassphrase {
         path: path.display().to_string(),
         vault: vault.availability(),
@@ -322,7 +344,7 @@ pub async fn ssh_connect(
         Err(e) => return Err(e.into()),
     };
     let id = open_shell(
-        &state,
+        state,
         window.label(),
         Arc::new(client),
         cols,
@@ -411,9 +433,39 @@ pub async fn ssh_open_shell(
     })
 }
 
+/// Host keys servers presented that are not in known_hosts yet, waiting for
+/// the person to accept or refuse them in the trust prompt. Only these can be
+/// trusted: the web view cannot write a key of its own choosing.
+#[derive(Debug, Default)]
+pub struct OfferedKeys(std::sync::Mutex<Vec<HostKeyInfo>>);
+
+/// Enough for a jump chain and a few tabs connecting at once.
+const MAX_OFFERED: usize = 16;
+
+impl OfferedKeys {
+    fn offer(&self, key: &HostKeyInfo) {
+        let mut list = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        list.retain(|k| k != key);
+        if list.len() >= MAX_OFFERED {
+            list.remove(0);
+        }
+        list.push(key.clone());
+    }
+
+    /// Removes and returns `key` if a server offered exactly it.
+    fn take(&self, key: &HostKeyInfo) -> Option<HostKeyInfo> {
+        let mut list = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let i = list.iter().position(|k| k == key)?;
+        Some(list.remove(i))
+    }
+}
+
 /// Records a host key the user explicitly accepted in the trust prompt.
 #[tauri::command]
-pub fn ssh_trust_host(key: HostKeyInfo) -> Result<(), String> {
+pub fn ssh_trust_host(offered: State<'_, OfferedKeys>, key: HostKeyInfo) -> Result<(), String> {
+    let key = offered
+        .take(&key)
+        .ok_or("that host key was not offered by a server; connect again to see it")?;
     let path = known_hosts::default_path().ok_or("could not find known_hosts")?;
     known_hosts::trust(&path, &key).map_err(|e| e.to_string())
 }
@@ -421,6 +473,29 @@ pub fn ssh_trust_host(key: HostKeyInfo) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_offered_keys_can_be_trusted() {
+        let key: HostKeyInfo = serde_json::from_str(
+            r#"{"host":"h","port":22,"algorithm":"ssh-ed25519","fingerprint":"SHA256:x","openssh":"ssh-ed25519 AAAA"}"#,
+        )
+        .expect("key");
+        let offered = OfferedKeys::default();
+        assert!(offered.take(&key).is_none());
+        offered.offer(&key);
+        let mut other = key.clone();
+        other.host = "*".into();
+        assert!(offered.take(&other).is_none());
+        assert_eq!(offered.take(&key), Some(key.clone()));
+        // Each offer is good for one trust.
+        assert!(offered.take(&key).is_none());
+        for port in 0..40 {
+            let mut k = key.clone();
+            k.port = port;
+            offered.offer(&k);
+        }
+        assert!(offered.0.lock().map(|l| l.len()).unwrap_or(0) <= MAX_OFFERED);
+    }
 
     #[test]
     fn jump_spec_parsing() {

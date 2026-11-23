@@ -115,25 +115,113 @@ fn sweep_old(root: &Path) {
     }
 }
 
-/// A new private folder for one edit: `<temp>/setu-edit/<unique>`, mode 0700.
+/// Where the local copies go. macOS and Windows give each user their own temp
+/// folder. On Linux and other Unix systems the temp folder (`/tmp`) is shared
+/// by every user, so a folder name there could be taken or swapped by someone
+/// else first; use the per-user runtime folder instead, or `~/.cache`.
+fn edit_root() -> PathBuf {
+    if cfg!(any(target_os = "macos", windows)) {
+        return std::env::temp_dir().join("setu-edit");
+    }
+    let from_env = |var: &str| {
+        std::env::var_os(var)
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute() && p.is_dir())
+    };
+    if let Some(run) = from_env("XDG_RUNTIME_DIR") {
+        return run.join("setu-edit");
+    }
+    if let Some(cache) = from_env("XDG_CACHE_HOME") {
+        return cache.join("setu").join("edit");
+    }
+    if let Some(home) = from_env("HOME") {
+        return home.join(".cache").join("setu").join("edit");
+    }
+    std::env::temp_dir().join("setu-edit")
+}
+
+/// A new private folder for one edit: a randomly named folder under
+/// [`edit_root`], mode 0700, created fresh (never one that already exists).
 fn private_dir() -> Result<PathBuf, String> {
-    let nanos = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let root = std::env::temp_dir().join("setu-edit");
-    sweep_old(&root);
-    let dir = root.join(format!("{}-{nanos}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not make a temp folder: {e}"))?;
+    let root = edit_root();
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+        .create(&root)
+        .map_err(|e| format!("could not make a temp folder: {e}"))?;
+    // Refuse a root that is a link or that others can write to.
+    let meta = std::fs::symlink_metadata(&root).map_err(|e| e.to_string())?;
+    if !meta.is_dir() {
+        return Err(format!("{} is not a folder", root.display()));
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        for d in [dir.parent().unwrap_or(&dir), dir.as_path()] {
-            std::fs::set_permissions(d, std::fs::Permissions::from_mode(0o700))
-                .map_err(|e| e.to_string())?;
+        if meta.permissions().mode() & 0o077 != 0 {
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| format!("{} is not private to you: {e}", root.display()))?;
         }
     }
-    Ok(dir)
+    sweep_old(&root);
+    let prefix = format!("{}-", std::process::id());
+    let mut dir = tempfile::Builder::new();
+    dir.prefix(&prefix);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        dir.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    dir.tempdir_in(&root)
+        .map(tempfile::TempDir::keep)
+        .map_err(|e| format!("could not make a temp folder: {e}"))
+}
+
+/// File types the system's default app would run or install rather than
+/// open for editing. For these an editor must be set in Settings.
+const RUNS_WHEN_OPENED: &[&str] = &[
+    "app",
+    "appimage",
+    "application",
+    "bat",
+    "cmd",
+    "com",
+    "command",
+    "cpl",
+    "desktop",
+    "exe",
+    "hta",
+    "jar",
+    "js",
+    "jse",
+    "lnk",
+    "msc",
+    "msi",
+    "msp",
+    "pif",
+    "ps1",
+    "psm1",
+    "reg",
+    "scr",
+    "tool",
+    "url",
+    "vb",
+    "vbe",
+    "vbs",
+    "workflow",
+    "ws",
+    "wsf",
+    "wsh",
+];
+
+fn runs_when_opened(file: &Path) -> bool {
+    file.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| RUNS_WHEN_OPENED.contains(&e.to_ascii_lowercase().as_str()))
 }
 
 /// Splits an editor command like `code --wait` or `"C:\Program Files\x.exe" -n`
@@ -177,6 +265,12 @@ pub fn editor_argv(command: &str, file: &Path) -> Vec<String> {
 /// Opens `file` with `editor`, or the system's default app when it is empty.
 fn launch(editor: &str, file: &Path) -> Result<(), String> {
     let argv: Vec<String> = if editor.trim().is_empty() {
+        if runs_when_opened(file) {
+            return Err(format!(
+                "{} would run, not open, with the system's default app. Set an editor in Settings → Files to edit it.",
+                file.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()
+            ));
+        }
         let path = file.display().to_string();
         if cfg!(target_os = "macos") {
             vec!["open".into(), path]
@@ -256,7 +350,7 @@ pub async fn remote_edit_open(
 ) -> Result<Opened, String> {
     let session = files.get(id)?;
     let name = sftp::name_remote(&remote).to_string();
-    sftp::check_name(&name).map_err(|e| e.to_string())?;
+    sftp::check_local_name(&name).map_err(|e| e.to_string())?;
     let stat = session
         .sftp
         .stat(&remote)
@@ -378,6 +472,42 @@ mod tests {
             ["xterm", "-e", "vim", "/tmp/x/app.conf"]
         );
         assert_eq!(editor_argv("  subl  ", f), ["subl", "/tmp/x/app.conf"]);
+    }
+
+    #[test]
+    fn default_app_never_runs_programs() {
+        for f in [
+            "deploy.BAT",
+            "x.exe",
+            "run.command",
+            "a.desktop",
+            "s.ps1",
+            "t.js",
+        ] {
+            assert!(runs_when_opened(Path::new(f)), "{f}");
+            assert!(launch("", Path::new(f)).is_err(), "{f}");
+        }
+        for f in ["nginx.conf", "app.py", "README", ".bashrc", "deploy.sh"] {
+            assert!(!runs_when_opened(Path::new(f)), "{f}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn edit_folders_are_private_and_new() {
+        use std::os::unix::fs::PermissionsExt;
+        let a = private_dir().expect("dir");
+        let b = private_dir().expect("dir");
+        assert_ne!(a, b);
+        for d in [&a, &b, &edit_root()] {
+            let mode = std::fs::metadata(d).expect("meta").permissions().mode();
+            assert_eq!(mode & 0o077, 0, "{}", d.display());
+        }
+        if cfg!(target_os = "linux") {
+            assert!(!a.starts_with("/tmp/setu-edit"));
+        }
+        let _ = std::fs::remove_dir_all(&a);
+        let _ = std::fs::remove_dir_all(&b);
     }
 
     #[test]

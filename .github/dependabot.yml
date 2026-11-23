@@ -11,8 +11,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Actions are pinned to commit SHAs (with the tag in a comment);
+    # Dependabot moves the SHA and the comment together.
+    groups:
+      actions:
+        patterns: ["*"]
     ignore:
-      # The MSRV job pins an exact toolchain on purpose.
+      # Pinned to a commit of its master branch; the toolchain is an input.
       - dependency-name: dtolnay/rust-toolchain
   - package-ecosystem: npm
     directory: /

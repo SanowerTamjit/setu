@@ -215,6 +215,13 @@ pub async fn connect(opts: &ConnectOptions) -> Result<SshClient, SshError> {
 }
 
 async fn connect_inner(opts: &ConnectOptions) -> Result<SshClient, SshError> {
+    for o in opts.jump.iter().chain(std::iter::once(opts)) {
+        known_hosts::check_host(&o.host).map_err(|_| SshError::Connect {
+            host: o.host.clone(),
+            port: o.port,
+            reason: "that is not a valid host name or address".into(),
+        })?;
+    }
     // Connect through the jump chain: each hop opens a direct-tcpip channel
     // to the next host, and the SSH session runs inside that channel.
     let mut via: Vec<SshClient> = Vec::new();

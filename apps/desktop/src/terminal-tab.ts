@@ -7,6 +7,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { LigaturesAddon } from "@xterm/addon-ligatures";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { FindBar } from "./find-bar";
+import { needsPasteCheck, pasteAllowed } from "./paste-guard";
 import { SecretMasker } from "./secret-mask";
 import { onSettingsChange, settings } from "./settings";
 import { terminalTheme } from "./themes";
@@ -80,6 +81,22 @@ export class TerminalTab implements Tab {
     this.term.loadAddon(this.fit);
     this.term.loadAddon(this.serializer);
     this.term.open(this.element);
+    // Pastes that reach xterm directly (Shift+Insert, middle click, the
+    // context menu) go through the paste guard too.
+    this.element.addEventListener(
+      "paste",
+      (e) => {
+        const text = e.clipboardData?.getData("text/plain") ?? "";
+        if (!needsPasteCheck(this.term, text)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        void pasteAllowed(this.term, text).then((ok) => {
+          if (ok) this.term.paste(text);
+          this.term.focus();
+        });
+      },
+      true,
+    );
     this.findBar = new FindBar(this.element, this.term);
     this.masker = new SecretMasker(this.term, settings().maskSecrets);
     this.unsubscribe = onSettingsChange((s, changed) => {

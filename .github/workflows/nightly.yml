@@ -46,12 +46,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
         run: |
           version="nightly-$(date -u +%Y%m%d)-${SHA:0:7}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           build=true
-          if [ "${{ github.event_name }}" = schedule ]; then
-            last=$(gh api "repos/${{ github.repository }}/git/ref/tags/nightly" --jq .object.sha 2>/dev/null || true)
+          if [ "$EVENT" = schedule ]; then
+            last=$(gh api "repos/$REPO/git/ref/tags/nightly" --jq .object.sha 2>/dev/null || true)
             if [ "$last" = "$SHA" ]; then
               echo "No new commits since the last nightly ($last); skipping."
               build=false
@@ -81,19 +83,22 @@ jobs:
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       # Signing secrets. Empty when not configured; each signing step
-      # checks for them and is skipped otherwise.
-      MACOS_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      MACOS_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      MACOS_NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
-      MACOS_NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      MACOS_NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      # checks for them and is skipped otherwise. Never given to pull
+      # request builds: those run code that has not been reviewed yet, and
+      # a signing certificate in its reach could sign anything.
+      MACOS_CERTIFICATE: ${{ github.event_name != 'pull_request' && secrets.APPLE_CERTIFICATE || '' }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+      MACOS_SIGNING_IDENTITY: ${{ github.event_name != 'pull_request' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+      MACOS_NOTARY_APPLE_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_ID || '' }}
+      MACOS_NOTARY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.APPLE_PASSWORD || '' }}
+      MACOS_NOTARY_TEAM_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_TEAM_ID || '' }}
+      WINDOWS_CERTIFICATE: ${{ github.event_name != 'pull_request' && secrets.WINDOWS_CERTIFICATE || '' }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -101,17 +106,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
+          toolchain: "stable"
           targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: nightly-${{ matrix.platform }}
 
@@ -236,7 +242,7 @@ jobs:
         run: |
           echo "${{ matrix.platform }}: ${SIGNED:-unsigned}" > "release-out/signing-${{ matrix.platform }}.txt"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: setu-${{ matrix.platform }}
           path: release-out/*
@@ -256,11 +262,25 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: release-out
           merge-multiple: true
+
+      # A software bill of materials: every Rust crate and npm package in the
+      # build, with versions and licenses, so users can check a release
+      # against new advisories without the source.
+      - name: Software bill of materials (SPDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: release-out/setu-${{ needs.prepare.outputs.version }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
 
       - name: Checksums
         run: |
@@ -269,7 +289,7 @@ jobs:
           scripts/release/checksums.sh release-out
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: release-out/*
 
@@ -286,6 +306,7 @@ jobs:
             echo
             echo "Verify a download: \`sha256sum -c SHA256SUMS --ignore-missing\`, and"
             echo "\`gh attestation verify <file> --repo ${{ github.repository }}\` to check it was built here."
+            echo "The \`.spdx.json\` file lists every dependency in this build (SBOM)."
             echo "Install notes: docs/releasing.md."
           } > notes.md
           gh release delete nightly --cleanup-tag --yes 2>/dev/null || true

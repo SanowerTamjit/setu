@@ -3,6 +3,7 @@
 // copying a public key. A second tab manages known_hosts.
 
 import { copyText, el, errorText, field, modal } from "./dom";
+import { enabled } from "./features";
 import {
   sshKeyAddToAgent,
   sshKeyGenerate,
@@ -153,7 +154,7 @@ function newKeyForm(onDone: (made: boolean) => void, flash: (t: string, e?: bool
   const kinds = el(
     "div",
     { className: "choice-list" },
-    ...KINDS.map((k) => {
+    ...KINDS.filter((k) => !isSecurityKey(k.id) || enabled("securityKeys")).map((k) => {
       const radio = el("input", { type: "radio", name: "key-kind", checked: k.id === kind });
       radio.onchange = () => {
         kind = k.id;
@@ -340,7 +341,7 @@ export function openKeyManager(tabId = "keys"): Promise<void> {
             { className: "keys-toolbar" },
             el("span", { className: "muted" }, list.dir),
             el("span", { className: "spacer" }),
-            load,
+            ...(enabled("securityKeys") ? [load] : []),
             add,
           ),
           ...(list.keys.length

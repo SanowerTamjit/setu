@@ -74,11 +74,41 @@ pub fn check(path: &Path, host: &str, port: u16, key: &PublicKey) -> Result<Verd
     }
 }
 
+/// Rejects host names that could not be a real address and would mean
+/// something else in a `known_hosts` line: whitespace or a newline (a second
+/// entry), commas (more hosts), and OpenSSH's pattern and marker characters
+/// (`*`, `?`, `!`, `|`, `@`, `[`, `]`, `#`). Without this, a host name taken
+/// from an imported file could turn "trust this host" into "trust this key for
+/// every host".
+pub fn check_host(host: &str) -> Result<(), SshError> {
+    let bad = host.is_empty()
+        || host.len() > 255
+        || host.chars().any(|c| {
+            c.is_whitespace()
+                || c.is_control()
+                || matches!(
+                    c,
+                    ',' | '*' | '?' | '!' | '|' | '@' | '[' | ']' | '#' | '/' | '\\'
+                )
+        });
+    if bad {
+        return Err(SshError::KnownHosts(format!(
+            "`{}` is not a valid host name or address",
+            host.escape_debug()
+        )));
+    }
+    Ok(())
+}
+
 /// Records a key the user has explicitly accepted. Refuses to overwrite a
 /// different key already recorded for the host: that must be fixed by hand.
 pub fn trust(path: &Path, info: &HostKeyInfo) -> Result<(), SshError> {
-    let key = PublicKey::from_openssh(&info.openssh)
+    check_host(&info.host)?;
+    let key = PublicKey::from_openssh(info.openssh.trim())
         .map_err(|e| SshError::KnownHosts(format!("invalid host key: {e}")))?;
+    // Write the key as parsed, never the text we were given, so nothing
+    // after the key (a newline and a second entry, say) reaches the file.
+    let info = &HostKeyInfo::new(&info.host, info.port, &key);
     match check(path, &info.host, info.port, &key)? {
         Verdict::Trusted => Ok(()),
         Verdict::Changed { line } => Err(SshError::HostKeyChanged {
@@ -280,6 +310,41 @@ mod tests {
             trust(&path, &other),
             Err(SshError::HostKeyChanged { .. })
         ));
+    }
+
+    #[test]
+    fn host_names_cannot_inject_entries() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("known_hosts");
+        for host in [
+            "evil\n* ssh-ed25519 AAAA",
+            "a b",
+            "a,b",
+            "*",
+            "*.corp",
+            "!x",
+            "|1|abc",
+            "@cert-authority",
+            "[h]:22",
+            "",
+        ] {
+            let info = HostKeyInfo::new(host, 22, &key(KEY_A));
+            assert!(trust(&path, &info).is_err(), "{host:?}");
+        }
+        assert!(!path.exists());
+        // Extra text after the key is dropped, not written.
+        let mut info = HostKeyInfo::new("ok.example", 22, &key(KEY_A));
+        info.openssh = format!("{KEY_A}\n* {KEY_B}");
+        assert!(
+            trust(&path, &info).is_err() || {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                text.lines().count() == 1 && !text.contains('*')
+            }
+        );
+        // Real names and addresses still work.
+        for host in ["web-01", "10.0.0.5", "2001:db8::1", "db.internal.example"] {
+            trust(&path, &HostKeyInfo::new(host, 22, &key(KEY_A))).expect(host);
+        }
     }
 
     #[test]

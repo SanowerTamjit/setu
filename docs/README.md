@@ -3,6 +3,9 @@
 - [Architecture decision records](adr/)
 - [Roadmap](../ROADMAP.md)
 - [Editions: free vs paid](../EDITIONS.md)
+- [Threat model](security/threat-model.md) and the [Phase 1 security review](security/phase1-review.md)
+- [Feature flags](feature-flags.md)
+- [How Setu is built (AI-assisted workflow)](development-workflow.md)
 
 ## Architecture in one paragraph
 

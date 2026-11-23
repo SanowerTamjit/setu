@@ -47,6 +47,6 @@ Settings → Packs → **Install from file** reads one `.json` file. Setu shows 
 | `os` | `linux`, `macos`, `windows`; empty means all |
 | `permissions` | What the pack asks to be allowed to do, shown before install. Packs in format 1 only hold data, so this is empty |
 | `dependencies` | Reserved; a pack with dependencies is refused for now |
-| `contributes.snippets` | Up to 1000 snippets, each with a unique `id`, a `title` and a `command` (no control characters) |
+| `contributes.snippets` | Up to 1000 snippets, each with a unique `id`, a `title` and a `command` on one line (no line breaks or other control characters) |
 
 Unknown fields are refused, so a typo is caught instead of ignored. Later releases add layouts, runbooks and checks to packs, signed packages and a marketplace.

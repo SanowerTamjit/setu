@@ -152,6 +152,25 @@ pub fn check_name(name: &str) -> Result<(), SshError> {
     Ok(())
 }
 
+/// [`check_name`], plus what makes a server-chosen name unsafe as a local
+/// file name: on Windows, `C:name` is a path on drive C and `name:stream` an
+/// alternate data stream, so a listing could write outside the folder.
+pub fn check_local_name(name: &str) -> Result<(), SshError> {
+    check_name(name)?;
+    let mut parts = Path::new(name).components();
+    let single = matches!(
+        (parts.next(), parts.next()),
+        (Some(std::path::Component::Normal(n)), None) if n == std::ffi::OsStr::new(name)
+    );
+    if !single || (cfg!(windows) && name.contains(':')) {
+        return Err(SshError::Files {
+            path: name.into(),
+            reason: "not a valid file name on this computer".into(),
+        });
+    }
+    Ok(())
+}
+
 fn files_err(path: impl std::fmt::Display, e: impl std::fmt::Display) -> SshError {
     SshError::Files {
         path: path.to_string(),
@@ -573,7 +592,7 @@ impl Sftp {
         local_dir: &Path,
     ) -> Result<Plan<String, PathBuf>, SshError> {
         let name = name_remote(remote).to_string();
-        check_name(&name)?;
+        check_local_name(&name)?;
         let meta = self
             .session
             .metadata(remote)
@@ -593,7 +612,7 @@ impl Sftp {
         while let Some((src, dst, label)) = stack.pop() {
             plan.dirs.push(dst.clone());
             for entry in self.list(&src).await? {
-                check_name(&entry.name)?;
+                check_local_name(&entry.name)?;
                 let child_src = join_remote(&src, &entry.name);
                 let child_dst = dst.join(&entry.name);
                 let child_label = format!("{label}/{}", entry.name);
@@ -925,6 +944,16 @@ mod tests {
             assert!(check_name(bad).is_err(), "{bad:?}");
         }
         assert!(check_name(".bashrc").is_ok());
+        assert!(check_local_name(".bashrc").is_ok());
+        assert!(check_local_name("..").is_err());
+        assert!(check_local_name("a/b").is_err());
+        if cfg!(windows) {
+            assert!(check_local_name("C:evil").is_err());
+            assert!(check_local_name("file.txt:stream").is_err());
+        } else {
+            // Colons are ordinary on Unix (backup-12:00.tar).
+            assert!(check_local_name("backup-12:00.tar").is_ok());
+        }
     }
 
     #[test]

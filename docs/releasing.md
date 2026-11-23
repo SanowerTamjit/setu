@@ -75,3 +75,19 @@ Nothing to add. Linux packages are verified with `SHA256SUMS` and the provenance
 ## Testing changes to the pipeline
 
 A pull request that changes `.github/workflows/nightly.yml`, `scripts/release/` or `tauri.conf.json` runs the three builds and uploads their files as workflow artifacts (kept 7 days). It never publishes. Only scheduled or manual runs on `master` publish the release.
+
+## Versioned releases and release notes
+
+Nightlies are snapshots; a versioned release (`v0.1.0`, …) is a promise. Before tagging one:
+
+1. Move everything under **Unreleased** in `CHANGELOG.md` to a new `## [0.1.0] - YYYY-MM-DD` heading. Sections, in this order: **Security**, **Added**, **Changed**, **Fixed**, **Removed**. Each line says what changed for users, in plain words.
+2. Bump `version` in `Cargo.toml` (`[workspace.package]`), `apps/desktop/package.json` and `apps/desktop/src-tauri/tauri.conf.json` together.
+3. Check that `audit.yml` (advisories) is green on the release commit, and that flags due to retire are removed (`docs/feature-flags.md`).
+4. Tag the commit `vX.Y.Z`. The release notes are the version's `CHANGELOG.md` section, followed by GitHub's generated list of pull requests, grouped by label (`.github/release.yml`: `security`, `feature`, `bug`, `documentation`, `dependencies`; `no-changelog` hides a PR).
+5. Security fixes get a GitHub security advisory (Security → Advisories) published with the release, crediting the reporter.
+
+Every release ships the same proofs as nightlies: `SHA256SUMS`, a Sigstore provenance attestation for each file, and an SPDX SBOM (`*.spdx.json`) listing every dependency.
+
+## Keeping signing secrets safe
+
+Signing secrets are only given to builds of `master` and manual runs, never to pull-request builds. For one more layer, create a `release` environment (**Settings → Environments → New environment**) that only `master` may use, move the `APPLE_*` and `WINDOWS_*` secrets into it, and add `environment: release` to the nightly `build` job.

@@ -3089,3 +3089,28 @@ button.with-icon {
 .sk-hint {
   margin: 0;
 }
+
+/* Feature flag stages (Settings → Features). */
+.badge.stage-experimental {
+  color: var(--warn-text);
+  background: rgb(229 192 123 / 14%);
+}
+
+.badge.stage-beta {
+  color: var(--accent);
+  background: var(--accent-soft, var(--bg-hover));
+}
+
+.paste-preview {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-hover);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

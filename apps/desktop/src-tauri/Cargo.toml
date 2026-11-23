@@ -28,9 +28,8 @@ serde.workspace = true
 serde_json = "1"
 tauri = { version = "2.11", features = [] }
 tokio = { version = "1", features = ["time"] }
-
-[dev-dependencies]
-tempfile = "3"
+# Private, randomly named folders for files edited in a local editor.
+tempfile = "3.20"
 
 [lints]
 workspace = true

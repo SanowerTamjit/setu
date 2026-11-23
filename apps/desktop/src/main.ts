@@ -15,6 +15,8 @@ import { bindingsFor, KeyDispatcher, KEYMAPS, prefixBytes } from "./keymap";
 import { openPalette } from "./palette";
 import { openSettings } from "./settings-dialog";
 import "./settings-shells";
+import "./settings-features";
+import { pasteAllowed } from "./paste-guard";
 import { openKeyManager } from "./key-manager";
 import { copyText } from "./dom";
 import "./known-hosts";
@@ -603,7 +605,7 @@ for (const c of [
     run: async () => {
       const pane = terminalOf(active);
       const text = await navigator.clipboard.readText().catch(() => "");
-      if (pane && text) pane.term.paste(text);
+      if (pane && text && (await pasteAllowed(pane.term, text))) pane.term.paste(text);
       pane?.focus();
     },
   },
@@ -651,7 +653,8 @@ registerSnippets((command) => {
   const pane = terminalOf(active);
   if (!pane) return;
   // Typed, not run: the person reads it, edits placeholders, then presses Enter.
-  pane.term.paste(command);
+  // One line only, so nothing runs before Enter even without bracketed paste.
+  pane.term.paste(command.replace(/[\r\n]+/g, " ").trim());
   pane.focus();
 });
 registerProvider(() =>
