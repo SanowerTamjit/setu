@@ -12,6 +12,7 @@ import { SecretMasker } from "./secret-mask";
 import { onSettingsChange, settings } from "./settings";
 import { terminalTheme } from "./themes";
 import { connectionOf, describe, type SavedConnection } from "./session";
+import { CommandCapture } from "./work-memory";
 import {
   closeTerminal,
   openTerminal,
@@ -58,6 +59,8 @@ export class TerminalTab implements Tab {
   connectionGroup: object | null = null;
   /** Set while the pane waits for Enter to reconnect after a restart. */
   private reconnect: (() => void) | null = null;
+  /** Work memory: notices command lines (kept only when remembering is on). */
+  private readonly capture: CommandCapture;
 
   constructor(
     container: HTMLElement,
@@ -98,6 +101,11 @@ export class TerminalTab implements Tab {
       true,
     );
     this.findBar = new FindBar(this.element, this.term);
+    // SSH panes are named by their saved host (or user@host when typed in
+    // by hand); local shells by nothing.
+    this.capture = new CommandCapture(this.term, () =>
+      this.isRemote ? (this.label ?? (this.connection ? `${this.connection.user}@${this.connection.host}` : "ssh")) : null,
+    );
     this.masker = new SecretMasker(this.term, settings().maskSecrets);
     this.unsubscribe = onSettingsChange((s, changed) => {
       if (changed.maskSecrets !== undefined) this.masker.setEnabled(s.maskSecrets);
@@ -117,7 +125,10 @@ export class TerminalTab implements Tab {
         if (data.includes("\r")) this.reconnect();
         return;
       }
-      if (this.id !== null && !this.exited) void writeTerminal(this.id, data);
+      if (this.id !== null && !this.exited) {
+        this.capture.input(data);
+        void writeTerminal(this.id, data);
+      }
     });
     this.term.onTitleChange((title) => {
       if (title.trim()) {

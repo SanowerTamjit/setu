@@ -4604,6 +4604,7 @@ dependencies = [
  "serde_json",
  "setu-core",
  "setu-hosts",
+ "setu-memory",
  "setu-pty",
  "setu-ssh",
  "setu-vault",
@@ -4623,6 +4624,17 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "toml 1.2.1+spec-1.1.0",
+]
+
+[[package]]
+name = "setu-memory"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "setu-workflow",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

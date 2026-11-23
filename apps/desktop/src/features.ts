@@ -61,6 +61,15 @@ export const FLAGS = [
     default: true,
     since: "0.1.0",
   },
+  {
+    id: "workMemory",
+    title: "Work memory and automation suggestions",
+    description:
+      "The Memory tab in Workflows: once you turn remembering on, Setu keeps the commands you run (on this device only, secrets masked) and suggests snippets and workflows for work you repeat. Off here hides it and stops all remembering.",
+    stage: "beta",
+    default: true,
+    since: "0.1.0",
+  },
 ] as const satisfies readonly FeatureFlag[];
 
 export type FlagId = (typeof FLAGS)[number]["id"];

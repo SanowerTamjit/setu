@@ -24,6 +24,7 @@ setu-ssh.workspace = true
 zeroize = "1"
 setu-hosts.workspace = true
 setu-workflow.workspace = true
+setu-memory.workspace = true
 setu-vault = { workspace = true, features = ["os-keychain"] }
 serde.workspace = true
 serde_json = "1"

@@ -61,6 +61,14 @@ impl Workflows {
     fn store(&self) -> Result<&WorkflowStore, String> {
         self.store.as_ref().map_err(Clone::clone)
     }
+
+    /// The ids of saved workflows, so a new draft does not take one.
+    pub fn ids(&self) -> Vec<String> {
+        self.store()
+            .and_then(|s| s.list().map_err(|e| e.to_string()))
+            .map(|(list, _)| list.into_iter().map(|w| w.id).collect())
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Serialize)]

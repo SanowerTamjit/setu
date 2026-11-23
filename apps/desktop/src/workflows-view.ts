@@ -13,6 +13,8 @@
 import { confirmDialog, el, errorText, field } from "./dom";
 import { icon, type IconName } from "./icons";
 import { BoardView } from "./board-view";
+import { MemoryView } from "./memory-view";
+import { enabled } from "./features";
 import {
   workflowAnswer,
   workflowCancel,
@@ -158,6 +160,8 @@ interface LiveRun {
   live: boolean;
 }
 
+type ViewMode = "workflows" | "board" | "memory";
+
 type Selection = { kind: "step"; id: string } | { kind: "link"; index: number } | null;
 
 export class WorkflowsView {
@@ -184,9 +188,10 @@ export class WorkflowsView {
   private readonly inspector: HTMLElement;
   private readonly toolbar: HTMLElement;
   private readonly banner: HTMLElement;
-  /** Which half of the view shows: the workflow builder or the task board. */
-  private mode: "workflows" | "board" = "workflows";
+  /** What the view shows: the workflow builder, the task board or work memory. */
+  private mode: ViewMode = "workflows";
   private readonly board: BoardView;
+  private readonly memory: MemoryView;
 
   constructor(
     private readonly root: HTMLElement,
@@ -242,7 +247,11 @@ export class WorkflowsView {
       openWorkflow: (id) => void this.openById(id),
       tabs: () => this.modeTabs(),
     });
-    this.root.replaceChildren(this.list, this.main, this.board.element);
+    this.memory = new MemoryView({
+      openDraft: (w) => void this.create(w),
+      tabs: () => this.modeTabs(),
+    });
+    this.root.replaceChildren(this.list, this.main, this.board.element, this.memory.element);
 
     this.canvas.onpointerdown = (e) => {
       if (e.target === this.canvas || e.target === this.surface || e.target === this.edges) {
@@ -261,6 +270,8 @@ export class WorkflowsView {
 
   /** Loads the list from disk; call when the view is shown. */
   async refresh() {
+    // Work memory may have been turned off in Settings → Features.
+    if (this.mode === "memory" && !enabled("workMemory")) this.setMode("workflows");
     try {
       const [data, history] = await Promise.all([workflowsList(), workflowHistory()]);
       this.data = data;
@@ -273,22 +284,27 @@ export class WorkflowsView {
     this.render();
     // Workflow names and last runs on the cards may have changed.
     if (this.mode === "board") await this.board.refresh();
+    if (this.mode === "memory") await this.memory.refresh();
   }
 
   focus() {
     if (this.mode === "board") this.board.focus();
+    else if (this.mode === "memory") this.memory.focus();
     else this.canvas.focus({ preventScroll: true });
   }
 
   /** Shows the builder or the task board. */
-  setMode(mode: "workflows" | "board") {
+  setMode(mode: ViewMode) {
+    if (mode === "memory" && !enabled("workMemory")) mode = "workflows";
     this.mode = mode;
-    const board = mode === "board";
-    this.root.classList.toggle("board-mode", board);
-    this.list.hidden = board;
-    this.main.hidden = board;
-    this.board.element.hidden = !board;
-    if (board) void this.board.refresh();
+    const builder = mode === "workflows";
+    this.root.classList.toggle("board-mode", !builder);
+    this.list.hidden = !builder;
+    this.main.hidden = !builder;
+    this.board.element.hidden = mode !== "board";
+    this.memory.element.hidden = mode !== "memory";
+    if (mode === "board") void this.board.refresh();
+    if (mode === "memory") void this.memory.refresh();
     this.render();
   }
 
@@ -306,7 +322,7 @@ export class WorkflowsView {
 
   /** The Workflows | Board switch, shown at the top of each half. */
   private modeTabs() {
-    const tab = (mode: "workflows" | "board", label: string, ic: IconName) => {
+    const tab = (mode: ViewMode, label: string, ic: IconName) => {
       const on = this.mode === mode;
       const b = el("button", { type: "button", className: "wf-mode-tab" + (on ? " on" : "") }, icon(ic, 14), label);
       b.setAttribute("role", "tab");
@@ -319,15 +335,21 @@ export class WorkflowsView {
       };
       return b;
     };
-    const bar = el("div", { className: "wf-mode" }, tab("workflows", "Workflows", "workflow"), tab("board", "Board", "board"));
+    const bar = el(
+      "div",
+      { className: "wf-mode" },
+      tab("workflows", "Workflows", "workflow"),
+      tab("board", "Board", "board"),
+      ...(enabled("workMemory") ? [tab("memory", "Memory", "spark")] : []),
+    );
     bar.setAttribute("role", "tablist");
-    bar.setAttribute("aria-label", "Workflows or task board");
+    bar.setAttribute("aria-label", "Workflows, task board or work memory");
     return bar;
   }
 
   /** Starts a new workflow from a template, or blank. */
   async create(template?: Workflow) {
-    if (this.mode === "board") this.setMode("workflows");
+    if (this.mode !== "workflows") this.setMode("workflows");
     if (!(await this.leave())) return;
     const base = template ? clone(template) : { id: "", name: "New workflow", step: [], link: [] };
     const taken = new Set(this.data?.workflows.map((w) => w.id));
@@ -407,6 +429,7 @@ export class WorkflowsView {
   private renderList() {
     // The board draws itself; redrawing it here would break a drag.
     if (this.mode === "board") return;
+    if (this.mode === "memory") return this.memory.render();
     const header = el(
       "div",
       { className: "wf-list-header" },
