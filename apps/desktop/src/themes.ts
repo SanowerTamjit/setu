@@ -8,8 +8,13 @@ export const THEMES: { id: ThemeName; name: string; description: string }[] = [
   { id: "dark", name: "Dark", description: "The default: graphite with a blue accent, easy on the eyes" },
   { id: "light", name: "Light", description: "Clean white surfaces, for bright rooms" },
   { id: "high-contrast", name: "High contrast", description: "Black and white with strong focus outlines" },
+<<<<<<< HEAD
   { id: "ocean", name: "Ocean", description: "Deep blue-green with a teal accent, calm for long night shifts" },
   { id: "paper", name: "Paper", description: "Warm off-white with an amber accent, soft on the eyes by day" },
+=======
+  { id: "ember", name: "Ember", description: "Warm charcoal with an amber glow, for late nights" },
+  { id: "sandstone", name: "Sandstone", description: "Soft paper tones with a teal accent, gentle in daylight" },
+>>>>>>> origin/master
 ];
 
 const DARK: ITheme = {
@@ -85,6 +90,7 @@ const HIGH_CONTRAST: ITheme = {
   brightWhite: "#ffffff",
 };
 
+<<<<<<< HEAD
 const OCEAN: ITheme = {
   background: "#0c1821",
   foreground: "#dbe7ee",
@@ -131,22 +137,80 @@ const PAPER: ITheme = {
   brightMagenta: "#a552b8",
   brightCyan: "#27918e",
   brightWhite: "#fffaf0",
+=======
+const EMBER: ITheme = {
+  background: "#16120f",
+  foreground: "#efe6dc",
+  cursor: "#f0883e",
+  cursorAccent: "#16120f",
+  selectionBackground: "#4a3424",
+  black: "#2a221c",
+  red: "#e8705f",
+  green: "#a3c06e",
+  yellow: "#e8b44a",
+  blue: "#7fa8d4",
+  magenta: "#c98bb8",
+  cyan: "#6fbfb0",
+  white: "#ddd2c4",
+  brightBlack: "#857565",
+  brightRed: "#ff9283",
+  brightGreen: "#c3dc8f",
+  brightYellow: "#f8d27a",
+  brightBlue: "#a3c4e8",
+  brightMagenta: "#e3aad3",
+  brightCyan: "#94dccd",
+  brightWhite: "#fff8ef",
+};
+
+const SANDSTONE: ITheme = {
+  background: "#f5f0e6",
+  foreground: "#2b2620",
+  cursor: "#0f766e",
+  cursorAccent: "#f5f0e6",
+  selectionBackground: "#cfe0d8",
+  black: "#2b2620",
+  red: "#b3372b",
+  green: "#3f7a2a",
+  yellow: "#8a5a00",
+  blue: "#2a6496",
+  magenta: "#8a3f8a",
+  cyan: "#0e7490",
+  white: "#d8cfbf",
+  brightBlack: "#6b6152",
+  brightRed: "#c84a3d",
+  brightGreen: "#4d8f36",
+  brightYellow: "#a06a00",
+  brightBlue: "#3678b0",
+  brightMagenta: "#9e52a0",
+  brightCyan: "#1589a8",
+  brightWhite: "#fffdf8",
+>>>>>>> origin/master
 };
 
 const PALETTES: Record<ThemeName, ITheme> = {
   dark: DARK,
   light: LIGHT,
   "high-contrast": HIGH_CONTRAST,
+<<<<<<< HEAD
   ocean: OCEAN,
   paper: PAPER,
+=======
+  ember: EMBER,
+  sandstone: SANDSTONE,
+>>>>>>> origin/master
 };
 
 /** Studio's terminal sits on a deeper, bluer background to match its panels. */
 const STUDIO_BACKGROUND: Partial<Record<ThemeName, string>> = {
   dark: "#0a0d14",
   light: "#fbfcff",
+<<<<<<< HEAD
   ocean: "#0a151d",
   paper: "#fbf6ec",
+=======
+  ember: "#120e0b",
+  sandstone: "#fbf7ef",
+>>>>>>> origin/master
 };
 
 export function terminalTheme(name: ThemeName, layout: LayoutName = "classic"): ITheme {
@@ -156,17 +220,30 @@ export function terminalTheme(name: ThemeName, layout: LayoutName = "classic"): 
 }
 
 /** Active match and other matches, per theme. */
+<<<<<<< HEAD
 const FIND: Record<ThemeName, [string, string]> = {
   dark: ["#4c8dff", "#2b3a55"],
   light: ["#2563eb", "#cddcf7"],
   "high-contrast": ["#ffd400", "#444444"],
   ocean: ["#2ec4b6", "#1f4052"],
   paper: ["#b45309", "#ecdcbc"],
+=======
+const FIND_COLORS: Record<ThemeName, [string, string]> = {
+  dark: ["#4c8dff", "#2b3a55"],
+  light: ["#2563eb", "#cddcf7"],
+  "high-contrast": ["#ffd400", "#444444"],
+  ember: ["#f0883e", "#4a3424"],
+  sandstone: ["#0f766e", "#cfe0d8"],
+>>>>>>> origin/master
 };
 
 /** Match highlights for find, readable on each theme. */
 export function findColors(name: ThemeName) {
+<<<<<<< HEAD
   const [active, match] = FIND[name] ?? FIND.dark;
+=======
+  const [active, match] = FIND_COLORS[name] ?? FIND_COLORS.dark;
+>>>>>>> origin/master
   return {
     matchBackground: match,
     matchBorder: name === "high-contrast" ? "#ffffff" : "#7d8799",
