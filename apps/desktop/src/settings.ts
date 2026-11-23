@@ -3,7 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-export type ThemeName = "dark" | "light" | "high-contrast";
+export type ThemeName = "dark" | "light" | "high-contrast" | "ocean" | "paper";
 export type KeymapName = "default" | "vim" | "emacs";
 /** How the window is laid out: the rail and tab bar, or the Studio navigator. */
 export type LayoutName = "classic" | "studio";
@@ -76,7 +76,7 @@ function sanitize(raw: unknown): Settings {
   const s = structuredClone(DEFAULTS);
   if (!raw || typeof raw !== "object") return s;
   const r = raw as Record<string, unknown>;
-  if (r.theme === "dark" || r.theme === "light" || r.theme === "high-contrast") s.theme = r.theme;
+  if (["dark", "light", "high-contrast", "ocean", "paper"].includes(r.theme as string)) s.theme = r.theme as ThemeName;
   if (r.layout === "classic" || r.layout === "studio") s.layout = r.layout;
   if (r.keymap === "default" || r.keymap === "vim" || r.keymap === "emacs") s.keymap = r.keymap;
   if (typeof r.maskSecrets === "boolean") s.maskSecrets = r.maskSecrets;
