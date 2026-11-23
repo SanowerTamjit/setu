@@ -267,6 +267,41 @@ impl PinAskpass {
     }
 }
 
+/// How long to wait for the security key (plug in, PIN, touch) before
+/// giving up. Without a limit, a prompt nobody answers (Windows Hello on a
+/// locked or headless session, say) would hang the app's call forever.
+const DEVICE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// Waits for `child` to finish, killing it after `limit`.
+fn wait_with_timeout(
+    mut child: std::process::Child,
+    limit: std::time::Duration,
+) -> Result<std::process::Output, KeyGenError> {
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if start.elapsed() >= limit => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(KeyGenError::SecurityKey(format!(
+                    "the security key did not answer within {} seconds. Plug it in, then try again and touch it when it blinks",
+                    limit.as_secs()
+                )));
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) => {
+                return Err(KeyGenError::SecurityKey(format!(
+                    "could not run ssh-keygen: {e}"
+                )))
+            }
+        }
+    }
+    child
+        .wait_with_output()
+        .map_err(|e| KeyGenError::SecurityKey(format!("could not run ssh-keygen: {e}")))
+}
+
 /// Runs `cmd` (an `ssh-keygen` call that talks to the security key) with the
 /// PIN, if any, and turns its failure into a sentence for people.
 fn run_with_device(mut cmd: std::process::Command, pin: Option<&str>) -> Result<(), KeyGenError> {
@@ -284,13 +319,14 @@ fn run_with_device(mut cmd: std::process::Command, pin: Option<&str>) -> Result<
     };
     #[cfg(not(unix))]
     let _ = pin;
-    let out = cmd.output().map_err(|e| {
+    let child = cmd.spawn().map_err(|e| {
         KeyGenError::SecurityKey(if e.kind() == std::io::ErrorKind::NotFound {
             "security keys are made with OpenSSH's ssh-keygen, which is not installed. Install OpenSSH 8.2 or newer".into()
         } else {
             format!("could not run ssh-keygen: {e}")
         })
     })?;
+    let out = wait_with_timeout(child, DEVICE_TIMEOUT)?;
     #[cfg(unix)]
     drop(askpass);
     if out.status.success() {
@@ -714,7 +750,10 @@ mod tests {
     }
 
     /// Runs the real ssh-keygen, which must find no device. Only on CI, so a
-    /// developer's plugged-in key does not start blinking during tests.
+    /// developer's plugged-in key does not start blinking during tests. Not
+    /// on Windows: there OpenSSH hands the request to Windows Hello, which
+    /// waits for a person (covered by `device_waits_are_bounded` instead).
+    #[cfg(not(windows))]
     #[test]
     fn no_device_gives_a_clear_error_and_no_files() {
         if std::env::var_os("CI").is_none()
@@ -737,6 +776,30 @@ mod tests {
             other => panic!("expected a security key error, got {other:?}"),
         }
         assert!(list(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn device_waits_are_bounded() {
+        let mut cmd = if cfg!(windows) {
+            let mut c = std::process::Command::new("powershell");
+            c.args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"]);
+            c
+        } else {
+            let mut c = std::process::Command::new("sleep");
+            c.arg("30");
+            c
+        };
+        let child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn");
+        let start = std::time::Instant::now();
+        let result = wait_with_timeout(child, std::time::Duration::from_millis(300));
+        assert!(
+            matches!(result, Err(KeyGenError::SecurityKey(ref t)) if t.contains("did not answer"))
+        );
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
     }
 
     #[test]
