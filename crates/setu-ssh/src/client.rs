@@ -487,6 +487,10 @@ impl SshClient {
         E: FnOnce(Option<u32>) + Send + 'static,
     {
         let channel = self.handle.channel_open_session().await?;
+        // Prompt themes (Starship, Oh My Posh, Powerlevel10k) look for
+        // COLORTERM to use 24-bit colour. Most servers only accept LANG and
+        // LC_* (AcceptEnv), so don't wait for an answer and don't fail.
+        let _ = channel.set_env(false, "COLORTERM", "truecolor").await;
         channel
             .request_pty(
                 true,

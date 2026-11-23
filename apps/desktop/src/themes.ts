@@ -2,7 +2,7 @@
 // matching terminal palettes here.
 
 import type { ITheme } from "@xterm/xterm";
-import type { LayoutName, ThemeName } from "./settings";
+import type { ColorSchemeSetting, LayoutName, ThemeName } from "./settings";
 
 export const THEMES: { id: ThemeName; name: string; description: string }[] = [
   { id: "dark", name: "Dark", description: "The default: graphite with a blue accent, easy on the eyes" },
@@ -206,7 +206,31 @@ const STUDIO_BACKGROUND: Partial<Record<ThemeName, string>> = {
   sandstone: "#fbf7ef",
 };
 
-export function terminalTheme(name: ThemeName, layout: LayoutName = "classic"): ITheme {
+const ANSI_KEYS = [
+  "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+  "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite",
+] as const;
+
+/** An imported colour scheme as an xterm theme. */
+export function schemeTheme(scheme: ColorSchemeSetting): ITheme {
+  const theme: ITheme = {
+    background: scheme.background,
+    foreground: scheme.foreground,
+    cursor: scheme.cursor ?? scheme.foreground,
+    cursorAccent: scheme.background,
+    // A see-through selection keeps text readable when a scheme has none.
+    selectionBackground: scheme.selection ?? `${scheme.foreground}40`,
+  };
+  ANSI_KEYS.forEach((k, i) => (theme[k] = scheme.ansi[i]));
+  return theme;
+}
+
+/**
+ * The terminal colours: an imported scheme when one is chosen, otherwise the
+ * app theme's palette.
+ */
+export function terminalTheme(name: ThemeName, layout: LayoutName = "classic", scheme?: ColorSchemeSetting | null): ITheme {
+  if (scheme) return schemeTheme(scheme);
   const base = PALETTES[name] ?? DARK;
   const background = layout === "studio" ? STUDIO_BACKGROUND[name] : undefined;
   return background ? { ...base, background, cursorAccent: background } : base;

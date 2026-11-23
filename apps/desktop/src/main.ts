@@ -16,6 +16,8 @@ import { openPalette } from "./palette";
 import { openSettings } from "./settings-dialog";
 import "./settings-shells";
 import "./settings-features";
+import "./settings-prompts";
+import { glyphTestCard, preloadSymbols, promptThemesOn } from "./prompt-themes";
 import { pasteAllowed } from "./paste-guard";
 import { openKeyManager } from "./key-manager";
 import { copyText } from "./dom";
@@ -769,6 +771,38 @@ for (const c of [
   registerCommand(c);
 }
 
+registerCommand({
+  id: "prompts.check",
+  title: "Prompt check (icons, Powerline, colours)",
+  category: "Terminal",
+  keywords: "powerlevel10k p10k starship oh my posh zsh nerd font glyph powerline icons test",
+  run: () => {
+    const pane = terminalOf(active);
+    if (!pane) return;
+    // Written to the screen only; the shell never sees it.
+    pane.term.write(glyphTestCard() + "\r\n");
+    pane.focus();
+  },
+});
+registerCommand({
+  id: "prompts.settings",
+  title: "Prompt themes and colour schemes",
+  category: "Settings",
+  keywords: "powerlevel10k p10k starship oh my posh oh my zsh itermcolors windows terminal alacritty base16 import scheme",
+  run: () => openSettings("prompts").then(() => active?.focus()),
+});
+registerProvider(() =>
+  promptThemesOn()
+    ? [{ name: "", title: "Follow the app theme" }, ...settings().colorSchemes.map((c) => ({ name: c.name, title: c.name }))].map((c) => ({
+        id: `scheme:${c.name}`,
+        title: c.title,
+        category: "Terminal colours",
+        keywords: "colour color scheme imported",
+        run: () => updateSettings({ colorScheme: c.name }),
+      }))
+    : [],
+);
+
 for (const t of THEMES) {
   registerCommand({
     id: `theme.${t.id}`,
@@ -987,6 +1021,8 @@ onSettingsChange((s, changed) => {
 
 async function boot() {
   const [info, found] = await Promise.all([appInfo(), listShells(), loadSettings(), loadPacks()]);
+  // Before the first terminal draws, so the GPU renderer caches real icons.
+  await preloadSymbols();
   applyTheme(settings().theme);
   applyLayout(settings().layout);
   // After settings: the work memory switch lives there.

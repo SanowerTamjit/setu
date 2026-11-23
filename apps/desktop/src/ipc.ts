@@ -652,3 +652,26 @@ export const memorySnippetSave = (title: string, command: string) =>
 export const memorySnippetDelete = (id: string) => invoke<void>("memory_snippet_delete", { id });
 export const memoryWorkflowDraft = (id: string) => invoke<Workflow>("memory_workflow_draft", { id });
 export const memorySummary = () => invoke<string>("memory_summary");
+
+/** A colour scheme read from another terminal's file (see color_schemes.rs). */
+export interface ParsedScheme {
+  name: string;
+  foreground: string;
+  background: string;
+  cursor: string | null;
+  selection: string | null;
+  ansi: string[];
+}
+
+export const colorSchemeParse = (fileName: string, bytes: Uint8Array) =>
+  invoke<{ format: string; schemes: ParsedScheme[] }>("color_scheme_parse", { fileName, bytes: Array.from(bytes) });
+
+/** What prompt_detect found for one prompt tool on this computer. */
+export interface DetectedPrompt {
+  id: string;
+  installed: boolean;
+  enabled: boolean;
+  detail: string | null;
+}
+
+export const promptDetect = () => invoke<DetectedPrompt[]>("prompt_detect");

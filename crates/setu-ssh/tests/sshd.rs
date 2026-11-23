@@ -66,11 +66,24 @@ fn fake_security_key(path: &Path) -> String {
     line
 }
 
+/// A free localhost port that no other test in this run was given. The
+/// listener is closed before sshd binds the port, so without this two tests
+/// running in parallel could get the same port: the second sshd fails to
+/// bind, its readiness check reaches the first test's sshd, and its first
+/// connection is refused once that test ends.
 fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .expect("free port")
+    static GIVEN: std::sync::Mutex<Vec<u16>> = std::sync::Mutex::new(Vec::new());
+    loop {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .and_then(|l| l.local_addr())
+            .map(|a| a.port())
+            .expect("free port");
+        let mut given = GIVEN.lock().unwrap_or_else(|e| e.into_inner());
+        if !given.contains(&port) {
+            given.push(port);
+            return port;
+        }
+    }
 }
 
 fn current_user() -> String {
@@ -155,6 +168,13 @@ fn start_sshd() -> Option<Sshd> {
             return skip("sshd could not be started here");
         }
         std::thread::sleep(Duration::from_millis(50));
+    }
+    // The port answered: make sure it is our sshd and not one that exited
+    // after failing to bind (the port then belongs to someone else).
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        panic!(
+            "sshd exited after its port started answering; port {port} is in use by something else"
+        );
     }
     Some(Sshd {
         child,

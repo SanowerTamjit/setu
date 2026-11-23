@@ -320,6 +320,8 @@ body,
   --card: #fffaf0;
   --card-hover: #f8f1e4;
   --ring: rgba(180, 83, 9, 0.45);
+  color-scheme: light;
+}
 
 /* Ember: warm charcoal surfaces with an amber accent */
 :root[data-theme="ember"] {
@@ -4011,6 +4013,7 @@ button.with-icon {
     linear-gradient(rgba(180, 83, 9, 0.04) 1px, transparent 1px) 0 0 / 44px 44px,
     linear-gradient(90deg, rgba(180, 83, 9, 0.04) 1px, transparent 1px) 0 0 / 44px 44px;
   --st-primary: linear-gradient(135deg, #b45309 0%, #9a3412 100%);
+}
 
 :root[data-layout="studio"][data-theme="ember"] {
   --st-space: #0d0a08;
@@ -6278,4 +6281,99 @@ button.with-icon {
   .mem-time {
     width: auto;
   }
+}
+
+/* ---- Prompt themes (prompt-themes.ts, settings-prompts.ts) ---- */
+
+/* Symbols Nerd Font Mono (MIT, Nerd Fonts 3.4.0), only for icon code points:
+   the private use areas and the few symbols Nerd Fonts adds elsewhere. */
+@font-face {
+  font-family: "Setu Symbols";
+  src: url("./fonts/SymbolsNerdFontMono-Regular.woff2") format("woff2");
+  font-display: block;
+  unicode-range: U+23FB-23FE, U+2630, U+2665, U+26A1, U+276C-2771, U+2B58, U+E000-F8FF, U+F0000-FFFFD;
+}
+
+.prompt-preview {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.35;
+  white-space: pre;
+  overflow: hidden;
+}
+.prompt-swatches {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+}
+.prompt-swatches span {
+  width: 18px;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
+}
+.prompt-scheme-row {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.prompt-scheme-row select {
+  flex: 1;
+  min-width: 180px;
+}
+.prompt-tools-title {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.prompt-tools {
+  display: grid;
+  gap: 8px;
+}
+.prompt-tool {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  background: var(--bg-elevated);
+}
+.prompt-tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.prompt-state {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.prompt-state.on {
+  color: var(--success-text);
+}
+.prompt-state.found {
+  color: var(--warn-text);
+}
+.prompt-line {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.prompt-line code {
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+}
+.prompt-tools-title h3 {
+  margin: 0;
 }
