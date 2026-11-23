@@ -20,6 +20,7 @@ mod windows;
 mod workflows;
 
 use serde::Serialize;
+pub use setu_core::extend::Extensions;
 
 #[derive(Debug, Serialize)]
 struct AppInfo {
@@ -38,10 +39,17 @@ fn app_info() -> AppInfo {
     }
 }
 
-/// Starts the desktop app.
-#[allow(clippy::expect_used)]
+/// Starts the desktop app as the open-source edition: no extensions.
 pub fn run() {
+    run_with(Extensions::default());
+}
+
+/// Starts the desktop app with `extensions` (an audit trail, a command
+/// policy). Builds that add their own hooks call this from `main`.
+#[allow(clippy::expect_used)]
+pub fn run_with(extensions: Extensions) {
     tauri::Builder::default()
+        .manage(extensions)
         .manage(terminals::Terminals::default())
         .manage(hosts::Hosts::from_env())
         .manage(vault::VaultState::from_env())

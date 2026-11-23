@@ -15,6 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Pack snippets must be one line, so picking one can never run a command before you press Enter.
 - Release builds: GitHub Actions pinned to commit SHAs, signing secrets never given to pull-request builds, an SBOM with every nightly, and daily dependency advisory checks. See `docs/security/phase1-review.md`.
 
+### Added
+
+- Extension points for builds of Setu that add their own hooks: an audit trail (SSH logins, file copies, finished workflow runs, refused commands) and a command policy checked before each workflow step runs on a host. The open-source app ships with none, so nothing changes for you. See `docs/extending.md`.
+
 ### Changed
 
 - Development: unit tests for the desktop UI (Vitest, run in CI), a `justfile` with one command for each everyday task (`just check` runs everything CI runs), and git hooks (`just install-hooks`) that refuse commits with private keys or tokens, unformatted Rust, failing UI tests or a missing sign-off.

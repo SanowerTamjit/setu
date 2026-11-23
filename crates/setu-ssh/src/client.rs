@@ -192,6 +192,13 @@ impl std::fmt::Debug for SshClient {
     }
 }
 
+impl SshClient {
+    /// The host this connection logged in to (the last hop, not a jump host).
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+}
+
 fn config() -> Arc<client::Config> {
     Arc::new(client::Config {
         // Keep idle sessions alive through NAT and firewalls.

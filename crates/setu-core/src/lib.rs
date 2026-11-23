@@ -4,6 +4,7 @@
 //! It holds no protocol or UI code: only identifiers, configuration paths and
 //! common error types, so it stays small and fast to compile.
 
+pub mod extend;
 pub mod paths;
 
 /// The Setu version, taken from the workspace `Cargo.toml`.

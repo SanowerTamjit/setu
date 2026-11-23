@@ -3,6 +3,7 @@
 use crate::terminals::{output_sink, Session, Terminals};
 use crate::vault::{Availability, VaultState};
 use serde::{Deserialize, Serialize};
+use setu_core::extend::{AuditAction, AuditEvent, AuditOutcome, Extensions};
 use setu_ssh::{known_hosts, Auth, ConnectOptions, HostKeyInfo, ShellSize, SshError, Zeroizing};
 use setu_vault::SecretKind;
 use std::path::PathBuf;
@@ -291,20 +292,38 @@ pub async fn ssh_connect(
     state: State<'_, Terminals>,
     vault: State<'_, VaultState>,
     offered: State<'_, OfferedKeys>,
+    extensions: State<'_, Extensions>,
     request: ConnectRequest,
     cols: u16,
     rows: u16,
     on_output: Channel<InvokeResponseBody>,
     on_exit: Channel<u32>,
 ) -> Result<OpenedSsh, ConnectFailure> {
+    let target = request.audit_target();
     let result = connect_and_open(
         window, &state, &vault, request, cols, rows, on_output, on_exit,
     )
     .await;
+    extensions.audit(connect_event(target, &result));
     if let Err(ConnectFailure::UnknownHostKey { key }) = &result {
         offered.offer(key);
     }
     result
+}
+
+/// The audit record of a login: where, and why it failed (never a secret:
+/// [`ConnectFailure`] holds no password or passphrase).
+fn connect_event(target: String, result: &Result<OpenedSsh, ConnectFailure>) -> AuditEvent {
+    let (outcome, detail) = match result {
+        Ok(_) => (AuditOutcome::Succeeded, String::new()),
+        Err(e) => (AuditOutcome::Failed, e.audit_reason().to_string()),
+    };
+    AuditEvent {
+        action: AuditAction::SshConnect,
+        outcome,
+        target,
+        detail,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -380,6 +399,16 @@ pub(crate) async fn connect_client(
 }
 
 impl ConnectRequest {
+    /// `user@host:port` for an audit trail.
+    fn audit_target(&self) -> String {
+        format!(
+            "{}@{}:{}",
+            user_or_local(&self.user),
+            self.host.trim(),
+            self.port.unwrap_or(22)
+        )
+    }
+
     /// How a saved host connects, for runs nobody types into: secrets come
     /// from the vault only, nothing is saved.
     pub(crate) fn for_host(host: &setu_hosts::Host) -> Self {
@@ -411,6 +440,17 @@ impl ConnectRequest {
 }
 
 impl ConnectFailure {
+    /// A short, fixed reason for an audit trail.
+    fn audit_reason(&self) -> &'static str {
+        match self {
+            ConnectFailure::UnknownHostKey { .. } => "unknown host key",
+            ConnectFailure::HostKeyChanged { .. } => "host key changed",
+            ConnectFailure::NeedsPassphrase { .. } => "key needs a passphrase",
+            ConnectFailure::NeedsPassword { .. } => "needs a password",
+            ConnectFailure::Error { .. } => "connection or login failed",
+        }
+    }
+
     /// One sentence for a run log, where nobody can answer a prompt.
     pub(crate) fn unattended_message(&self) -> String {
         match self {
@@ -527,6 +567,30 @@ pub fn ssh_trust_host(offered: State<'_, OfferedKeys>, key: HostKeyInfo) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_audit_has_where_and_why_but_no_secret() {
+        let request = ConnectRequest {
+            host: " db1.example ".into(),
+            port: Some(2222),
+            user: "ops".into(),
+            auth: AuthRequest::Password {
+                password: "hunter2".into(),
+                save: false,
+            },
+            jump: None,
+        };
+        let target = request.audit_target();
+        assert_eq!(target, "ops@db1.example:2222");
+        let failed: Result<OpenedSsh, ConnectFailure> = Err(ConnectFailure::Error {
+            message: "Permission denied for hunter2".into(),
+        });
+        let e = connect_event(target, &failed);
+        assert_eq!(e.action, AuditAction::SshConnect);
+        assert_eq!(e.outcome, AuditOutcome::Failed);
+        assert_eq!(e.detail, "connection or login failed");
+        assert!(!format!("{e:?}").contains("hunter2"));
+    }
 
     #[test]
     fn only_offered_keys_can_be_trusted() {

@@ -10,11 +10,16 @@ use crate::hosts::Hosts;
 use crate::ssh::{connect_client, ConnectRequest};
 use crate::vault::VaultState;
 use serde::Serialize;
+use setu_core::extend::{
+    AuditAction, AuditEvent, AuditOutcome, CommandCheck, CommandOrigin, Extensions, PolicyDecision,
+};
 use setu_core::paths::{self, Os, ProcessEnv};
 use setu_hosts::Host;
 use setu_ssh::SshClient;
 use setu_workflow::board::Board;
-use setu_workflow::engine::{self, Event, ExecOutput, RunRecord, Runner, Targets, MAX_OUTPUT};
+use setu_workflow::engine::{
+    self, Event, ExecOutput, RunRecord, RunStatus, Runner, Targets, MAX_OUTPUT,
+};
 use setu_workflow::store::{Broken, WorkflowStore};
 use setu_workflow::{resolve_targets, templates, Kind, Workflow};
 use std::collections::HashMap;
@@ -177,6 +182,7 @@ pub fn workflow_run(
     state: State<'_, Workflows>,
     hosts: State<'_, Hosts>,
     vault: State<'_, VaultState>,
+    extensions: State<'_, Extensions>,
     id: String,
     on_event: Channel<Event>,
 ) -> Result<StartedRun, String> {
@@ -217,6 +223,8 @@ pub fn workflow_run(
         vault: vault.inner().clone(),
         connections: Mutex::default(),
         approvals,
+        workflow: workflow.id.clone(),
+        extensions: extensions.inner().clone(),
     });
     let started = StartedRun {
         run_id: run_id.clone(),
@@ -236,6 +244,7 @@ pub fn workflow_run(
         )
         .await;
         runner.disconnect_all().await;
+        runner.extensions.audit(run_event(&record));
         // History is best effort: the person saw the run live.
         let _ = store.record(&record);
         if let Ok(mut active) = active.lock() {
@@ -282,6 +291,23 @@ struct SshRunner {
     vault: VaultState,
     connections: Mutex<HashMap<String, Connection>>,
     approvals: Approvals,
+    /// The workflow's id, for the command policy.
+    workflow: String,
+    extensions: Extensions,
+}
+
+/// The audit record of a finished run.
+fn run_event(record: &RunRecord) -> AuditEvent {
+    AuditEvent {
+        action: AuditAction::WorkflowRun,
+        outcome: match record.status {
+            RunStatus::Succeeded => AuditOutcome::Succeeded,
+            RunStatus::Cancelled => AuditOutcome::Cancelled,
+            RunStatus::Failed | RunStatus::Running => AuditOutcome::Failed,
+        },
+        target: record.workflow.clone(),
+        detail: format!("{} (run {})", record.workflow_name, record.id),
+    }
 }
 
 impl SshRunner {
@@ -328,6 +354,21 @@ impl Runner for SshRunner {
             output: plain_text(&String::from_utf8_lossy(&out)),
             code,
         })
+    }
+
+    fn check(&self, step: &str, host: &str, command: &str) -> Result<(), String> {
+        let check = CommandCheck {
+            host,
+            command,
+            origin: CommandOrigin::Workflow {
+                workflow: &self.workflow,
+                step,
+            },
+        };
+        match self.extensions.check_command(&check) {
+            PolicyDecision::Allow => Ok(()),
+            PolicyDecision::Deny { reason } => Err(reason),
+        }
     }
 
     async fn approve(&self, step: &str, _message: &str) -> bool {
@@ -394,7 +435,77 @@ fn plain_text(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use setu_core::extend::{AuditSink, CommandPolicy};
     use setu_workflow::Step;
+
+    #[derive(Debug, Default)]
+    struct Recorder(Mutex<Vec<AuditEvent>>);
+
+    impl AuditSink for Recorder {
+        fn record(&self, event: &AuditEvent) {
+            self.0.lock().expect("lock").push(event.clone());
+        }
+    }
+
+    #[derive(Debug)]
+    struct DenyAll;
+
+    impl CommandPolicy for DenyAll {
+        fn check(&self, _: &CommandCheck<'_>) -> PolicyDecision {
+            PolicyDecision::Deny {
+                reason: "rule `freeze`".into(),
+            }
+        }
+    }
+
+    fn runner(extensions: Extensions) -> SshRunner {
+        SshRunner {
+            hosts: HashMap::new(),
+            vault: VaultState::from_env(),
+            connections: Mutex::default(),
+            approvals: Arc::default(),
+            workflow: "deploy".into(),
+            extensions,
+        }
+    }
+
+    #[test]
+    fn the_runner_asks_the_policy_and_audits_refusals() {
+        let open = runner(Extensions::default());
+        assert_eq!(open.check("s1", "web1", "reboot"), Ok(()));
+
+        let rec = Arc::new(Recorder::default());
+        let strict = runner(
+            Extensions::default()
+                .with_audit(rec.clone())
+                .with_policy(Arc::new(DenyAll)),
+        );
+        assert_eq!(
+            strict.check("s1", "web1", "reboot"),
+            Err("rule `freeze`".into())
+        );
+        let events = rec.0.lock().expect("lock").clone();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].detail, "workflow deploy, step s1: rule `freeze`");
+    }
+
+    #[test]
+    fn a_finished_run_is_audited() {
+        let record = RunRecord {
+            id: "r7".into(),
+            workflow: "deploy".into(),
+            workflow_name: "Deploy web".into(),
+            status: RunStatus::Cancelled,
+            started_ms: 1,
+            finished_ms: Some(2),
+            steps: Vec::new(),
+        };
+        let e = run_event(&record);
+        assert_eq!(e.action, AuditAction::WorkflowRun);
+        assert_eq!(e.outcome, AuditOutcome::Cancelled);
+        assert_eq!(e.target, "deploy");
+        assert_eq!(e.detail, "Deploy web (run r7)");
+    }
 
     #[test]
     fn plain_text_drops_escapes_and_controls() {
