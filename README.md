@@ -36,7 +36,7 @@ docs/             Documentation and architecture decision records (ADRs)
 
 ## Building from source
 
-Requirements: Rust (the version in `rust-toolchain.toml`), Node.js 22 with pnpm, and on Linux the WebKitGTK development packages (`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev` on Debian/Ubuntu).
+Requirements: Rust (the version in `rust-toolchain.toml`), Node.js 22.12+ or 24+, pnpm, and on Linux the WebKitGTK development packages (`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev` on Debian/Ubuntu).
 
 ```sh
 pnpm install
