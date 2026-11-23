@@ -150,7 +150,7 @@ export class TerminalTab implements Tab {
     });
   }
 
-  private readonly fontsLoaded = () => this.term.clearTextureAtlas();
+  private readonly fontsLoaded = () => this.webgl?.clearTextureAtlas();
   private rendererLoaded = false;
   private webgl: WebglAddon | null = null;
   private ligatures: LigaturesAddon | null = null;
