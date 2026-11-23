@@ -8,8 +8,8 @@ export const THEMES: { id: ThemeName; name: string; description: string }[] = [
   { id: "dark", name: "Dark", description: "The default: graphite with a blue accent, easy on the eyes" },
   { id: "light", name: "Light", description: "Clean white surfaces, for bright rooms" },
   { id: "high-contrast", name: "High contrast", description: "Black and white with strong focus outlines" },
-  { id: "ember", name: "Ember", description: "Warm charcoal with an amber glow, for late nights" },
-  { id: "sandstone", name: "Sandstone", description: "Soft paper tones with a teal accent, gentle in daylight" },
+  { id: "ocean", name: "Ocean", description: "Deep blue-green with a teal accent, calm for long night shifts" },
+  { id: "paper", name: "Paper", description: "Warm off-white with an amber accent, soft on the eyes by day" },
 ];
 
 const DARK: ITheme = {
@@ -85,60 +85,60 @@ const HIGH_CONTRAST: ITheme = {
   brightWhite: "#ffffff",
 };
 
-const EMBER: ITheme = {
-  background: "#16120f",
-  foreground: "#efe6dc",
-  cursor: "#f0883e",
-  cursorAccent: "#16120f",
-  selectionBackground: "#4a3424",
-  black: "#2a221c",
-  red: "#e8705f",
-  green: "#a3c06e",
-  yellow: "#e8b44a",
-  blue: "#7fa8d4",
-  magenta: "#c98bb8",
-  cyan: "#6fbfb0",
-  white: "#ddd2c4",
-  brightBlack: "#857565",
-  brightRed: "#ff9283",
-  brightGreen: "#c3dc8f",
-  brightYellow: "#f8d27a",
-  brightBlue: "#a3c4e8",
-  brightMagenta: "#e3aad3",
-  brightCyan: "#94dccd",
-  brightWhite: "#fff8ef",
+const OCEAN: ITheme = {
+  background: "#0c1821",
+  foreground: "#dbe7ee",
+  cursor: "#2ec4b6",
+  cursorAccent: "#0c1821",
+  selectionBackground: "#1f4052",
+  black: "#13232f",
+  red: "#ef6f6c",
+  green: "#7ed492",
+  yellow: "#f2c66d",
+  blue: "#5cb3f0",
+  magenta: "#c792ea",
+  cyan: "#4fd1d9",
+  white: "#c9d6df",
+  brightBlack: "#5a7587",
+  brightRed: "#ff9592",
+  brightGreen: "#a6e8b3",
+  brightYellow: "#ffd98f",
+  brightBlue: "#8ccbf7",
+  brightMagenta: "#ddb6ff",
+  brightCyan: "#80e6ec",
+  brightWhite: "#ffffff",
 };
 
-const SANDSTONE: ITheme = {
-  background: "#f5f0e6",
+const PAPER: ITheme = {
+  background: "#f6f1e7",
   foreground: "#2b2620",
-  cursor: "#0f766e",
-  cursorAccent: "#f5f0e6",
-  selectionBackground: "#cfe0d8",
+  cursor: "#b45309",
+  cursorAccent: "#f6f1e7",
+  selectionBackground: "#e6d8bd",
   black: "#2b2620",
-  red: "#b3372b",
-  green: "#3f7a2a",
+  red: "#b42318",
+  green: "#3f7a2e",
   yellow: "#8a5a00",
-  blue: "#2a6496",
-  magenta: "#8a3f8a",
-  cyan: "#0e7490",
-  white: "#d8cfbf",
+  blue: "#2b6a9e",
+  magenta: "#8e3fa0",
+  cyan: "#1f7a78",
+  white: "#d9cfbd",
   brightBlack: "#6b6152",
-  brightRed: "#c84a3d",
-  brightGreen: "#4d8f36",
-  brightYellow: "#a06a00",
-  brightBlue: "#3678b0",
-  brightMagenta: "#9e52a0",
-  brightCyan: "#1589a8",
-  brightWhite: "#fffdf8",
+  brightRed: "#cf3a2c",
+  brightGreen: "#4d933a",
+  brightYellow: "#a66d00",
+  brightBlue: "#3a7fb8",
+  brightMagenta: "#a552b8",
+  brightCyan: "#27918e",
+  brightWhite: "#fffaf0",
 };
 
 /** Studio's terminal sits on a deeper, bluer background to match its panels. */
 const STUDIO_BACKGROUND: Partial<Record<ThemeName, string>> = {
   dark: "#0a0d14",
   light: "#fbfcff",
-  ember: "#120e0b",
-  sandstone: "#fbf7ef",
+  ocean: "#0a151d",
+  paper: "#fbf6ec",
 };
 
 export function terminalTheme(name: ThemeName, layout: LayoutName = "classic"): ITheme {
@@ -146,10 +146,10 @@ export function terminalTheme(name: ThemeName, layout: LayoutName = "classic"): 
     ? LIGHT
     : name === "high-contrast"
       ? HIGH_CONTRAST
-      : name === "ember"
-        ? EMBER
-        : name === "sandstone"
-          ? SANDSTONE
+      : name === "ocean"
+        ? OCEAN
+        : name === "paper"
+          ? PAPER
           : DARK;
   const background = layout === "studio" ? STUDIO_BACKGROUND[name] : undefined;
   return background ? { ...base, background, cursorAccent: background } : base;
@@ -161,19 +161,19 @@ export function findColors(name: ThemeName) {
     ? "#2563eb"
     : name === "high-contrast"
       ? "#ffd400"
-      : name === "ember"
-        ? "#f0883e"
-        : name === "sandstone"
-          ? "#0f766e"
+      : name === "ocean"
+        ? "#2ec4b6"
+        : name === "paper"
+          ? "#b45309"
           : "#4c8dff";
   const match = name === "light"
     ? "#cddcf7"
     : name === "high-contrast"
       ? "#444444"
-      : name === "ember"
-        ? "#4a3424"
-        : name === "sandstone"
-          ? "#cfe0d8"
+      : name === "ocean"
+        ? "#1f4052"
+        : name === "paper"
+          ? "#ecdcbc"
           : "#2b3a55";
   return {
     matchBackground: match,
