@@ -18,21 +18,25 @@ Setu is an open-source (Apache-2.0) SSH client, terminal and ops workbench: a Ru
 
 ## Commands
 
+Everything is in the `justfile` (`just` lists it); each recipe is a plain command you can run by hand.
+
 ```sh
-pnpm install && pnpm build:ui        # the desktop crate embeds the built UI: build it first
-cargo fmt --all
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
-pnpm --filter @setu/desktop typecheck
-cargo deny check                      # advisories, licenses, sources
+just setup            # pnpm install + build the UI (the desktop crate embeds it: do this first)
+just quick            # cargo fmt --check, UI typecheck and unit tests (seconds)
+just check            # everything CI runs: fmt, UI, clippy, all tests, cargo deny, pnpm audit
+just test             # Rust and UI tests
+just app              # run the desktop app
+just install-hooks    # pre-commit (secrets, fmt, UI tests) and commit-msg (sign-off) hooks
 ```
+
+UI unit tests are Vitest files in `apps/desktop/test/` (`pnpm --filter @setu/desktop test`). They run in Node; mock `@tauri-apps/api/core` for code that calls Rust. Keep logic that can be tested out of DOM code, as `secrets.ts` and `paste-guard.ts` do.
 
 Linux needs `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`. Re-run only the tests that failed while fixing them.
 
 ## Rules
 
 1. **Small pull requests**, one topic each, based on `master`. Branches `p1/<topic>` (or the branch you were given). Commits signed off (`git commit -s`, DCO) with an `area: summary` subject and a body that says why.
-2. **Tests with every change.** A bug fix comes with a test that fails without it.
+2. **Tests with every change**, Rust or TypeScript. A bug fix comes with a test that fails without it.
 3. **User-visible change → `CHANGELOG.md`** under *Unreleased* (Added, Changed, Fixed, Security). Write for users, not for the code.
 4. **New or risky features go behind a flag** (`apps/desktop/src/features.ts`, `docs/feature-flags.md`). Security fixes never do.
 5. **Docs with the feature**: update the matching file in `docs/`. New IPC commands, files read or network calls also update `docs/security/threat-model.md`.
