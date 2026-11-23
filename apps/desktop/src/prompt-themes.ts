@@ -11,7 +11,7 @@
 // All of it sits behind the `promptThemes` feature flag.
 
 import { enabled } from "./features";
-import { settings, type ColorSchemeSetting, type Settings } from "./settings";
+import { settings, updateSettings, type ColorSchemeSetting, type Settings } from "./settings";
 import { terminalTheme } from "./themes";
 import type { ITheme } from "@xterm/xterm";
 
@@ -20,6 +20,26 @@ export const SYMBOLS_FAMILY = "Setu Symbols";
 
 export function promptThemesOn(): boolean {
   return enabled("promptThemes");
+}
+
+export const MAX_SCHEMES = 50;
+
+/**
+ * Adds imported schemes, replacing ones with the same name and dropping the
+ * oldest past the limit. Returns the names of the imported schemes that were
+ * kept, in file order.
+ */
+export function addSchemes(schemes: ColorSchemeSetting[]): string[] {
+  const byName = new Map(settings().colorSchemes.map((s) => [s.name, s]));
+  for (const s of schemes) {
+    // Re-adding moves a replaced scheme to the end, so it counts as newest.
+    byName.delete(s.name);
+    byName.set(s.name, s);
+  }
+  const all = [...byName.values()].slice(-MAX_SCHEMES);
+  updateSettings({ colorSchemes: all });
+  const kept = new Set(all.map((s) => s.name));
+  return [...new Set(schemes.map((s) => s.name))].filter((n) => kept.has(n));
 }
 
 /** The imported scheme terminals use now, if any. */

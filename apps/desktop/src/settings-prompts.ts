@@ -5,22 +5,11 @@
 
 import { copyText, el, errorText } from "./dom";
 import { colorSchemeParse, promptDetect, type DetectedPrompt } from "./ipc";
-import { activeScheme, currentTerminalTheme, PROMPT_TOOLS, promptThemesOn, SYMBOLS_FAMILY } from "./prompt-themes";
+import { activeScheme, addSchemes, currentTerminalTheme, PROMPT_TOOLS, promptThemesOn, SYMBOLS_FAMILY } from "./prompt-themes";
 import { registerSettingsSection } from "./settings-dialog";
-import { settings, updateSettings, type ColorSchemeSetting } from "./settings";
+import { settings, updateSettings } from "./settings";
 import { terminalFont } from "./terminal-tab";
 import { setEnabled } from "./features";
-
-const MAX_SCHEMES = 50;
-
-/** Adds imported schemes, replacing ones with the same name; returns the names. */
-export function addSchemes(schemes: ColorSchemeSetting[]): string[] {
-  const byName = new Map(settings().colorSchemes.map((s) => [s.name, s]));
-  for (const s of schemes) byName.set(s.name, s);
-  const all = [...byName.values()].slice(-MAX_SCHEMES);
-  updateSettings({ colorSchemes: all });
-  return schemes.map((s) => s.name);
-}
 
 /** A small prompt drawn in the terminal's colours and font. */
 function preview(): HTMLElement {
@@ -128,6 +117,7 @@ registerSettingsSection({
       try {
         const scan = await colorSchemeParse(f.name, new Uint8Array(await f.arrayBuffer()));
         const names = addSchemes(scan.schemes);
+        if (!names.length) throw new Error("none of the schemes in that file could be kept");
         updateSettings({ colorScheme: names[0] });
         note = {
           kind: "info",
