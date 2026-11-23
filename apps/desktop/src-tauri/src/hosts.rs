@@ -27,6 +27,13 @@ impl Hosts {
         }
     }
 
+    /// The saved hosts as they are on disk now.
+    pub fn inventory(&self) -> Result<Inventory, String> {
+        let store = self.store()?;
+        let _guard = self.lock.lock().map_err(|_| "hosts lock poisoned")?;
+        store.load().map_err(|e| e.to_string())
+    }
+
     fn store(&self) -> Result<&HostStore, String> {
         self.store.as_ref().map_err(Clone::clone)
     }

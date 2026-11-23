@@ -471,3 +471,122 @@ export const packInspect = (text: string) =>
   invoke<{ manifest: PackManifest; replaces: string | null }>("pack_inspect", { text });
 export const packInstall = (text: string) => invoke<PackManifest>("pack_install", { text });
 export const packRemove = (id: string) => invoke<void>("pack_remove", { id });
+
+// ---- Workflows (src-tauri/src/workflows.rs, crates/setu-workflow) ----
+
+export type StepKind = "command" | "approval" | "wait";
+export type LinkWhen = "success" | "failure" | "always";
+
+export interface WorkflowStep {
+  id: string;
+  name: string;
+  kind: StepKind;
+  command?: string;
+  /** Saved host names, or `tag:<tag>`. */
+  targets?: string[];
+  one_at_a_time?: boolean;
+  timeout_seconds?: number | null;
+  message?: string;
+  seconds?: number;
+  x: number;
+  y: number;
+}
+
+export interface WorkflowLink {
+  from: string;
+  to: string;
+  when?: LinkWhen;
+}
+
+export interface Workflow {
+  version?: number;
+  id: string;
+  name: string;
+  description?: string;
+  step: WorkflowStep[];
+  link: WorkflowLink[];
+}
+
+export interface WorkflowsView {
+  workflows: Workflow[];
+  broken: { file: string; error: string }[];
+  templates: Workflow[];
+  dir: string;
+}
+
+export type StepState = "pending" | "running" | "waiting" | "succeeded" | "failed" | "skipped" | "cancelled";
+export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
+
+export interface HostRecord {
+  host: string;
+  state: StepState;
+  code?: number;
+  output?: string;
+  error?: string;
+}
+
+export interface StepRecord {
+  step: string;
+  name: string;
+  state: StepState;
+  startedMs?: number;
+  finishedMs?: number;
+  note?: string;
+  hosts?: HostRecord[];
+}
+
+export interface RunRecord {
+  id: string;
+  workflow: string;
+  workflowName: string;
+  status: RunStatus;
+  startedMs: number;
+  finishedMs?: number;
+  steps: StepRecord[];
+}
+
+export type RunEvent =
+  | { event: "step"; step: string; state: StepState; note?: string }
+  | ({ event: "host"; step: string } & HostRecord)
+  | { event: "finished"; status: RunStatus };
+
+export const workflowsList = () => invoke<WorkflowsView>("workflows_list");
+export const workflowSave = (workflow: Workflow, previous: string | null) =>
+  invoke<WorkflowsView>("workflow_save", { workflow, previous });
+export const workflowDelete = (id: string) => invoke<WorkflowsView>("workflow_delete", { id });
+export const workflowHistory = () => invoke<RunRecord[]>("workflow_history");
+export const workflowHistoryClear = () => invoke<void>("workflow_history_clear");
+export const workflowAnswer = (runId: string, step: string, approve: boolean) =>
+  invoke<void>("workflow_answer", { runId, step, approve });
+export const workflowCancel = (runId: string) => invoke<void>("workflow_cancel", { runId });
+
+/** Starts a saved workflow; progress arrives on `onEvent`. */
+export function workflowRun(id: string, onEvent: (e: RunEvent) => void) {
+  const channel = new Channel<RunEvent>();
+  channel.onmessage = onEvent;
+  return invoke<{ runId: string; targets: Record<string, string[]> }>("workflow_run", { id, onEvent: channel });
+}
+
+// ---- Task board (board.toml) ----
+
+export type BoardColumn = "todo" | "doing" | "done";
+export type CardPriority = "low" | "normal" | "high";
+
+export interface BoardCard {
+  id: string;
+  title: string;
+  column: BoardColumn;
+  notes?: string;
+  hosts?: string[];
+  workflow?: string | null;
+  priority?: CardPriority;
+  due?: string | null;
+}
+
+export interface Board {
+  version?: number;
+  card: BoardCard[];
+}
+
+export const boardLoad = () => invoke<{ board: Board; path: string }>("board_load");
+export const boardSave = (board: Board) => invoke<void>("board_save", { board });

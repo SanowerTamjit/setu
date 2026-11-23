@@ -528,6 +528,36 @@ impl SshClient {
         Ok((out, code))
     }
 
+    /// Runs one command without a PTY, collecting stdout and stderr together
+    /// as they arrive. Only the last `max_bytes` are kept, so a chatty
+    /// command cannot use up memory. Returns the output and the exit code.
+    pub async fn run_command(
+        &self,
+        command: &str,
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, Option<u32>), SshError> {
+        let mut channel = self.handle.channel_open_session().await?;
+        channel.exec(true, command).await?;
+        let mut out: Vec<u8> = Vec::new();
+        let mut code = None;
+        let keep = |data: &[u8], out: &mut Vec<u8>| {
+            out.extend_from_slice(data);
+            if out.len() > max_bytes {
+                let cut = out.len() - max_bytes;
+                out.drain(..cut);
+            }
+        };
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                russh::ChannelMsg::Data { data } => keep(&data, &mut out),
+                russh::ChannelMsg::ExtendedData { data, .. } => keep(&data, &mut out),
+                russh::ChannelMsg::ExitStatus { exit_status } => code = Some(exit_status),
+                _ => {}
+            }
+        }
+        Ok((out, code))
+    }
+
     /// Closes the connection.
     pub async fn disconnect(&self) -> Result<(), SshError> {
         self.handle

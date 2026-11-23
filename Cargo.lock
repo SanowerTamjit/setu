@@ -4607,6 +4607,7 @@ dependencies = [
  "setu-pty",
  "setu-ssh",
  "setu-vault",
+ "setu-workflow",
  "tauri",
  "tauri-build",
  "tempfile",
@@ -4663,6 +4664,18 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "zeroize",
+]
+
+[[package]]
+name = "setu-workflow"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml 1.2.1+spec-1.1.0",
 ]
 
 [[package]]
