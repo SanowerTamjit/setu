@@ -3,7 +3,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-export type ThemeName = "dark" | "light" | "high-contrast" | "ocean" | "paper";
+export type ThemeName = "dark" | "light" | "high-contrast" | "ocean" | "paper" | "ember" | "sandstone";
+const THEME_NAMES: readonly ThemeName[] = ["dark", "light", "high-contrast", "ocean", "paper", "ember", "sandstone"];
 export type KeymapName = "default" | "vim" | "emacs";
 /** How the window is laid out: the rail and tab bar, or the Studio navigator. */
 export type LayoutName = "classic" | "studio";
@@ -104,11 +105,11 @@ function sanitizeScheme(raw: unknown): ColorSchemeSetting | null {
 let current: Settings = structuredClone(DEFAULTS);
 const listeners = new Set<(s: Settings, changed: Partial<Settings>) => void>();
 
-function sanitize(raw: unknown): Settings {
+export function sanitize(raw: unknown): Settings {
   const s = structuredClone(DEFAULTS);
   if (!raw || typeof raw !== "object") return s;
   const r = raw as Record<string, unknown>;
-  if (["dark", "light", "high-contrast", "ocean", "paper"].includes(r.theme as string)) s.theme = r.theme as ThemeName;
+  if (THEME_NAMES.includes(r.theme as ThemeName)) s.theme = r.theme as ThemeName;
   if (r.layout === "classic" || r.layout === "studio") s.layout = r.layout;
   if (r.keymap === "default" || r.keymap === "vim" || r.keymap === "emacs") s.keymap = r.keymap;
   if (typeof r.maskSecrets === "boolean") s.maskSecrets = r.maskSecrets;

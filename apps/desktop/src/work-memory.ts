@@ -137,8 +137,11 @@ export class CommandCapture {
   /** The line as shown now, from the prompt's row through wrapped rows. */
   private shown(): string | null {
     const b = this.term.buffer.active;
-    let text = lineText(this.term, this.promptY);
-    for (let y = this.promptY + 1; b.getLine(y)?.isWrapped; y++) text += lineText(this.term, y);
+    // A row that wraps on is read whole, so a space at the wrap is kept.
+    let text = "";
+    let y = this.promptY;
+    for (; b.getLine(y + 1)?.isWrapped; y++) text += b.getLine(y)?.translateToString(false) ?? "";
+    text += lineText(this.term, y);
     return text.startsWith(this.prompt) ? text.slice(this.prompt.length) : null;
   }
 

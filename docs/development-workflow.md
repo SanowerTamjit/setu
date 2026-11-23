@@ -6,7 +6,7 @@ Setu is maintained by one person a few hours a day, with AI coding assistants do
 
 1. **Ask in plain words.** An issue or a message says what and why. Big or risky ideas first get a short plan (or an ADR in `docs/adr/` when it is a lasting decision).
 2. **One pull request per topic**, based on `master`, small enough to review on a phone in one sitting. Stacked PRs are avoided: they get merged out of order.
-3. **Tests first-class.** The assistant runs fmt, clippy, tests and `cargo deny` before opening the PR, and adds a test for every fix.
+3. **Tests first-class.** `just check` (fmt, clippy, Rust and UI tests, `cargo deny`) passes before a PR opens, and every fix adds a test. Git hooks (`just install-hooks`) stop secrets, unformatted code and failing UI tests before they are even committed.
 4. **Show, don't tell.** UI changes come with screenshots from the real app (all themes when it is visual); the PR says how it was tested.
 5. **Two reviews.** An automated one (CI, CodeQL, dependency review, `/security-review` against the checklist in `CLAUDE.md`) and the maintainer's. Nothing merges on AI review alone.
 6. **Ship behind a flag when unsure** (`docs/feature-flags.md`), so a problem is one switch away from fixed.

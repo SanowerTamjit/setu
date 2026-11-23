@@ -27,7 +27,7 @@ Ctrl+Shift+P opens one search box over everything: commands, saved hosts (`Conne
 
 ## Themes
 
-Settings → Appearance has three themes, each covering the whole app and the terminal colours: **Dark** (the default), **Light** and **High contrast** (pure black and white with strong focus outlines). The terminal font size is set there too. Themes are also in the palette (`Theme`).
+Settings → Appearance has five themes, each covering the whole app and the terminal colours, in both the Classic and Studio layouts: **Dark** (the default), **Light**, **High contrast** (pure black and white with strong focus outlines), **Ember** (warm charcoal with an amber accent) and **Sandstone** (soft paper tones with a teal accent). The terminal font size is set there too. Themes are also in the palette (`Theme`).
 
 ## Layouts: Classic and Studio
 
