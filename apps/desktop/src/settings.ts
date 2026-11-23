@@ -3,8 +3,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-export type ThemeName = "dark" | "light" | "high-contrast" | "ember" | "sandstone";
-const THEME_NAMES: readonly ThemeName[] = ["dark", "light", "high-contrast", "ember", "sandstone"];
+export type ThemeName = "dark" | "light" | "high-contrast" | "ocean" | "paper" | "ember" | "sandstone";
+const THEME_NAMES: readonly ThemeName[] = ["dark", "light", "high-contrast", "ocean", "paper", "ember", "sandstone"];
 export type KeymapName = "default" | "vim" | "emacs";
 /** How the window is laid out: the rail and tab bar, or the Studio navigator. */
 export type LayoutName = "classic" | "studio";
