@@ -23,11 +23,13 @@ setu-pty.workspace = true
 setu-ssh.workspace = true
 zeroize = "1"
 setu-hosts.workspace = true
+setu-workflow.workspace = true
+setu-memory.workspace = true
 setu-vault = { workspace = true, features = ["os-keychain"] }
 serde.workspace = true
 serde_json = "1"
 tauri = { version = "2.11", features = [] }
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync"] }
 # Private, randomly named folders for files edited in a local editor.
 tempfile = "3.20"
 

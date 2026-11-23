@@ -9,6 +9,9 @@ const PATHS = {
   key: "M14.5 9.5a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM13.4 12.4 20 19M17.5 16.5 19.5 14.5M15.5 14.5l1.5-1.5",
   vault: "M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6zM9.5 11.5h5v4h-5zM10.5 11.5V10a1.5 1.5 0 0 1 3 0v1.5",
   snippet: "M8 8 4 12l4 4M16 8l4 4-4 4M13.5 6l-3 12",
+  // Work memory: a spark, for "Setu noticed something".
+  spark: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z",
+  clock: "M12 7.5V12l3 2M20.5 12a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0z",
   settings:
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 13.5l1.6 1.2-2 3.4-1.9-.7a7.5 7.5 0 0 1-2 1.2L14.8 21h-4l-.3-2.4a7.5 7.5 0 0 1-2-1.2l-1.9.7-2-3.4 1.6-1.2a7.5 7.5 0 0 1 0-2.4L4.6 9.9l2-3.4 1.9.7a7.5 7.5 0 0 1 2-1.2L10.8 3h4l.3 2.4a7.5 7.5 0 0 1 2 1.2l1.9-.7 2 3.4-1.6 1.2a7.5 7.5 0 0 1 0 2.4z",
   plus: "M12 5v14M5 12h14",
@@ -37,6 +40,10 @@ const PATHS = {
   splitDown: "M4 5h16v14H4zM4 12h16",
   window: "M9 4h11v11M20 4l-9 9M15 20H4V9",
   retry: "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4",
+  // Three boxes joined by arrows: a workflow.
+  calendar: "M4.5 6h15v14h-15zM4.5 10h15M8.5 4v4M15.5 4v4",
+  board: "M4 5h16v14H4zM9.33 5v14M14.67 5v14M5.8 8h2M11 8h2M16.4 8h2M5.8 11h2M11 11h2",
+  workflow: "M3.5 4.5h6v5h-6zM14.5 4.5h6v5h-6zM9 17h6v4H9zM9.5 7h5M17.5 9.5v3.5H12V17M6.5 9.5v3.5H12",
 } as const;
 
 export type IconName = keyof typeof PATHS;

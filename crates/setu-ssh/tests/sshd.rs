@@ -238,6 +238,27 @@ async fn trusted_host_with_key_file_runs_a_command() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn run_command_keeps_stderr_exit_code_and_only_the_tail() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let client = connect(&sshd.opts()).await.expect("connect");
+    let (out, code) = client
+        .run_command("echo out; echo err >&2; exit 3", 1024)
+        .await
+        .expect("run");
+    let text = String::from_utf8_lossy(&out);
+    assert!(text.contains("out") && text.contains("err"), "{text}");
+    assert_eq!(code, Some(3));
+    let (out, _) = client
+        .run_command("seq 1 5000; echo the-end", 64)
+        .await
+        .expect("run");
+    assert_eq!(out.len(), 64);
+    assert!(String::from_utf8_lossy(&out).ends_with("the-end\n"));
+    client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn changed_host_key_is_refused() {
     let sshd = sshd_or_skip!();
     // Record a different ed25519 key for this host:port.

@@ -2,11 +2,12 @@
 //!
 //! The web view only renders. Shells, SSH sessions, saved hosts and the
 //! vault run in Rust and talk to the UI through the commands in [`terminals`],
-//! [`ssh`], [`files`], [`hosts`], [`vault`] and [`session`].
+//! [`ssh`], [`files`], [`hosts`], [`vault`], [`workflows`], [`memory`] and [`session`].
 
 mod files;
 mod hosts;
 mod keys;
+mod memory;
 mod packs;
 mod remote_edit;
 mod session;
@@ -14,6 +15,7 @@ mod ssh;
 mod terminals;
 mod vault;
 mod windows;
+mod workflows;
 
 use serde::Serialize;
 
@@ -47,6 +49,8 @@ pub fn run() {
         .manage(session::SettingsFile::from_env())
         .manage(windows::Detached::default())
         .manage(ssh::OfferedKeys::default())
+        .manage(workflows::Workflows::from_env())
+        .manage(memory::Memory::from_env())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             let vault = app.state::<vault::VaultState>().inner().clone();
@@ -126,6 +130,26 @@ pub fn run() {
             remote_edit::remote_edit_open,
             remote_edit::remote_edit_push,
             remote_edit::remote_edit_stop,
+            workflows::workflows_list,
+            workflows::workflow_save,
+            workflows::workflow_delete,
+            workflows::workflow_run,
+            workflows::workflow_answer,
+            workflows::workflow_cancel,
+            workflows::workflow_history,
+            workflows::workflow_history_clear,
+            workflows::board_load,
+            workflows::board_save,
+            memory::memory_view,
+            memory::memory_record,
+            memory::memory_settings,
+            memory::memory_delete,
+            memory::memory_clear,
+            memory::memory_dismiss,
+            memory::memory_snippet_save,
+            memory::memory_snippet_delete,
+            memory::memory_workflow_draft,
+            memory::memory_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

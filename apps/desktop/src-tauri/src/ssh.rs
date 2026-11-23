@@ -127,7 +127,7 @@ fn expand_home(path: &str) -> PathBuf {
 }
 
 /// A secret the user typed and asked to keep, saved once the connection works.
-type ToSave = Option<(SecretKind, String, Zeroizing<String>)>;
+pub(crate) type ToSave = Option<(SecretKind, String, Zeroizing<String>)>;
 
 /// Turns the form's choice into auth methods, filling empty secrets from the
 /// vault. `password_target` is the vault key for a login password.
@@ -319,30 +319,7 @@ async fn connect_and_open(
     on_exit: Channel<u32>,
 ) -> Result<OpenedSsh, ConnectFailure> {
     let title = format!("{}@{}", user_or_local(&request.user), request.host.trim());
-    let (opts, to_save) = build_options(request, vault)?;
-    let needs_passphrase = |path: PathBuf| ConnectFailure::NeedsPassphrase {
-        path: path.display().to_string(),
-        vault: vault.availability(),
-    };
-    let client = match setu_ssh::connect(&opts).await {
-        Ok(client) => client,
-        // An encrypted key with no passphrase given: try the vault's once.
-        Err(SshError::KeyNeedsPassphrase { path }) => {
-            let Some(passphrase) =
-                vault.get(SecretKind::KeyPassphrase, &path.display().to_string())
-            else {
-                return Err(needs_passphrase(path));
-            };
-            let mut retry = opts.clone();
-            with_passphrase(&mut retry, &path, &passphrase);
-            match setu_ssh::connect(&retry).await {
-                Ok(client) => client,
-                Err(SshError::KeyNeedsPassphrase { path }) => return Err(needs_passphrase(path)),
-                Err(e) => return Err(e.into()),
-            }
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let (client, to_save) = connect_client(request, vault).await?;
     let id = open_shell(
         state,
         window.label(),
@@ -367,6 +344,83 @@ async fn connect_and_open(
         title,
         saved_to_vault,
     })
+}
+
+/// Connects and logs in, trying the vault's passphrase once when a key asks
+/// for one. Returns the secret to save once the caller knows the login worked.
+pub(crate) async fn connect_client(
+    request: ConnectRequest,
+    vault: &VaultState,
+) -> Result<(setu_ssh::SshClient, ToSave), ConnectFailure> {
+    let (opts, to_save) = build_options(request, vault)?;
+    let needs_passphrase = |path: PathBuf| ConnectFailure::NeedsPassphrase {
+        path: path.display().to_string(),
+        vault: vault.availability(),
+    };
+    let client = match setu_ssh::connect(&opts).await {
+        Ok(client) => client,
+        // An encrypted key with no passphrase given: try the vault's once.
+        Err(SshError::KeyNeedsPassphrase { path }) => {
+            let Some(passphrase) =
+                vault.get(SecretKind::KeyPassphrase, &path.display().to_string())
+            else {
+                return Err(needs_passphrase(path));
+            };
+            let mut retry = opts.clone();
+            with_passphrase(&mut retry, &path, &passphrase);
+            match setu_ssh::connect(&retry).await {
+                Ok(client) => client,
+                Err(SshError::KeyNeedsPassphrase { path }) => return Err(needs_passphrase(path)),
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Err(e) => return Err(e.into()),
+    };
+    Ok((client, to_save))
+}
+
+impl ConnectRequest {
+    /// How a saved host connects, for runs nobody types into: secrets come
+    /// from the vault only, nothing is saved.
+    pub(crate) fn for_host(host: &setu_hosts::Host) -> Self {
+        use setu_hosts::Auth as HostAuth;
+        let auth = match host.auth {
+            HostAuth::Auto => AuthRequest::Default,
+            HostAuth::Agent => AuthRequest::Agent,
+            HostAuth::Key => AuthRequest::KeyFile {
+                path: host
+                    .key_file
+                    .clone()
+                    .unwrap_or_else(|| "~/.ssh/id_ed25519".into()),
+                passphrase: None,
+                save: false,
+            },
+            HostAuth::Password => AuthRequest::Password {
+                password: String::new(),
+                save: false,
+            },
+        };
+        ConnectRequest {
+            host: host.host.clone(),
+            port: Some(host.port),
+            user: host.user.clone().unwrap_or_default(),
+            auth,
+            jump: host.jump.clone(),
+        }
+    }
+}
+
+impl ConnectFailure {
+    /// One sentence for a run log, where nobody can answer a prompt.
+    pub(crate) fn unattended_message(&self) -> String {
+        match self {
+            ConnectFailure::UnknownHostKey { .. } => "Setu does not know this server's host key yet. Connect to it once from Hosts to check and trust the key, then run again.".into(),
+            ConnectFailure::HostKeyChanged { .. } => "the server's host key has CHANGED. Setu will not connect; connect from Hosts to see the warning.".into(),
+            ConnectFailure::NeedsPassphrase { path, .. } => format!("the key {path} needs a passphrase. Save it in the vault (connect once and tick Save) or load the key into ssh-agent."),
+            ConnectFailure::NeedsPassword { .. } => "this host logs in with a password and the vault has none for it (or is locked). Unlock the vault, or save the password when you connect.".into(),
+            ConnectFailure::Error { message } => message.clone(),
+        }
+    }
 }
 
 enum ShellError {

@@ -44,3 +44,15 @@ describe("terminal colours per layout", () => {
     expect(terminalTheme("high-contrast", "studio")).toEqual(terminalTheme("high-contrast", "classic"));
   });
 });
+
+describe("Ocean and Paper themes", () => {
+  it("are kept by settings and have terminal colours of their own", () => {
+    for (const name of ["ocean", "paper"] as const) {
+      expect(sanitize({ theme: name }).theme).toBe(name);
+      const t = terminalTheme(name);
+      expect(t).not.toEqual(terminalTheme("dark"));
+      expect(t.background).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(terminalTheme(name, "studio").cursorAccent).toBe(terminalTheme(name, "studio").background);
+    }
+  });
+});

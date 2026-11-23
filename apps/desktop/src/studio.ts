@@ -11,6 +11,8 @@ import { el } from "./dom";
 import { icon, type IconName } from "./icons";
 import type { Tab } from "./tab";
 
+export type StudioView = "terminals" | "hosts" | "workflows";
+
 export type SessionKind = "local" | "ssh" | "files";
 
 export interface SessionInfo {
@@ -26,14 +28,16 @@ export interface SessionInfo {
 export interface StudioActions {
   tabs: () => readonly Tab[];
   active: () => Tab | null;
-  view: () => "terminals" | "hosts";
+  view: () => StudioView;
   info: (tab: Tab) => SessionInfo;
   activate: (tab: Tab) => void;
   close: (tab: Tab) => void;
   newTab: () => void;
   /** Opens or closes the shell menu (moved into `menuSlot`). */
   shellMenu: (e: MouseEvent) => void;
-  showView: (view: "terminals" | "hosts") => void;
+  showView: (view: StudioView) => void;
+  /** Whether the Workflows view is turned on (feature flag). */
+  workflows: () => boolean;
   palette: () => void;
   /** Runs a command by id; `can` says whether it applies right now. */
   run: (id: string) => void;
@@ -63,7 +67,7 @@ export class Studio {
   private readonly navToggle: HTMLButtonElement;
   private readonly sessions: HTMLElement;
   private readonly sessionCount: HTMLElement;
-  private readonly viewButtons = new Map<"terminals" | "hosts", HTMLButtonElement>();
+  private readonly viewButtons = new Map<StudioView, HTMLButtonElement>();
   private readonly searchKeys: HTMLElement;
   private readonly headerMain: HTMLElement;
   private readonly headerActions: HTMLElement;
@@ -76,6 +80,7 @@ export class Studio {
     for (const [id, label, name] of [
       ["terminals", "Terminals", "terminal"],
       ["hosts", "Hosts", "hosts"],
+      ...(actions.workflows() ? ([["workflows", "Workflows", "workflow"]] as const) : []),
     ] as const) {
       const b = el("button", { type: "button", className: "st-view" }, icon(name, 15), label);
       b.setAttribute("role", "tab");

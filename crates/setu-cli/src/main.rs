@@ -135,6 +135,7 @@ fn paths_command(ctx: &doctor::Context) -> Result<ExitCode, String> {
         ("hosts", config.join(setu_hosts::HOSTS_FILE)),
         ("vault", config.join(setu_vault::VAULT_FILE)),
         ("session", config.join("session.json")),
+        ("work memory", config.join("work-memory.json")),
         ("ssh config", ctx.home.join(".ssh").join("config")),
         ("known_hosts", ctx.home.join(".ssh").join("known_hosts")),
     ];
