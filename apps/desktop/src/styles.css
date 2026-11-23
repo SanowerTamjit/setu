@@ -257,7 +257,6 @@ body,
   color-scheme: light;
 }
 
-<<<<<<< HEAD
 /* Ocean: deep blue-green with a teal accent */
 :root[data-theme="ocean"] {
   --bg: #0c1821;
@@ -321,7 +320,7 @@ body,
   --card: #fffaf0;
   --card-hover: #f8f1e4;
   --ring: rgba(180, 83, 9, 0.45);
-=======
+
 /* Ember: warm charcoal surfaces with an amber accent */
 :root[data-theme="ember"] {
   --bg: #16120f;
@@ -385,7 +384,6 @@ body,
   --card: #fbf8f2;
   --card-hover: #f3ede2;
   --ring: rgba(15, 118, 110, 0.45);
->>>>>>> origin/master
   color-scheme: light;
 }
 
@@ -1881,7 +1879,6 @@ button.link-button {
 [data-preview-theme="high-contrast"] .tp-line.a { background: #6dff6d; }
 [data-preview-theme="high-contrast"] .tp-line.b { background: #ffd400; }
 [data-preview-theme="high-contrast"] .tp-line.c { background: #fff; }
-<<<<<<< HEAD
 [data-preview-theme="ocean"] .theme-preview { background: #0c1821; }
 [data-preview-theme="ocean"] .tp-bar { background: #112230; }
 [data-preview-theme="ocean"] .tp-line.a { background: #7ed492; }
@@ -1892,7 +1889,7 @@ button.link-button {
 [data-preview-theme="paper"] .tp-line.a { background: #3f7a2e; }
 [data-preview-theme="paper"] .tp-line.b { background: #b45309; }
 [data-preview-theme="paper"] .tp-line.c { background: #a89c88; }
-=======
+
 [data-preview-theme="ember"] .theme-preview { background: #16120f; }
 [data-preview-theme="ember"] .tp-bar { background: #1e1915; }
 [data-preview-theme="ember"] .tp-line.a { background: #a3c06e; }
@@ -1903,7 +1900,6 @@ button.link-button {
 [data-preview-theme="sandstone"] .tp-line.a { background: #3f7a2a; }
 [data-preview-theme="sandstone"] .tp-line.b { background: #0f766e; }
 [data-preview-theme="sandstone"] .tp-line.c { background: #a89c88; }
->>>>>>> origin/master
 
 .inline-field {
   display: flex;
@@ -3971,7 +3967,6 @@ button.with-icon {
   --st-primary: linear-gradient(135deg, #2563eb 0%, #6d28d9 100%);
 }
 
-<<<<<<< HEAD
 :root[data-layout="studio"][data-theme="ocean"] {
   --st-space: #050e14;
   --st-panel: rgba(12, 26, 36, 0.74);
@@ -4016,7 +4011,7 @@ button.with-icon {
     linear-gradient(rgba(180, 83, 9, 0.04) 1px, transparent 1px) 0 0 / 44px 44px,
     linear-gradient(90deg, rgba(180, 83, 9, 0.04) 1px, transparent 1px) 0 0 / 44px 44px;
   --st-primary: linear-gradient(135deg, #b45309 0%, #9a3412 100%);
-=======
+
 :root[data-layout="studio"][data-theme="ember"] {
   --st-space: #0d0a08;
   --st-panel: rgba(30, 24, 19, 0.74);
@@ -4062,7 +4057,6 @@ button.with-icon {
     linear-gradient(rgba(120, 90, 40, 0.045) 1px, transparent 1px) 0 0 / 44px 44px,
     linear-gradient(90deg, rgba(120, 90, 40, 0.045) 1px, transparent 1px) 0 0 / 44px 44px;
   --st-primary: linear-gradient(135deg, #0f766e 0%, #0e6a8a 100%);
->>>>>>> origin/master
 }
 
 :root[data-layout="studio"][data-theme="high-contrast"] {
