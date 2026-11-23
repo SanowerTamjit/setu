@@ -24,8 +24,10 @@ import { openJumpMap } from "./jump-map";
 import { HostsHome } from "./hosts-home";
 import { icon, type IconName } from "./icons";
 import { loadPacks, openRolePicker, registerSnippets } from "./packs";
-import { loadSettings, onSettingsChange, settings, updateSettings } from "./settings";
+import { loadSettings, onSettingsChange, settings, updateSettings, type LayoutName } from "./settings";
 import { applyTheme, THEMES } from "./themes";
+import { LAYOUTS } from "./layouts";
+import { Studio, type SessionInfo } from "./studio";
 import { dialogValues, describe, flushSave, loadSession, scheduleSave, SESSION_VERSION, type SavedPane, type SavedTab, type Session } from "./session";
 
 const tabsEl = document.getElementById("tabs")!;
@@ -153,6 +155,7 @@ async function receiveTab(token: string): Promise<boolean> {
 function renderTabs() {
   if (!restoring && isMainWindow) scheduleSave(snapshot);
   if (view === "hosts") hostsHome.render();
+  studio.render();
   tabsEl.replaceChildren(
     ...tabs.map((tab, i) => {
       const el = document.createElement("div");
@@ -212,6 +215,7 @@ function renderTabs() {
 }
 
 function renderStatus() {
+  studio.render();
   if (!active) {
     statusShell.textContent = "";
     statusSize.textContent = "";
@@ -358,11 +362,12 @@ function showView(next: View) {
   const hosts = next === "hosts";
   hostsHomeEl.hidden = !hosts;
   terminalsEl.hidden = hosts;
-  sidebarEl.hidden = hosts || !sidebarWanted;
+  syncSidebar();
   sidebarButton.hidden = hosts;
   for (const [id, b] of railButtons) {
     if (id === "hosts" || id === "terminals") b.classList.toggle("current", id === next);
   }
+  studio.render();
   if (hosts) {
     hostsHome.render();
     hostsHome.focusSearch();
@@ -398,6 +403,7 @@ function buildRail() {
     item("snippets", "snippet", "Snippets", () => void showPalette("Snippet ")),
     item("vault", "vault", "Vault", () => void openVaultDialog().then(() => active?.focus())),
     spacer,
+    item("layout", "layout", "Switch to the Studio layout", () => void runCommand("layout.studio")),
     item("palette", "command", "Commands (Ctrl+Shift+P)", () => void showPalette()),
     item("settings", "settings", "Settings (Ctrl+,)", () => void runCommand("settings.open")),
   );
@@ -407,6 +413,84 @@ function buildRail() {
 }
 buildRail();
 hostsPanel.onChange(() => hostsHome.render());
+
+// ---- Layouts: Classic (rail + tab bar) and Studio (title bar + navigator) ----
+
+function sessionInfo(tab: Tab): SessionInfo {
+  if (tab instanceof FilesTab) return { kind: "files", panes: 1, live: !tab.hasExited };
+  const pane = terminalOf(tab);
+  const panes = tab instanceof PaneTab ? tab.paneCount : 1;
+  if (pane?.isRemote) {
+    const live = pane.sessionId !== null && !pane.hasExited && !pane.awaitingReconnect;
+    return { kind: "ssh", panes, live, label: pane.label ?? undefined };
+  }
+  return { kind: "local", panes, live: !tab.hasExited };
+}
+
+const studio: Studio = new Studio({
+  tabs: () => tabs,
+  active: () => active,
+  view: () => view,
+  info: sessionInfo,
+  activate: (tab) => activate(tab),
+  close: (tab) => void closeTab(tab),
+  newTab: () => void newTab(),
+  shellMenu: (e) => {
+    e.stopPropagation();
+    toggleMenu();
+  },
+  showView: (v) => showView(v),
+  palette: () => void showPalette(),
+  run: (id) => void runCommand(id),
+  can: (id) => {
+    if (id === "files.open") return isRemote();
+    if (id === "tab.detach") return active instanceof PaneTab && isMainWindow;
+    return isTerminal();
+  },
+  shortcut: (id) => shortcut(id),
+});
+{
+  const app = document.getElementById("app")!;
+  app.append(studio.titlebar, studio.navigator);
+  document.querySelector(".workspace")!.prepend(studio.header);
+}
+
+/** Pieces both layouts show, and where Classic keeps them. */
+const shared = [sidebarEl, menuEl, statusVault, document.getElementById("status-prefix")!].map((node) => ({
+  node,
+  parent: node.parentElement!,
+  next: node.nextSibling,
+}));
+const studioSlots = [studio.hostsSlot, studio.menuSlot, studio.statusSlot, studio.prefixSlot];
+let layout: LayoutName = "classic";
+
+function applyLayout(next: LayoutName) {
+  layout = next;
+  document.documentElement.dataset.layout = next;
+  // Moved back in reverse so each one's saved neighbour is in place again.
+  if (next === "studio") shared.forEach((s, i) => studioSlots[i].append(s.node));
+  else for (const s of [...shared].reverse()) s.parent.insertBefore(s.node, s.next);
+  toggleMenu(false);
+  syncSidebar();
+  studio.render();
+  if (!terminalsEl.hidden) active?.refit();
+}
+
+/**
+ * Classic hides the hosts sidebar when it is turned off; Studio hides the
+ * whole navigator instead and keeps the hosts tree inside it.
+ */
+function syncSidebar() {
+  if (layout === "studio") {
+    // The tree is the navigator's list of hosts, so it stays beside the cards too.
+    sidebarEl.hidden = false;
+    studio.navigator.hidden = !sidebarWanted;
+    studio.render();
+  } else {
+    sidebarEl.hidden = view === "hosts" || !sidebarWanted;
+    studio.navigator.hidden = false;
+  }
+}
 
 function renderVault(status: VaultStatus) {
   const state = status.unlocked ? "unlocked" : status.exists ? "locked" : "none";
@@ -426,7 +510,7 @@ void listen<VaultStatus>("vault-status", (e) => renderVault(e.payload));
 const SIDEBAR_KEY = "setu.sidebar";
 function setSidebar(open: boolean) {
   sidebarWanted = open;
-  sidebarEl.hidden = !open || view === "hosts";
+  syncSidebar();
   sidebarButton.setAttribute("aria-pressed", String(open));
   try {
     localStorage.setItem(SIDEBAR_KEY, open ? "open" : "closed");
@@ -435,7 +519,7 @@ function setSidebar(open: boolean) {
   }
   active?.refit();
 }
-sidebarButton.onclick = () => setSidebar(sidebarEl.hidden);
+sidebarButton.onclick = () => setSidebar(!sidebarWanted);
 
 async function closeTab(tab: Tab) {
   const i = tabs.indexOf(tab);
@@ -578,13 +662,13 @@ for (const c of [
     category: "Hosts",
     run: () => {
       if (view === "hosts") return hostsHome.focusSearch();
-      if (sidebarEl.hidden) setSidebar(true);
+      if (!sidebarWanted) setSidebar(true);
       hostsPanel.focusSearch();
     },
   },
   { id: "view.hosts", title: "Go to hosts", category: "View", keywords: "cards home servers", run: () => showView("hosts") },
   { id: "view.terminals", title: "Go to terminals", category: "View", run: () => showView("terminals") },
-  { id: "sidebar.toggle", title: "Show or hide the hosts sidebar", category: "View", run: () => setSidebar(sidebarEl.hidden) },
+  { id: "sidebar.toggle", title: "Show or hide the hosts sidebar", category: "View", run: () => setSidebar(!sidebarWanted) },
   { id: "find.open", title: "Find in scrollback", category: "Terminal", when: isTerminal, run: () => terminalOf(active)?.findBar.open() },
   { id: "files.open", title: "Open Files (SFTP) on this server", category: "Files", when: isRemote, run: () => openFiles() },
   { id: "settings.open", title: "Open settings", category: "Settings", keywords: "preferences options", run: () => openSettings().then(() => active?.focus()) },
@@ -616,6 +700,7 @@ for (const c of [
   { id: "role.choose", title: "Choose your role", category: "Settings", keywords: "sysadmin devops secops netops pack", run: () => openRolePicker().then(() => active?.focus()) },
   { id: "keys.open", title: "Manage SSH keys", category: "SSH", keywords: "keygen ed25519 rsa agent fingerprint public key", run: () => openKeyManager().then(() => active?.focus()) },
   { id: "knownHosts.open", title: "Known hosts", category: "SSH", keywords: "known_hosts host key fingerprint forget remove", run: () => openKeyManager("known-hosts").then(() => active?.focus()) },
+  { id: "snippets.open", title: "Insert a snippet", category: "Snippets", keywords: "snippet command template", run: () => showPalette("Snippet ") },
   { id: "vault.open", title: "Open the vault", category: "Vault", run: () => openVaultDialog().then(() => active?.focus()) },
 ] satisfies Command[]) {
   registerCommand(c);
@@ -628,6 +713,15 @@ for (const t of THEMES) {
     category: "Theme",
     keywords: `color colour appearance ${t.description}`,
     run: () => updateSettings({ theme: t.id }),
+  });
+}
+for (const l of LAYOUTS) {
+  registerCommand({
+    id: `layout.${l.id}`,
+    title: `${l.name} layout`,
+    category: "Layout",
+    keywords: `layout view window ui switch ${l.description}`,
+    run: () => updateSettings({ layout: l.id }),
   });
 }
 for (const k of KEYMAPS) {
@@ -815,12 +909,14 @@ window.addEventListener("beforeunload", () => flushSave());
 onSettingsChange((s, changed) => {
   if (changed.theme) applyTheme(s.theme);
   if (changed.keymap) applyKeymap();
+  if (changed.layout) applyLayout(s.layout);
   if (changed.shellProfiles) renderMenu();
 });
 
 async function boot() {
   const [info, found] = await Promise.all([appInfo(), listShells(), loadSettings(), loadPacks()]);
   applyTheme(settings().theme);
+  applyLayout(settings().layout);
   shells = found;
   localUser = info.user;
   setDefaultUser(info.user);

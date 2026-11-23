@@ -2,7 +2,7 @@
 // matching terminal palettes here.
 
 import type { ITheme } from "@xterm/xterm";
-import type { ThemeName } from "./settings";
+import type { LayoutName, ThemeName } from "./settings";
 
 export const THEMES: { id: ThemeName; name: string; description: string }[] = [
   { id: "dark", name: "Dark", description: "The default: graphite with a blue accent, easy on the eyes" },
@@ -83,8 +83,13 @@ const HIGH_CONTRAST: ITheme = {
   brightWhite: "#ffffff",
 };
 
-export function terminalTheme(name: ThemeName): ITheme {
-  return name === "light" ? LIGHT : name === "high-contrast" ? HIGH_CONTRAST : DARK;
+/** Studio's terminal sits on a deeper, bluer background to match its panels. */
+const STUDIO_BACKGROUND: Partial<Record<ThemeName, string>> = { dark: "#0a0d14", light: "#fbfcff" };
+
+export function terminalTheme(name: ThemeName, layout: LayoutName = "classic"): ITheme {
+  const base = name === "light" ? LIGHT : name === "high-contrast" ? HIGH_CONTRAST : DARK;
+  const background = layout === "studio" ? STUDIO_BACKGROUND[name] : undefined;
+  return background ? { ...base, background, cursorAccent: background } : base;
 }
 
 /** Match highlights for find, readable on each theme. */

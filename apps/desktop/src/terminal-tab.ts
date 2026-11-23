@@ -76,7 +76,7 @@ export class TerminalTab implements Tab {
       fontSize: settings().fontSize,
       lineHeight: 1.15,
       scrollback: 10000,
-      theme: terminalTheme(settings().theme),
+      theme: terminalTheme(settings().theme, settings().layout),
     });
     this.term.loadAddon(this.fit);
     this.term.loadAddon(this.serializer);
@@ -101,7 +101,7 @@ export class TerminalTab implements Tab {
     this.masker = new SecretMasker(this.term, settings().maskSecrets);
     this.unsubscribe = onSettingsChange((s, changed) => {
       if (changed.maskSecrets !== undefined) this.masker.setEnabled(s.maskSecrets);
-      if (changed.theme) this.term.options.theme = terminalTheme(s.theme);
+      if (changed.theme || changed.layout) this.term.options.theme = terminalTheme(s.theme, s.layout);
       if (changed.fontSize || changed.fontFamily !== undefined) {
         this.term.options.fontSize = s.fontSize;
         this.term.options.fontFamily = terminalFont(s.fontFamily);

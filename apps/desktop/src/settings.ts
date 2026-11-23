@@ -5,6 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type ThemeName = "dark" | "light" | "high-contrast";
 export type KeymapName = "default" | "vim" | "emacs";
+/** How the window is laid out: the rail and tab bar, or the Studio navigator. */
+export type LayoutName = "classic" | "studio";
 
 /** A shell profile the user defined: a base shell plus its own settings. */
 export interface ShellProfileSetting {
@@ -23,6 +25,7 @@ export interface ShellProfileSetting {
 export interface Settings {
   version: 1;
   theme: ThemeName;
+  layout: LayoutName;
   keymap: KeymapName;
   /** Hide things that look like secrets in terminal output. */
   maskSecrets: boolean;
@@ -51,6 +54,7 @@ export type RendererName = "auto" | "gpu" | "dom";
 export const DEFAULTS: Settings = {
   version: 1,
   theme: "dark",
+  layout: "classic",
   keymap: "default",
   maskSecrets: true,
   shellProfiles: [],
@@ -73,6 +77,7 @@ export function sanitize(raw: unknown): Settings {
   if (!raw || typeof raw !== "object") return s;
   const r = raw as Record<string, unknown>;
   if (r.theme === "dark" || r.theme === "light" || r.theme === "high-contrast") s.theme = r.theme;
+  if (r.layout === "classic" || r.layout === "studio") s.layout = r.layout;
   if (r.keymap === "default" || r.keymap === "vim" || r.keymap === "emacs") s.keymap = r.keymap;
   if (typeof r.maskSecrets === "boolean") s.maskSecrets = r.maskSecrets;
   if (typeof r.defaultShell === "string") s.defaultShell = r.defaultShell;

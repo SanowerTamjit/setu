@@ -6,6 +6,7 @@ import { bindingsFor, KEYMAPS } from "./keymap";
 import { allCommands } from "./commands";
 import { settings, updateSettings, type RendererName } from "./settings";
 import { THEMES } from "./themes";
+import { LAYOUTS } from "./layouts";
 
 export interface SettingsSection {
   id: string;
@@ -42,6 +43,26 @@ function themeCard(id: (typeof THEMES)[number]["id"], name: string, description:
   return card;
 }
 
+/** Layout cards show a sketch of where each layout puts things. */
+function layoutCard(id: (typeof LAYOUTS)[number]["id"], name: string, description: string, onPick: () => void) {
+  const chosen = settings().layout === id;
+  const part = (cls: string) => el("span", { className: cls });
+  const sketch =
+    id === "classic"
+      ? [part("lp-rail"), part("lp-tabs"), part("lp-side"), part("lp-term"), part("lp-status")]
+      : [part("lp-title"), part("lp-search"), part("lp-nav"), part("lp-row a"), part("lp-row b"), part("lp-head"), part("lp-term")];
+  const card = el(
+    "button",
+    { type: "button", className: "theme-card layout-card" + (chosen ? " chosen" : "") },
+    el("span", { className: `layout-preview ${id}` }, ...sketch),
+    el("strong", {}, name),
+    el("small", { className: "muted" }, description),
+  );
+  card.setAttribute("aria-pressed", String(chosen));
+  card.onclick = onPick;
+  return card;
+}
+
 registerSettingsSection({
   id: "appearance",
   title: "Appearance",
@@ -61,7 +82,20 @@ registerSettingsSection({
       const n = Number(size.value);
       if (n >= 8 && n <= 32) updateSettings({ fontSize: n });
     };
+    const layouts = el(
+      "div",
+      { className: "theme-cards layout-cards" },
+      ...LAYOUTS.map((l) =>
+        layoutCard(l.id, l.name, l.description, () => {
+          updateSettings({ layout: l.id });
+          rerender();
+        }),
+      ),
+    );
     body.append(
+      el("h3", {}, "Layout"),
+      layouts,
+      el("p", { className: "muted" }, "Switching keeps your tabs and connections. You can also switch from the command palette (Layout)."),
       el("h3", {}, "Theme"),
       cards,
       el("h3", {}, "Terminal font size"),
