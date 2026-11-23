@@ -72,7 +72,7 @@ export const DEFAULTS: Settings = {
 let current: Settings = structuredClone(DEFAULTS);
 const listeners = new Set<(s: Settings, changed: Partial<Settings>) => void>();
 
-function sanitize(raw: unknown): Settings {
+export function sanitize(raw: unknown): Settings {
   const s = structuredClone(DEFAULTS);
   if (!raw || typeof raw !== "object") return s;
   const r = raw as Record<string, unknown>;

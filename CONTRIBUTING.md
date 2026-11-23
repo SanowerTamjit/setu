@@ -26,13 +26,23 @@ cargo test --workspace
 pnpm desktop           # run the app with hot reload
 ```
 
-Before opening a pull request, run what CI runs:
+Before opening a pull request, run what CI runs. With [just](https://just.systems) installed:
+
+```sh
+just install-hooks   # once: checks secrets, formatting and UI tests before each commit
+just check           # format, UI typecheck and tests, clippy, Rust tests, cargo deny
+```
+
+Without `just`, the same commands are listed in the `justfile`:
 
 ```sh
 cargo fmt --all -- --check
+pnpm --filter @setu/desktop typecheck && pnpm --filter @setu/desktop test
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+UI logic has unit tests in `apps/desktop/test/` (Vitest); add one when you change it.
 
 ## Pull requests
 
