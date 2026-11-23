@@ -6,11 +6,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { LigaturesAddon } from "@xterm/addon-ligatures";
 import { SerializeAddon } from "@xterm/addon-serialize";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { FindBar } from "./find-bar";
 import { needsPasteCheck, pasteAllowed } from "./paste-guard";
 import { SecretMasker } from "./secret-mask";
 import { onSettingsChange, settings } from "./settings";
-import { terminalTheme } from "./themes";
+import { currentTerminalTheme, promptThemesOn, SYMBOLS_FAMILY } from "./prompt-themes";
 import { connectionOf, describe, type SavedConnection } from "./session";
 import { CommandCapture } from "./work-memory";
 import {
@@ -79,9 +80,15 @@ export class TerminalTab implements Tab {
       fontSize: settings().fontSize,
       lineHeight: 1.15,
       scrollback: 10000,
-      theme: terminalTheme(settings().theme, settings().layout),
+      theme: currentTerminalTheme(),
     });
     this.term.loadAddon(this.fit);
+    // Unicode 11 widths match what zsh and bash count, so icons, emoji and
+    // right-hand prompts (Powerlevel10k, Starship) stay in their columns.
+    if (promptThemesOn()) {
+      this.term.loadAddon(new Unicode11Addon());
+      this.term.unicode.activeVersion = "11";
+    }
     this.term.loadAddon(this.serializer);
     this.term.open(this.element);
     // Pastes that reach xterm directly (Shift+Insert, middle click, the
@@ -100,6 +107,9 @@ export class TerminalTab implements Tab {
       },
       true,
     );
+    // A font that finished loading after the GPU renderer cached its glyphs
+    // (the Nerd Font symbols, say) would otherwise keep showing boxes.
+    document.fonts?.addEventListener("loadingdone", this.fontsLoaded);
     this.findBar = new FindBar(this.element, this.term);
     // SSH panes are named by their saved host (or user@host when typed in
     // by hand); local shells by nothing.
@@ -109,8 +119,10 @@ export class TerminalTab implements Tab {
     this.masker = new SecretMasker(this.term, settings().maskSecrets);
     this.unsubscribe = onSettingsChange((s, changed) => {
       if (changed.maskSecrets !== undefined) this.masker.setEnabled(s.maskSecrets);
-      if (changed.theme || changed.layout) this.term.options.theme = terminalTheme(s.theme, s.layout);
-      if (changed.fontSize || changed.fontFamily !== undefined) {
+      if (changed.theme || changed.layout || changed.colorScheme !== undefined || changed.colorSchemes || changed.features) {
+        this.term.options.theme = currentTerminalTheme(s);
+      }
+      if (changed.fontSize || changed.fontFamily !== undefined || changed.features) {
         this.term.options.fontSize = s.fontSize;
         this.term.options.fontFamily = terminalFont(s.fontFamily);
         this.refit();
@@ -138,6 +150,7 @@ export class TerminalTab implements Tab {
     });
   }
 
+  private readonly fontsLoaded = () => this.term.clearTextureAtlas();
   private rendererLoaded = false;
   private webgl: WebglAddon | null = null;
   private ligatures: LigaturesAddon | null = null;
@@ -400,6 +413,7 @@ export class TerminalTab implements Tab {
   async dispose(keepSession = false) {
     if (!keepSession && this.id !== null && !this.exited) await closeTerminal(this.id).catch(() => {});
     this.unsubscribe();
+    document.fonts?.removeEventListener("loadingdone", this.fontsLoaded);
     this.findBar.dispose();
     this.masker.dispose();
     this.term.dispose();
@@ -419,10 +433,16 @@ export interface MovedPane {
   exited: boolean;
 }
 
-const DEFAULT_FONTS = '"JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Fira Code", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace';
+const DEFAULT_FONTS = '"JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Fira Code", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono"';
 
-/** The chosen font first, then the usual coding fonts as fallbacks. */
-export function terminalFont(chosen: string) {
+/**
+ * The chosen font first, then the usual coding fonts as fallbacks. With
+ * prompt themes on, the bundled Nerd Font symbols come last before the
+ * generic `monospace`, so a Nerd Font you chose keeps its own icons and any
+ * other font still shows them.
+ */
+export function terminalFont(chosen: string, symbols = promptThemesOn()) {
   const name = chosen.replace(/["\\;{}]/g, "").trim();
-  return name ? `"${name}", ${DEFAULT_FONTS}` : DEFAULT_FONTS;
+  const list = name ? `"${name}", ${DEFAULT_FONTS}` : DEFAULT_FONTS;
+  return symbols ? `${list}, "${SYMBOLS_FAMILY}", monospace` : `${list}, monospace`;
 }

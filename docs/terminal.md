@@ -48,7 +48,24 @@ Settings → Terminal → Rendering chooses how terminals are drawn:
 
 The status bar shows which renderer the current terminal uses, after its size (`97×31 · GPU`).
 
-**Font** sets the terminal font; empty means the first installed of JetBrains Mono, Cascadia Code, Fira Code, SF Mono, Menlo or Consolas. **Font ligatures** (on by default) joins sequences such as `->`, `=>`, `!=` and `>=` into one symbol when the font has ligatures, as JetBrains Mono, Cascadia Code and Fira Code do. Changes apply to open terminals straight away.
+**Font** sets the terminal font; empty means the first installed of JetBrains Mono, Cascadia Code, Fira Code, SF Mono, Menlo or Consolas. Nerd Font icons work with any of them (see Prompt themes below). **Font ligatures** (on by default) joins sequences such as `->`, `=>`, `!=` and `>=` into one symbol when the font has ligatures, as JetBrains Mono, Cascadia Code and Fira Code do. Changes apply to open terminals straight away.
+
+## Prompt themes: Powerlevel10k, Oh My Zsh, Starship, Oh My Posh
+
+Prompts from these tools work in Setu without a patched font:
+
+- **Icons and Powerline arrows are built in.** Setu ships the Nerd Font symbols (Symbols Nerd Font Mono, from Nerd Fonts 3.4) and uses them only for icon characters your terminal font does not have. If you set a Nerd Font yourself (Settings → Terminal → Font, for example `MesloLGS NF`), its own icons are used. With the GPU renderer, Powerline arrows and box lines are drawn to fit each cell exactly.
+- **Widths match your shell.** Terminals count wide characters (CJK, emoji, some symbols) with Unicode 11 widths, as zsh and bash do, so right-hand prompts, icons and emoji stay in their columns. This applies to tabs opened after the setting changes.
+- **True colour.** Local shells get `TERM=xterm-256color`, `COLORTERM=truecolor` and `TERM_PROGRAM=Setu`. SSH sessions ask the server to set `COLORTERM=truecolor` too; most servers accept only `LANG` and `LC_*` (`AcceptEnv` in `sshd_config`), so add `export COLORTERM=truecolor` to the server's start-up file if a prompt there looks washed out.
+
+Run **Prompt check** from the command palette (Ctrl+Shift+P) to see a Powerline prompt, Nerd Font icons, a true-colour ramp, the 16 ANSI colours and a width ruler drawn in the current terminal. It is only written to the screen; the shell never sees it.
+
+### Settings → Prompts
+
+- **Terminal colours**: keep following the app theme, or import a colour scheme from another terminal: iTerm2 `.itermcolors`, Windows Terminal JSON (one scheme, a list, or a whole `settings.json` with all its `schemes`), Alacritty `.toml`, base16 or base24 `.yaml`, and kitty, Ghostty or Xresources colour files. Thousands are at iterm2colorschemes.com. Only the colours are read (16 ANSI colours, foreground, background, cursor and selection); imported schemes are saved in `settings.json` (at most 50) and also listed in the palette under `Terminal colours`. The app's own theme stays as it is.
+- **Prompt themes on this computer**: whether Powerlevel10k, Oh My Zsh, Starship and Oh My Posh are installed and turned on in your shell start-up files, with the lines to copy for the ones that are not. Setu only looks; it never installs or runs them. To use them over SSH, set them up on the server the same way.
+
+All of this sits behind the `promptThemes` flag in Settings → Features.
 
 ## Keybinding profiles
 
