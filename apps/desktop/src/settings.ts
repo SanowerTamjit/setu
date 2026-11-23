@@ -3,12 +3,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-<<<<<<< HEAD
-export type ThemeName = "dark" | "light" | "high-contrast" | "ocean" | "paper";
-=======
-export type ThemeName = "dark" | "light" | "high-contrast" | "ember" | "sandstone";
-const THEME_NAMES: readonly ThemeName[] = ["dark", "light", "high-contrast", "ember", "sandstone"];
->>>>>>> origin/master
+export type ThemeName = "dark" | "light" | "high-contrast" | "ocean" | "paper" | "ember" | "sandstone";
+const THEME_NAMES: readonly ThemeName[] = ["dark", "light", "high-contrast", "ocean", "paper", "ember", "sandstone"];
 export type KeymapName = "default" | "vim" | "emacs";
 /** How the window is laid out: the rail and tab bar, or the Studio navigator. */
 export type LayoutName = "classic" | "studio";
@@ -25,6 +21,17 @@ export interface ShellProfileSetting {
   cwd: string;
   /** Extra environment variables, `NAME` → value. */
   env: Record<string, string>;
+}
+
+/** A terminal colour scheme imported from another terminal (see prompt-themes.ts). */
+export interface ColorSchemeSetting {
+  name: string;
+  foreground: string;
+  background: string;
+  cursor: string | null;
+  selection: string | null;
+  /** The 16 ANSI colours: black … white, then bright black … bright white. */
+  ansi: string[];
 }
 
 export interface Settings {
@@ -50,6 +57,10 @@ export interface Settings {
   renderer: RendererName;
   /** Command that opens remote files for editing; empty uses the system's default app. */
   editor: string;
+  /** Colour schemes imported from other terminals (at most 50). */
+  colorSchemes: ColorSchemeSetting[];
+  /** Name of the imported scheme terminals use; empty follows the app theme. */
+  colorScheme: string;
   /** Feature flags turned on or off by hand; others use their default (see features.ts). */
   features: Record<string, boolean>;
 }
@@ -71,8 +82,25 @@ export const DEFAULTS: Settings = {
   ligatures: true,
   renderer: "auto",
   editor: "",
+  colorSchemes: [],
+  colorScheme: "",
   features: {},
 };
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/** A scheme from settings.json, or null if anything in it is not a plain colour. */
+function sanitizeScheme(raw: unknown): ColorSchemeSetting | null {
+  if (!raw || typeof raw !== "object") return null;
+  const q = raw as Record<string, unknown>;
+  const color = (v: unknown) => (typeof v === "string" && HEX.test(v) ? v.toLowerCase() : null);
+  const name = typeof q.name === "string" ? q.name.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60) : "";
+  const ansi = Array.isArray(q.ansi) ? q.ansi.map(color) : [];
+  const foreground = color(q.foreground);
+  const background = color(q.background);
+  if (!name || !foreground || !background || ansi.length !== 16 || ansi.some((c) => c === null)) return null;
+  return { name, foreground, background, cursor: color(q.cursor), selection: color(q.selection), ansi: ansi as string[] };
+}
 
 let current: Settings = structuredClone(DEFAULTS);
 const listeners = new Set<(s: Settings, changed: Partial<Settings>) => void>();
@@ -81,11 +109,7 @@ export function sanitize(raw: unknown): Settings {
   const s = structuredClone(DEFAULTS);
   if (!raw || typeof raw !== "object") return s;
   const r = raw as Record<string, unknown>;
-<<<<<<< HEAD
-  if (["dark", "light", "high-contrast", "ocean", "paper"].includes(r.theme as string)) s.theme = r.theme as ThemeName;
-=======
   if (THEME_NAMES.includes(r.theme as ThemeName)) s.theme = r.theme as ThemeName;
->>>>>>> origin/master
   if (r.layout === "classic" || r.layout === "studio") s.layout = r.layout;
   if (r.keymap === "default" || r.keymap === "vim" || r.keymap === "emacs") s.keymap = r.keymap;
   if (typeof r.maskSecrets === "boolean") s.maskSecrets = r.maskSecrets;
@@ -105,6 +129,17 @@ export function sanitize(raw: unknown): Settings {
   if (typeof r.fontFamily === "string" && r.fontFamily.length <= 200) s.fontFamily = r.fontFamily.trim();
   if (typeof r.ligatures === "boolean") s.ligatures = r.ligatures;
   if (typeof r.editor === "string" && r.editor.length <= 500) s.editor = r.editor.trim();
+  if (Array.isArray(r.colorSchemes)) {
+    const seen = new Set<string>();
+    for (const raw of r.colorSchemes.slice(0, 50)) {
+      const scheme = sanitizeScheme(raw);
+      if (scheme && !seen.has(scheme.name)) {
+        seen.add(scheme.name);
+        s.colorSchemes.push(scheme);
+      }
+    }
+  }
+  if (typeof r.colorScheme === "string" && s.colorSchemes.some((c) => c.name === r.colorScheme)) s.colorScheme = r.colorScheme;
   if (r.renderer === "auto" || r.renderer === "gpu" || r.renderer === "dom") s.renderer = r.renderer;
   if (Array.isArray(r.shellProfiles)) {
     s.shellProfiles = r.shellProfiles.flatMap((p): ShellProfileSetting[] => {
