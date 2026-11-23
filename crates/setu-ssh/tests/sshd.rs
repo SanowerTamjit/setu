@@ -4,11 +4,10 @@
 //! keys. Tests are skipped (with a message) when `sshd` or `ssh-keygen` is not
 //! installed, for example on Windows CI.
 
-use setu_ssh::sftp::EntryKind;
+use setu_ssh::sftp::{EntryKind, TransferControl};
 use setu_ssh::{connect, known_hosts, Auth, ConnectOptions, ShellSize, SshError, Zeroizing};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -46,6 +45,25 @@ fn keygen(path: &Path, passphrase: &str) {
         .status()
         .expect("run ssh-keygen");
     assert!(status.success(), "ssh-keygen failed");
+}
+
+/// Writes an `sk-ssh-ed25519@openssh.com` key file like one `ssh-keygen -t
+/// ed25519-sk` makes, with a made-up key handle, and returns its public line.
+fn fake_security_key(path: &Path) -> String {
+    use russh::keys::ssh_key::{private, public, LineEnding, PrivateKey};
+    let real = PrivateKey::random(&mut rand::rng(), russh::keys::Algorithm::Ed25519).expect("key");
+    let point = *real.public_key().key_data().ed25519().expect("ed25519");
+    let sk = private::SkEd25519::new(public::SkEd25519::new(point, "ssh:"), 0x01, vec![7u8; 64])
+        .expect("sk key");
+    let key = PrivateKey::new(private::KeypairData::from(sk), "setu-sk-test").expect("private key");
+    std::fs::write(
+        path,
+        key.to_openssh(LineEnding::LF).expect("encode").as_bytes(),
+    )
+    .expect("write");
+    let line = format!("{}\n", key.public_key().to_openssh().expect("public"));
+    std::fs::write(format!("{}.pub", path.display()), &line).expect("write pub");
+    line
 }
 
 fn free_port() -> u16 {
@@ -381,11 +399,43 @@ async fn ssh_agent_authentication() {
 
     // Only this test reads SSH_AUTH_SOCK; the others name a key file explicitly.
     std::env::set_var("SSH_AUTH_SOCK", &sock);
+
+    // A security key file the server accepts. There is no device here, so
+    // Setu must hand it to the agent and then report that it did not sign.
+    let sk_path = sshd.path("id_ed25519_sk");
+    let sk_line = fake_security_key(&sk_path);
+    let mut authorized = std::fs::read_to_string(sshd.path("authorized_keys")).expect("read");
+    authorized.push_str(&sk_line);
+    std::fs::write(sshd.path("authorized_keys"), authorized).expect("write");
     let mut opts = sshd.opts();
+    opts.auth = vec![Auth::KeyFile {
+        path: sk_path,
+        passphrase: None,
+    }];
+    let sk_result = connect(&opts).await;
+    let listed = Command::new("ssh-add")
+        .arg("-l")
+        .env("SSH_AUTH_SOCK", &sock)
+        .output()
+        .expect("ssh-add -l");
+
+    // The agent now holds the security key first; agent sign-in must skip
+    // it (it cannot sign) and go on to the ordinary key.
     opts.auth = vec![Auth::Agent];
     let result = connect(&opts).await;
     let _ = agent.kill();
     let _ = agent.wait();
+    match sk_result {
+        Err(SshError::SecurityKey { reason, .. }) => {
+            assert!(reason.contains("did not sign"), "{reason}")
+        }
+        other => panic!("expected a security key error, got {other:?}"),
+    }
+    assert!(
+        String::from_utf8_lossy(&listed.stdout).contains("ED25519-SK"),
+        "the agent should hold the security key: {}",
+        String::from_utf8_lossy(&listed.stdout)
+    );
     let client = result.expect("connect with ssh-agent");
     let (out, _) = client.exec("echo agent-ok").await.expect("exec");
     assert_eq!(String::from_utf8_lossy(&out), "agent-ok\n");
@@ -414,10 +464,10 @@ async fn sftp_browse_copy_rename_delete() {
     std::fs::write(site.join("assets/blob.bin"), &big).expect("write");
 
     let remote = remote_root.to_string_lossy().to_string();
-    let cancel = AtomicBool::new(false);
+    let control = TransferControl::default();
     let mut updates = 0;
     let done = sftp
-        .upload(&site, &remote, &cancel, |_| updates += 1)
+        .upload(&site, &remote, false, &control, |_| updates += 1)
         .await
         .expect("upload");
     assert_eq!(done.files_done, 2);
@@ -432,7 +482,7 @@ async fn sftp_browse_copy_rename_delete() {
         [("assets", EntryKind::Dir), ("index.html", EntryKind::File)]
     );
 
-    sftp.download(&format!("{remote}/site"), &back, &cancel, |_| {})
+    sftp.download(&format!("{remote}/site"), &back, false, &control, |_| {})
         .await
         .expect("download");
     assert_eq!(
@@ -452,11 +502,146 @@ async fn sftp_browse_copy_rename_delete() {
     assert!(!remote_root.join("site").exists());
 
     // A cancelled copy fails and leaves no partial file behind.
-    let cancelled = AtomicBool::new(true);
+    let cancelled = TransferControl::default();
+    cancelled.cancel();
     let err = sftp
-        .upload(&site.join("assets/blob.bin"), &remote, &cancelled, |_| {})
+        .upload(
+            &site.join("assets/blob.bin"),
+            &remote,
+            false,
+            &cancelled,
+            |_| {},
+        )
         .await
         .expect_err("cancelled");
     assert!(matches!(err, SshError::Cancelled));
     assert!(!remote_root.join("blob.bin").exists());
+    assert!(!remote_root.join("blob.bin.setu-part").exists());
+
+    // A paused copy keeps its partial file under the .setu-part name.
+    let paused = TransferControl::default();
+    paused.pause();
+    let err = sftp
+        .upload(
+            &site.join("assets/blob.bin"),
+            &remote,
+            false,
+            &paused,
+            |_| {},
+        )
+        .await
+        .expect_err("paused");
+    assert!(matches!(err, SshError::Cancelled) && paused.paused());
+    assert!(remote_root.join("blob.bin.setu-part").exists());
+    assert!(!remote_root.join("blob.bin").exists());
+
+    // Resuming an upload continues the partial file from where it stopped.
+    std::fs::write(remote_root.join("blob.bin.setu-part"), &big[..300_000]).expect("write");
+    let done = sftp
+        .upload(
+            &site.join("assets/blob.bin"),
+            &remote,
+            true,
+            &control,
+            |_| {},
+        )
+        .await
+        .expect("resume upload");
+    assert_eq!(done.resumed_bytes, 300_000);
+    assert_eq!(done.done_bytes, 700_000);
+    assert_eq!(
+        std::fs::read(remote_root.join("blob.bin")).expect("read"),
+        big
+    );
+    assert!(!remote_root.join("blob.bin.setu-part").exists());
+
+    // Resuming again skips the file, which is already complete.
+    let done = sftp
+        .upload(
+            &site.join("assets/blob.bin"),
+            &remote,
+            true,
+            &control,
+            |_| {},
+        )
+        .await
+        .expect("skip");
+    assert_eq!(done.resumed_bytes, 700_000);
+
+    // Resuming a download does the same on the local side.
+    let down = work.path().join("down");
+    std::fs::create_dir_all(&down).expect("mkdir");
+    std::fs::write(down.join("blob.bin.setu-part"), &big[..123_456]).expect("write");
+    let done = sftp
+        .download(&format!("{remote}/blob.bin"), &down, true, &control, |_| {})
+        .await
+        .expect("resume download");
+    assert_eq!(done.resumed_bytes, 123_456);
+    assert_eq!(std::fs::read(down.join("blob.bin")).expect("read"), big);
+    assert!(!down.join("blob.bin.setu-part").exists());
+}
+
+// Unix only: it checks modes through std::os::unix.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn sftp_edit_in_place_and_permissions() {
+    use setu_ssh::sftp::Change;
+    use std::os::unix::fs::PermissionsExt;
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let client = connect(&sshd.opts()).await.expect("connect");
+    let sftp = client.sftp().await.expect("sftp");
+    let work = tempfile::tempdir().expect("tempdir");
+    let conf = work.path().join("app.conf");
+    std::fs::write(&conf, b"port = 80\n").expect("write");
+    std::fs::set_permissions(&conf, std::fs::Permissions::from_mode(0o640)).expect("chmod");
+    let path = conf.to_string_lossy().to_string();
+
+    // Editing in place keeps the file's mode.
+    assert_eq!(
+        sftp.read_file(&path, 1_000_000).await.expect("read"),
+        b"port = 80\n"
+    );
+    sftp.write_file(&path, b"port = 8080\n")
+        .await
+        .expect("write");
+    assert_eq!(std::fs::read(&conf).expect("read"), b"port = 8080\n");
+    let stat = sftp.stat(&path).await.expect("stat");
+    assert_eq!(stat.permissions, Some(0o640));
+    assert_eq!(stat.size, 12);
+    assert!(sftp.read_file(&path, 4).await.is_err(), "over the limit");
+
+    // One file, then a whole tree where folders stay enterable.
+    let change = Change {
+        mode: Some(0o600),
+        ..Change::default()
+    };
+    sftp.set_attributes(&path, change, false)
+        .await
+        .expect("chmod");
+    assert_eq!(
+        std::fs::metadata(&conf).expect("meta").permissions().mode() & 0o7777,
+        0o600
+    );
+
+    let site = work.path().join("site");
+    std::fs::create_dir_all(site.join("css")).expect("mkdir");
+    std::fs::write(site.join("index.html"), b"hi").expect("write");
+    std::fs::write(site.join("css/app.css"), b"body{}").expect("write");
+    let stat = sftp.stat(&path).await.expect("stat");
+    let tree = Change {
+        mode: Some(0o640),
+        uid: None,
+        gid: stat.gid,
+    };
+    let done = sftp
+        .set_attributes(&site.to_string_lossy(), tree, true)
+        .await
+        .expect("chmod -R");
+    assert_eq!(done.items, 4);
+    let mode = |p: &Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o7777;
+    assert_eq!(mode(&site), 0o750);
+    assert_eq!(mode(&site.join("css")), 0o750);
+    assert_eq!(mode(&site.join("index.html")), 0o640);
+    assert_eq!(mode(&site.join("css/app.css")), 0o640);
 }

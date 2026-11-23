@@ -40,6 +40,10 @@ These are tagged P1 in the plan but are not required for the gate:
 - Import from PuTTY, MobaXterm, Termius, Tabby, Windows Terminal, Ansible inventory.
 - Role picker with the system-administrator pack; install a package from a local file.
 
+### Also delivered in P1
+
+- GPU-rendered terminal with ligatures, resumable transfer queue (pause, resume, retry), editing a remote file in a local editor, a remote permissions editor, and YubiKey/FIDO2 SSH keys.
+
 ### Explicitly not in P1
 
 Tunnels GUI, RDP/VNC/serial/Mosh, monitoring, server management, sync, plugins/WASM, AI features, anything from the Enterprise edition.

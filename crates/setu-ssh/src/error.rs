@@ -47,6 +47,10 @@ pub enum SshError {
     #[error("could not load the key {path}: {reason}")]
     Key { path: PathBuf, reason: String },
 
+    /// A FIDO2/U2F key could not be used: no agent, or the device did not sign.
+    #[error("could not use the security key {path}: {reason}")]
+    SecurityKey { path: PathBuf, reason: String },
+
     #[error("known_hosts error: {0}")]
     KnownHosts(String),
 

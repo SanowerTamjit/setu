@@ -34,7 +34,17 @@ export interface Settings {
   /** Packs turned on or off by hand; others follow the default (see packs.ts). */
   packs: Record<string, boolean>;
   fontSize: number;
+  /** Terminal font; empty uses Setu's list of common coding fonts. */
+  fontFamily: string;
+  /** Join character sequences like -> and != when the font has ligatures. */
+  ligatures: boolean;
+  /** `auto` uses the GPU everywhere except Linux, where WebKitGTK lags a frame. */
+  renderer: RendererName;
+  /** Command that opens remote files for editing; empty uses the system's default app. */
+  editor: string;
 }
+
+export type RendererName = "auto" | "gpu" | "dom";
 
 export const DEFAULTS: Settings = {
   version: 1,
@@ -46,6 +56,10 @@ export const DEFAULTS: Settings = {
   role: null,
   packs: {},
   fontSize: 14,
+  fontFamily: "",
+  ligatures: true,
+  renderer: "auto",
+  editor: "",
 };
 
 let current: Settings = structuredClone(DEFAULTS);
@@ -66,6 +80,10 @@ function sanitize(raw: unknown): Settings {
   }
   if (typeof r.role === "string" || r.role === null) s.role = r.role as string | null;
   if (typeof r.fontSize === "number" && r.fontSize >= 8 && r.fontSize <= 32) s.fontSize = r.fontSize;
+  if (typeof r.fontFamily === "string" && r.fontFamily.length <= 200) s.fontFamily = r.fontFamily.trim();
+  if (typeof r.ligatures === "boolean") s.ligatures = r.ligatures;
+  if (typeof r.editor === "string" && r.editor.length <= 500) s.editor = r.editor.trim();
+  if (r.renderer === "auto" || r.renderer === "gpu" || r.renderer === "dom") s.renderer = r.renderer;
   if (Array.isArray(r.shellProfiles)) {
     s.shellProfiles = r.shellProfiles.flatMap((p): ShellProfileSetting[] => {
       if (!p || typeof p !== "object") return [];

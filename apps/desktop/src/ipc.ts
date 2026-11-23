@@ -299,6 +299,8 @@ export interface TransferProgress {
   filesDone: number;
   filesTotal: number;
   current: string;
+  /** Bytes already there from an earlier, stopped copy. */
+  resumedBytes: number;
 }
 
 export const filesOpen = (terminalId: number) =>
@@ -319,6 +321,7 @@ export function transfer(
   direction: "upload" | "download",
   source: string,
   targetDir: string,
+  resume: boolean,
   onProgress: (p: TransferProgress) => void,
 ): Promise<TransferProgress> {
   const channel = new Channel<TransferProgress>();
@@ -329,11 +332,44 @@ export function transfer(
     direction,
     source,
     targetDir,
+    resume,
     onProgress: channel,
   });
 }
 
 export const transferCancel = (transferId: number) => invoke<void>("transfer_cancel", { transferId });
+export const transferPause = (transferId: number) => invoke<void>("transfer_pause", { transferId });
+
+export interface RemoteStat {
+  kind: EntryKind;
+  size: number;
+  modified: number | null;
+  permissions: number | null;
+  uid: number | null;
+  gid: number | null;
+  user: string | null;
+  group: string | null;
+}
+
+export const filesStat = (id: number, path: string) => invoke<RemoteStat>("files_stat", { id, path });
+export const filesSetAttributes = (
+  id: number,
+  dir: string,
+  names: string[],
+  change: { mode: number | null; user: string | null; group: string | null; recursive: boolean },
+) => invoke<number>("files_set_attributes", { id, dir, names, ...change });
+
+// ---- Remote edit ----
+
+export type RemoteEditEvent =
+  | { state: "saved"; editId: number; at: number; bytes: number }
+  | { state: "conflict"; editId: number }
+  | { state: "error"; editId: number; message: string };
+
+export const remoteEditOpen = (id: number, remote: string, editor: string) =>
+  invoke<{ editId: number; local: string }>("remote_edit_open", { id, remote, editor });
+export const remoteEditPush = (editId: number) => invoke<RemoteEditEvent>("remote_edit_push", { editId });
+export const remoteEditStop = (editId: number) => invoke<void>("remote_edit_stop", { editId });
 
 // ---- SSH keys ----
 
@@ -347,6 +383,7 @@ export interface KeyView {
   comment: string | null;
   publicLine: string | null;
   inAgent: boolean;
+  securityKey: boolean;
 }
 
 export interface KeyList {
@@ -356,17 +393,33 @@ export interface KeyList {
   agentOnly: string[];
 }
 
-export type KeyKind = "ed25519" | "ecdsa" | "rsa";
+export type KeyKind = "ed25519" | "ecdsa" | "rsa" | "ed25519-sk" | "ecdsa-sk";
+
+export interface SecurityKeyChoices {
+  resident: boolean;
+  verifyRequired: boolean;
+  pin: string | null;
+}
 
 export const sshKeysList = () => invoke<KeyList>("ssh_keys_list");
 
-export const sshKeyGenerate = (name: string, kind: KeyKind, comment: string, passphrase: string | null) =>
+export const sshKeyGenerate = (
+  name: string,
+  kind: KeyKind,
+  comment: string,
+  passphrase: string | null,
+  securityKey: SecurityKeyChoices | null = null,
+) =>
   invoke<{ path: string; fingerprint: string; publicLine: string }>("ssh_key_generate", {
     name,
     kind,
     comment,
     passphrase,
+    securityKey,
   });
+
+/** Copies the keys stored on the plugged-in security key into ~/.ssh. */
+export const sshKeyLoadResident = (pin: string | null) => invoke<string[]>("ssh_key_load_resident", { pin });
 
 export const sshKeyAddToAgent = (path: string, passphrase: string | null) =>
   invoke<void>("ssh_key_add_to_agent", { path, passphrase });

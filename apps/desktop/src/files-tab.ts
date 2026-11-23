@@ -12,10 +12,20 @@ import {
   localList,
   transfer,
   transferCancel,
+  transferPause,
+  remoteEditOpen,
+  remoteEditPush,
+  remoteEditStop,
+  type RemoteEditEvent,
   type FileEntry,
   type Listing,
   type TransferProgress,
 } from "./ipc";
+import { icon } from "./icons";
+import { listen } from "@tauri-apps/api/event";
+import { openPermissions } from "./permissions-dialog";
+import { settings, updateSettings } from "./settings";
+import { registerSettingsSection } from "./settings-dialog";
 import type { Tab } from "./tab";
 
 const FOLDER_ICON =
@@ -313,7 +323,7 @@ class Pane {
   }
 }
 
-type Status = "queued" | "running" | "done" | "failed" | "cancelled";
+type Status = "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
 
 interface Job {
   id: number;
@@ -323,12 +333,49 @@ interface Job {
   targetDir: string;
   status: Status;
   progress: TransferProgress | null;
+  /** Continue partial files and skip finished ones (set by Resume and Retry). */
+  resume: boolean;
   error?: string;
   started?: number;
+  /** Bytes done when this run started, so speed counts only this run. */
+  startBytes?: number;
   row?: HTMLElement;
 }
 
 let nextTransferId = 1;
+
+/** A remote file open in a local editor; saves go back to the server. */
+interface Editing {
+  editId: number;
+  name: string;
+  remote: string;
+  local: string;
+  state: "open" | "saved" | "conflict" | "error";
+  at?: number;
+  message?: string;
+}
+
+registerSettingsSection({
+  id: "files",
+  title: "Files",
+  render(body) {
+    const editor = el("input", {
+      type: "text",
+      value: settings().editor,
+      placeholder: "System default app",
+      spellcheck: false,
+    });
+    editor.onchange = () => updateSettings({ editor: editor.value.trim() });
+    body.append(
+      el("h3", {}, "Editing remote files"),
+      field(
+        "Editor",
+        editor,
+        "The command that opens a file, such as code, subl, gedit or \"C:\\Program Files\\Notepad++\\notepad++.exe\". Put {file} where the path goes if it is not last. Leave empty to use the app your system opens the file with.",
+      ),
+    );
+  },
+});
 
 export class FilesTab implements Tab {
   readonly element: HTMLDivElement;
@@ -339,7 +386,12 @@ export class FilesTab implements Tab {
   private readonly remote: Pane;
   private readonly queue: Job[] = [];
   private readonly queueList: HTMLDivElement;
+  private readonly edits: Editing[] = [];
+  private readonly editList: HTMLDivElement;
+  private unlistenEdits: (() => void) | null = null;
   private readonly queueTitle: HTMLSpanElement;
+  private readonly pauseAll: HTMLButtonElement;
+  private readonly resumeAll: HTMLButtonElement;
   private running = false;
   private disposed = false;
 
@@ -369,6 +421,10 @@ export class FilesTab implements Tab {
           void this.rename(pane);
           return true;
         }
+        if (e.key === "F4") {
+          void this.edit(pane);
+          return true;
+        }
         return false;
       },
     });
@@ -376,14 +432,28 @@ export class FilesTab implements Tab {
     const clear = el("button", { className: "text-button" }, "Clear finished");
     clear.onclick = () => {
       for (let i = this.queue.length - 1; i >= 0; i--) {
-        if (["done", "failed", "cancelled"].includes(this.queue[i].status)) this.queue.splice(i, 1);
+        if (["done", "cancelled"].includes(this.queue[i].status)) this.queue.splice(i, 1);
       }
       this.renderQueue();
     };
+    this.pauseAll = el("button", { className: "text-button" }, "Pause all");
+    this.pauseAll.onclick = () => {
+      for (const job of this.queue) if (job.status === "queued" || job.status === "running") this.pause(job);
+    };
+    this.resumeAll = el("button", { className: "text-button" }, "Resume all");
+    this.resumeAll.onclick = () => {
+      for (const job of this.queue) if (job.status === "paused" || job.status === "failed") this.resume(job);
+    };
     this.queueList = el("div", { className: "queue-list" });
+    this.editList = el("div", { className: "edit-list", hidden: true });
+    void listen<RemoteEditEvent>("remote-edit", (e) => this.onEditEvent(e.payload)).then((un) => {
+      if (this.disposed) un();
+      else this.unlistenEdits = un;
+    });
     this.element = el("div", { className: "files-tab" },
       el("div", { className: "panes" }, this.local.element, this.remote.element),
-      el("div", { className: "queue" }, el("div", { className: "queue-head" }, this.queueTitle, el("span", { className: "spacer" }), clear), this.queueList),
+      this.editList,
+      el("div", { className: "queue" }, el("div", { className: "queue-head" }, this.queueTitle, el("span", { className: "spacer" }), this.pauseAll, this.resumeAll, clear), this.queueList),
     );
     container.appendChild(this.element);
     this.renderQueue();
@@ -402,13 +472,129 @@ export class FilesTab implements Tab {
   }
 
   private remoteActions(pane: Pane) {
-    const mk = el("button", { className: "tool", title: "New folder" }, "New folder");
-    mk.onclick = () => void this.mkdir(pane);
-    const rn = el("button", { className: "tool", title: "Rename (F2)" }, "Rename");
-    rn.onclick = () => void this.rename(pane);
-    const rm = el("button", { className: "tool danger", title: "Delete (Delete)" }, "Delete");
-    rm.onclick = () => void this.remove(pane);
-    return [mk, rn, rm];
+    const tool = (name: Parameters<typeof icon>[0], label: string, run: () => void, danger = false) => {
+      const b = el("button", { className: `tool icon-tool${danger ? " danger" : ""}`, title: label }, icon(name, 15));
+      b.setAttribute("aria-label", label);
+      b.onclick = run;
+      return b;
+    };
+    const ed = tool("edit", "Edit in your editor; each save goes back to the server (F4)", () => void this.edit(pane));
+    const pm = tool("lock", "Permissions, user and group", () => void this.permissions(pane));
+    const mk = tool("folderPlus", "New folder", () => void this.mkdir(pane));
+    const rn = tool("rename", "Rename (F2)", () => void this.rename(pane));
+    const rm = tool("trash", "Delete (Delete)", () => void this.remove(pane), true);
+    return [ed, pm, mk, rn, rm];
+  }
+
+  private async permissions(pane: Pane) {
+    const sel = pane.selection;
+    if (!sel.length) {
+      pane.showError("Select the files or folders to change.");
+      return;
+    }
+    try {
+      if (await openPermissions(this.id(), pane.path, sel)) await pane.refresh();
+    } catch (err) {
+      pane.showError(errorText(err));
+    }
+    pane.focus();
+  }
+
+  /** Opens the selected remote file in the local editor. */
+  private async edit(pane: Pane) {
+    const [entry] = pane.selection;
+    if (!entry || entry.kind === "dir") {
+      pane.showError("Select a file to edit.");
+      return;
+    }
+    const remote = joinPath(pane.path, entry.name, true);
+    const already = this.edits.find((e) => e.remote === remote);
+    if (already) {
+      await remoteEditStop(already.editId).catch(() => {});
+      this.edits.splice(this.edits.indexOf(already), 1);
+    }
+    try {
+      const { editId, local } = await remoteEditOpen(this.id(), remote, settings().editor);
+      this.edits.push({ editId, name: entry.name, remote, local, state: "open" });
+      this.renderEdits();
+    } catch (err) {
+      pane.showError(errorText(err));
+    }
+  }
+
+  private onEditEvent(ev: RemoteEditEvent) {
+    const edit = this.edits.find((e) => e.editId === ev.editId);
+    if (!edit) return;
+    edit.state = ev.state;
+    edit.at = ev.state === "saved" ? ev.at : edit.at;
+    edit.message = ev.state === "error" ? ev.message : undefined;
+    this.renderEdits();
+    if (ev.state === "saved" && this.remote.path === edit.remote.slice(0, edit.remote.lastIndexOf("/") || 1)) void this.remote.refresh();
+  }
+
+  private async stopEdit(edit: Editing) {
+    await remoteEditStop(edit.editId).catch(() => {});
+    this.edits.splice(this.edits.indexOf(edit), 1);
+    this.renderEdits();
+  }
+
+  private renderEdits() {
+    this.editList.hidden = this.edits.length === 0;
+    const time = (secs: number) => new Date(secs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    this.editList.replaceChildren(
+      el("div", { className: "queue-head" }, el("span", {}, `Editing · ${this.edits.length}`)),
+      ...this.edits.map((edit) => {
+        let status: string;
+        const buttons: HTMLElement[] = [];
+        switch (edit.state) {
+          case "open":
+            status = "Open in your editor. Each save is written back to the server.";
+            break;
+          case "saved":
+            status = `Saved to the server at ${time(edit.at ?? 0)}`;
+            break;
+          case "conflict": {
+            status = "Changed on the server since you opened it. Your save was not written.";
+            const force = el("button", { className: "text-button danger" }, "Overwrite the server's copy");
+            force.onclick = async () => {
+              try {
+                this.onEditEvent(await remoteEditPush(edit.editId));
+              } catch (err) {
+                this.onEditEvent({ state: "error", editId: edit.editId, message: errorText(err) });
+              }
+            };
+            const reopen = el("button", { className: "text-button" }, "Open the server's copy");
+            reopen.onclick = async () => {
+              await this.stopEdit(edit);
+              const dir = edit.remote.slice(0, edit.remote.lastIndexOf("/")) || "/";
+              await this.remote.open(dir, edit.name);
+              await this.edit(this.remote);
+            };
+            buttons.push(force, reopen);
+            break;
+          }
+          default:
+            status = edit.message ?? "Could not save to the server.";
+        }
+        const stop = el("button", { className: "text-button" }, "Stop editing");
+        stop.title = "Stop writing saves back and delete the local copy";
+        stop.onclick = () => void this.stopEdit(edit);
+        return el(
+          "div",
+          { className: `edit-row ${edit.state}` },
+          icon("edit", 14),
+          el(
+            "span",
+            { className: "job-text" },
+            el("span", { className: "job-name", title: edit.remote }, edit.name),
+            el("span", { className: "muted job-sub", title: edit.local }, status),
+          ),
+          el("span", { className: "spacer" }),
+          ...buttons,
+          stop,
+        );
+      }),
+    );
   }
 
   private async mkdir(pane: Pane) {
@@ -478,6 +664,7 @@ export class FilesTab implements Tab {
         targetDir: to.path,
         status: "queued",
         progress: null,
+        resume: false,
       });
     }
     this.renderQueue();
@@ -493,18 +680,23 @@ export class FilesTab implements Tab {
       while (!this.disposed && (job = this.queue.find((j) => j.status === "queued"))) {
         job.status = "running";
         job.started = performance.now();
+        job.startBytes = undefined;
+        job.error = undefined;
         this.renderQueue();
         const current = job;
         try {
-          current.progress = await transfer(this.id(), current.id, current.direction, current.source, current.targetDir, (p) => {
+          current.progress = await transfer(this.id(), current.id, current.direction, current.source, current.targetDir, current.resume, (p) => {
             current.progress = p;
+            current.startBytes ??= p.doneBytes;
             this.updateRow(current);
           });
           current.status = "done";
         } catch (err) {
           const text = errorText(err);
-          current.status = /cancelled/.test(text) ? "cancelled" : "failed";
-          current.error = text;
+          current.status = text === "paused" ? "paused" : /cancelled/.test(text) ? "cancelled" : "failed";
+          if (current.status === "failed") current.error = text;
+          // A paused or failed copy keeps its partial files; going on continues them.
+          if (current.status !== "cancelled") current.resume = true;
         }
         this.renderQueue();
         const target = current.direction === "upload" ? this.remote : this.local;
@@ -516,7 +708,7 @@ export class FilesTab implements Tab {
   }
 
   private cancel(job: Job) {
-    if (job.status === "queued") {
+    if (job.status === "queued" || job.status === "paused" || job.status === "failed") {
       job.status = "cancelled";
       this.renderQueue();
     } else if (job.status === "running") {
@@ -524,16 +716,44 @@ export class FilesTab implements Tab {
     }
   }
 
+  private pause(job: Job) {
+    if (job.status === "queued") {
+      job.status = "paused";
+      this.renderQueue();
+    } else if (job.status === "running") {
+      void transferPause(job.id);
+    }
+  }
+
+  /** Queues a paused, failed or cancelled copy again, continuing partial files. */
+  private resume(job: Job) {
+    if (job.status === "queued" || job.status === "running" || job.status === "done") return;
+    job.resume = job.status !== "cancelled" || job.resume;
+    job.status = "queued";
+    // Copies keep their order: a resumed one goes to the back of the line.
+    this.queue.splice(this.queue.indexOf(job), 1);
+    this.queue.push(job);
+    this.renderQueue();
+    void this.pump();
+  }
+
   private renderQueue() {
     const active = this.queue.filter((j) => j.status === "queued" || j.status === "running").length;
-    this.queueTitle.textContent = active ? `Transfers · ${active} in progress` : "Transfers";
+    const stopped = this.queue.filter((j) => j.status === "paused" || j.status === "failed").length;
+    this.queueTitle.textContent = [
+      "Transfers",
+      ...(active ? [`${active} in progress`] : []),
+      ...(stopped ? [`${stopped} paused or failed`] : []),
+    ].join(" · ");
+    this.pauseAll.hidden = active === 0;
+    this.resumeAll.hidden = stopped === 0;
     if (!this.queue.length) {
       this.queueList.replaceChildren(el("div", { className: "queue-empty muted" }, "Drag files between the two sides, or select them and use Upload or Download."));
       return;
     }
     // Running and waiting copies first, then finished ones, newest first.
-    const order = (j: Job) => (j.status === "running" ? 0 : j.status === "queued" ? 1 : 2);
-    const shown = [...this.queue].sort((a, b) => order(a) - order(b) || (order(a) === 2 ? b.id - a.id : a.id - b.id));
+    const order = (j: Job) => (j.status === "running" ? 0 : j.status === "queued" ? 1 : j.status === "paused" || j.status === "failed" ? 2 : 3);
+    const shown = [...this.queue].sort((a, b) => order(a) - order(b) || (order(a) === 3 ? b.id - a.id : 0));
     this.queueList.replaceChildren(
       ...shown.map((job) => {
         job.row = el("div", { className: `job ${job.status}` });
@@ -549,34 +769,65 @@ export class FilesTab implements Tab {
     const p = job.progress;
     const pct = p && p.totalBytes ? Math.min(100, (p.doneBytes / p.totalBytes) * 100) : job.status === "done" ? 100 : 0;
     const seconds = job.started ? (performance.now() - job.started) / 1000 : 0;
-    const speed = p && seconds > 0.3 ? `${formatSize(p.doneBytes / seconds)}/s` : "";
+    const moved = p ? p.doneBytes - (job.startBytes ?? p.doneBytes) : 0;
+    const speed = p && seconds > 0.3 && moved > 0 ? `${formatSize(moved / seconds)}/s` : "";
+    const of = p ? `${formatSize(p.doneBytes)} of ${formatSize(p.totalBytes)}` : "";
     let status: string;
     switch (job.status) {
       case "queued":
-        status = "Waiting";
+        status = job.resume && p ? `Waiting to resume · ${of}` : "Waiting";
         break;
       case "running":
-        status = p ? `${formatSize(p.doneBytes)} of ${formatSize(p.totalBytes)}${speed ? ` · ${speed}` : ""}` : "Starting…";
+        status = p ? `${of}${speed ? ` · ${speed}` : ""}${p.resumedBytes ? " · resumed" : ""}` : "Starting…";
+        break;
+      case "paused":
+        status = p ? `Paused · ${of}` : "Paused";
         break;
       case "done":
-        status = p ? `Done · ${p.filesTotal} ${p.filesTotal === 1 ? "file" : "files"}, ${formatSize(p.totalBytes)}` : "Done";
+        status = p
+          ? `Done · ${p.filesTotal} ${p.filesTotal === 1 ? "file" : "files"}, ${formatSize(p.totalBytes)}${p.resumedBytes ? " · resumed" : ""}`
+          : "Done";
         break;
       case "cancelled":
         status = "Cancelled";
         break;
       default:
-        status = job.error ?? "Failed";
+        status = `${job.error ?? "Failed"}${p ? ` · ${of} kept` : ""}`;
     }
-    const cancel = el("button", { className: "row-button", title: "Cancel", ariaLabel: `Cancel ${job.name}` }, "✕");
-    cancel.onclick = () => this.cancel(job);
+    const button = (name: "pause" | "play" | "retry" | "close", label: string, run: () => void) => {
+      const b = el("button", { className: "row-button", title: label, ariaLabel: `${label} ${job.name}` }, icon(name, 13));
+      b.onclick = run;
+      return b;
+    };
+    const buttons: HTMLButtonElement[] = [];
+    if (job.status === "running" || job.status === "queued") buttons.push(button("pause", "Pause", () => this.pause(job)));
+    if (job.status === "paused") buttons.push(button("play", "Resume", () => this.resume(job)));
+    if (job.status === "failed") buttons.push(button("retry", "Retry from where it stopped", () => this.resume(job)));
+    if (job.status === "cancelled") buttons.push(button("retry", "Start again", () => this.resume(job)));
+    if (job.status === "running" || job.status === "queued") buttons.push(button("close", "Cancel (deletes the partial file)", () => this.cancel(job)));
+    if (job.status === "paused" || job.status === "failed") {
+      buttons.push(
+        button("close", "Remove from the list (the .setu-part file stays until you resume or delete it)", () => {
+          this.queue.splice(this.queue.indexOf(job), 1);
+          this.renderQueue();
+        }),
+      );
+    }
     const sub = job.status === "running" && p && p.filesTotal > 1 ? `${p.filesDone + 1}/${p.filesTotal} · ${p.current}` : `to ${job.targetDir}`;
     row.className = `job ${job.status}`;
     row.replaceChildren(
       el("span", { className: "dir" }, job.direction === "upload" ? "↑" : "↓"),
       el("span", { className: "job-text" }, el("span", { className: "job-name" }, job.name), el("span", { className: "muted job-sub" }, sub)),
       el("span", { className: "bar" }, Object.assign(el("span", {}), { style: `width:${pct}%` })),
-      el("span", { className: "job-status muted" }, status),
-      ...(job.status === "queued" || job.status === "running" ? [cancel] : []),
+      el(
+        "span",
+        {
+          className: "job-status muted",
+          title: p?.resumedBytes ? `${status}\nContinued from ${formatSize(p.resumedBytes)} already copied before it stopped.` : status,
+        },
+        status,
+      ),
+      el("span", { className: "job-buttons" }, ...buttons),
     );
   }
 
@@ -611,6 +862,8 @@ export class FilesTab implements Tab {
   async dispose() {
     this.disposed = true;
     for (const job of this.queue) if (job.status === "running") void transferCancel(job.id);
+    for (const edit of this.edits) void remoteEditStop(edit.editId).catch(() => {});
+    this.unlistenEdits?.();
     if (this.sftpId !== null) await filesClose(this.sftpId).catch(() => {});
     this.element.remove();
   }

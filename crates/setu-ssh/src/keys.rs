@@ -17,6 +17,15 @@ pub enum KeyState {
     Unreadable(String),
 }
 
+/// Whether `algorithm` is a FIDO2/U2F security key type (`sk-ssh-ed25519@openssh.com`
+/// or `sk-ecdsa-sha2-nistp256@openssh.com`), whose signatures come from the device.
+pub fn is_security_key(algorithm: russh::keys::Algorithm) -> bool {
+    matches!(
+        algorithm,
+        russh::keys::Algorithm::SkEd25519 | russh::keys::Algorithm::SkEcdsaSha2NistP256
+    )
+}
+
 /// Loads `path` without a passphrase to see whether it is usable.
 pub fn key_state(path: &Path) -> KeyState {
     match russh::keys::load_secret_key(path, None) {

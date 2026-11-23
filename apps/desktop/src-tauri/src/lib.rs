@@ -8,6 +8,7 @@ mod files;
 mod hosts;
 mod keys;
 mod packs;
+mod remote_edit;
 mod session;
 mod ssh;
 mod terminals;
@@ -41,6 +42,7 @@ pub fn run() {
         .manage(hosts::Hosts::from_env())
         .manage(vault::VaultState::from_env())
         .manage(files::Files::default())
+        .manage(remote_edit::RemoteEdits::default())
         .manage(session::SessionFile::from_env())
         .manage(session::SettingsFile::from_env())
         .manage(windows::Detached::default())
@@ -83,6 +85,7 @@ pub fn run() {
             keys::ssh_keys_list,
             keys::ssh_key_generate,
             keys::ssh_key_add_to_agent,
+            keys::ssh_key_load_resident,
             keys::known_hosts_list,
             keys::known_hosts_remove,
             hosts::hosts_list,
@@ -116,6 +119,12 @@ pub fn run() {
             files::local_list,
             files::transfer,
             files::transfer_cancel,
+            files::transfer_pause,
+            files::files_stat,
+            files::files_set_attributes,
+            remote_edit::remote_edit_open,
+            remote_edit::remote_edit_push,
+            remote_edit::remote_edit_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

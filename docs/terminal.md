@@ -29,6 +29,18 @@ Ctrl+Shift+P opens one search box over everything: commands, saved hosts (`Conne
 
 Settings → Appearance has three themes, each covering the whole app and the terminal colours: **Dark** (the default), **Light** and **High contrast** (pure black and white with strong focus outlines). The terminal font size is set there too. Themes are also in the palette (`Theme`).
 
+## Rendering, fonts and ligatures
+
+Settings → Terminal → Rendering chooses how terminals are drawn:
+
+- **Automatic** (the default) draws with the GPU (WebGL) on macOS and Windows. On Linux it uses the compatible DOM renderer, because under some WebKitGTK setups the GPU canvas shows new output one frame late.
+- **GPU (WebGL)** always draws with the GPU. If the GPU context is lost (a driver reset, waking from sleep) the terminal falls back to the DOM renderer.
+- **Compatible (DOM)** never uses the GPU.
+
+The status bar shows which renderer the current terminal uses, after its size (`97×31 · GPU`).
+
+**Font** sets the terminal font; empty means the first installed of JetBrains Mono, Cascadia Code, Fira Code, SF Mono, Menlo or Consolas. **Font ligatures** (on by default) joins sequences such as `->`, `=>`, `!=` and `>=` into one symbol when the font has ligatures, as JetBrains Mono, Cascadia Code and Fira Code do. Changes apply to open terminals straight away.
+
 ## Keybinding profiles
 
 Settings → Keybindings chooses a profile. Every profile keeps the Ctrl+Shift shortcuts above; Vim and Emacs add a prefix key followed by one key, the way tmux and Emacs work, so single keys still reach the shell. The status bar shows the prefix while Setu waits for the next key (two seconds). Press the prefix twice to send it to the shell.

@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import type { Tab } from "./tab";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { LigaturesAddon } from "@xterm/addon-ligatures";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { FindBar } from "./find-bar";
 import { SecretMasker } from "./secret-mask";
@@ -70,8 +71,7 @@ export class TerminalTab implements Tab {
       // which xterm 6 still treats as proposed API.
       allowProposedApi: true,
       cursorBlink: true,
-      fontFamily:
-        '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
+      fontFamily: terminalFont(settings().fontFamily),
       fontSize: settings().fontSize,
       lineHeight: 1.15,
       scrollback: 10000,
@@ -85,9 +85,13 @@ export class TerminalTab implements Tab {
     this.unsubscribe = onSettingsChange((s, changed) => {
       if (changed.maskSecrets !== undefined) this.masker.setEnabled(s.maskSecrets);
       if (changed.theme) this.term.options.theme = terminalTheme(s.theme);
-      if (changed.fontSize) {
+      if (changed.fontSize || changed.fontFamily !== undefined) {
         this.term.options.fontSize = s.fontSize;
+        this.term.options.fontFamily = terminalFont(s.fontFamily);
         this.refit();
+      }
+      if (changed.renderer !== undefined || changed.ligatures !== undefined) {
+        if (this.rendererLoaded) this.applyRendering();
       }
     });
 
@@ -107,24 +111,59 @@ export class TerminalTab implements Tab {
   }
 
   private rendererLoaded = false;
+  private webgl: WebglAddon | null = null;
+  private ligatures: LigaturesAddon | null = null;
 
-  /**
-   * Uses the GPU (WebGL) renderer on macOS and Windows, and xterm's DOM
-   * renderer on Linux: under WebKitGTK the WebGL canvas was presented one
-   * frame late in testing, so the newest output stayed invisible until the
-   * next keypress. Loaded the first time the tab is visible.
-   */
+  /** "GPU" or "DOM": what draws this terminal now, for the status bar. */
+  get renderer(): "GPU" | "DOM" {
+    return this.webgl ? "GPU" : "DOM";
+  }
+
+  /** Loaded the first time the tab is visible, when it has a size. */
   private loadRenderer() {
     if (this.rendererLoaded) return;
     this.rendererLoaded = true;
-    if (/Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent)) return;
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      this.term.loadAddon(webgl);
-    } catch {
-      // WebGL is unavailable (for example some Linux VMs); the DOM renderer still works.
+    this.applyRendering();
+  }
+
+  /**
+   * Sets up ligatures, then the GPU (WebGL) renderer when wanted. On Linux
+   * `auto` keeps xterm's DOM renderer: under WebKitGTK the WebGL canvas was
+   * presented one frame late in testing. WebGL goes last so its glyph atlas
+   * picks up the ligature font features.
+   */
+  private applyRendering() {
+    this.webgl?.dispose();
+    this.webgl = null;
+    this.ligatures?.dispose();
+    this.ligatures = null;
+    const s = settings();
+    if (s.ligatures) {
+      try {
+        this.ligatures = new LigaturesAddon({ fontFeatureSettings: '"calt" on, "liga" on' });
+        this.term.loadAddon(this.ligatures);
+      } catch {
+        this.ligatures = null;
+      }
     }
+    const linux = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+    if (s.renderer === "gpu" || (s.renderer === "auto" && !linux)) {
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          // A lost GPU context (driver reset, sleep) falls back to the DOM renderer.
+          webgl.dispose();
+          if (this.webgl === webgl) this.webgl = null;
+          this.events.onTitle(this);
+        });
+        this.term.loadAddon(webgl);
+        this.webgl = webgl;
+      } catch {
+        // WebGL is unavailable (for example some VMs); the DOM renderer still works.
+      }
+    }
+    this.term.refresh(0, this.term.rows - 1);
+    this.events.onTitle(this);
   }
 
   async start(shellId: string | null) {
@@ -283,7 +322,7 @@ export class TerminalTab implements Tab {
   }
 
   get sizeLabel() {
-    return `${this.term.cols}×${this.term.rows}`;
+    return `${this.term.cols}×${this.term.rows} · ${this.renderer}`;
   }
 
   get tooltip() {
@@ -350,4 +389,12 @@ export interface MovedPane {
   isRemote: boolean;
   shell: ShellProfile | null;
   exited: boolean;
+}
+
+const DEFAULT_FONTS = '"JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Fira Code", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace';
+
+/** The chosen font first, then the usual coding fonts as fallbacks. */
+export function terminalFont(chosen: string) {
+  const name = chosen.replace(/["\\;{}]/g, "").trim();
+  return name ? `"${name}", ${DEFAULT_FONTS}` : DEFAULT_FONTS;
 }

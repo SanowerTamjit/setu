@@ -3,20 +3,79 @@
 //! Built on [`russh_sftp`] over a channel of an existing [`SshClient`], so it
 //! reuses the connection (and its host-key check and authentication).
 //!
-//! Copies write straight to the destination name; if a copy fails or is
-//! cancelled, the partly written file is deleted. Symlinked folders are not
-//! followed when copying a folder, so a link loop cannot make a copy endless.
+//! Copies write to `<name>.setu-part` next to the destination and rename it
+//! into place when the file is complete, so a half-copied file never has
+//! the real name. A paused or failed copy keeps its partial file, and the
+//! same copy run with `resume` continues from where it stopped; a cancelled
+//! copy deletes it. Symlinked folders are not followed when copying a
+//! folder, so a link loop cannot make a copy endless.
 
 use crate::{SshClient, SshError};
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::FileType;
+use russh_sftp::protocol::{FileType, OpenFlags};
 use serde::Serialize;
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, UNIX_EPOCH};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 const CHUNK: usize = 256 * 1024;
+
+/// Added to a destination's name while it is being written.
+pub const PARTIAL_SUFFIX: &str = ".setu-part";
+
+/// Stops a running copy from another task. Pausing keeps the partial file
+/// so the copy can resume; cancelling deletes it.
+#[derive(Debug, Default)]
+pub struct TransferControl {
+    stop: AtomicBool,
+    keep: AtomicBool,
+}
+
+impl TransferControl {
+    pub fn pause(&self) {
+        self.keep.store(true, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    pub fn cancel(&self) {
+        self.keep.store(false, Ordering::Relaxed);
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    /// True when the copy stopped because of [`pause`](Self::pause).
+    pub fn paused(&self) -> bool {
+        self.keep.load(Ordering::Relaxed) && self.stopped()
+    }
+
+    fn stopped(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
+    }
+}
+
+/// Where to start writing a file, given what a resumed copy finds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Start {
+    /// The destination is already complete: nothing to copy.
+    Skip,
+    /// Continue the partial file from this byte.
+    At(u64),
+}
+
+/// Decides how to continue a file of `size` bytes. `dest` and `partial` are
+/// the sizes of the finished and partial files, when they exist. Without
+/// `resume` every file starts over.
+fn start_for(resume: bool, size: u64, dest: Option<u64>, partial: Option<u64>) -> Start {
+    if !resume {
+        return Start::At(0);
+    }
+    match (dest, partial) {
+        (Some(d), None) if d == size => Start::Skip,
+        (_, Some(p)) if p <= size => Start::At(p),
+        _ => Start::At(0),
+    }
+}
 const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -157,6 +216,8 @@ pub struct Progress {
     pub files_total: usize,
     /// The file being copied, relative to what was dropped.
     pub current: String,
+    /// Bytes that were already there from an earlier, stopped copy.
+    pub resumed_bytes: u64,
 }
 
 /// What a copy will do, worked out before any byte moves.
@@ -201,6 +262,11 @@ impl<F: FnMut(&Progress)> Reporter<F> {
         self.emit();
     }
 
+    fn resumed(&mut self, bytes: u64) {
+        self.progress.resumed_bytes += bytes;
+        self.progress.done_bytes += bytes;
+    }
+
     fn add(&mut self, bytes: u64) {
         self.progress.done_bytes += bytes;
         if self.last.elapsed() >= PROGRESS_EVERY {
@@ -217,6 +283,39 @@ impl<F: FnMut(&Progress)> Reporter<F> {
         self.last = Instant::now();
         (self.on_progress)(&self.progress);
     }
+}
+
+/// One remote file's details, for the permissions editor and remote edits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stat {
+    pub kind: EntryKind,
+    pub size: u64,
+    pub modified: Option<u64>,
+    /// Mode bits without the file type (`0o7777` at most).
+    pub permissions: Option<u32>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+}
+
+/// What to change with [`Sftp::set_attributes`]; `None` leaves it alone.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Change {
+    pub mode: Option<u32>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+}
+
+/// The mode a folder gets when a file mode is applied to a whole tree: like
+/// `chmod -R u=rw,go=r,a+X`, anyone who may read the folder may also enter it.
+pub fn folder_mode(mode: u32) -> u32 {
+    (mode | ((mode & 0o444) >> 2)) & 0o7777
+}
+
+/// How many items [`Sftp::set_attributes`] changed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct Changed {
+    pub items: usize,
 }
 
 /// An SFTP session on an SSH connection.
@@ -256,6 +355,138 @@ impl Sftp {
             .canonicalize(path)
             .await
             .map_err(|e| files_err(path, e))
+    }
+
+    /// Details of one remote item; a symlink reports what it points to, but
+    /// keeps the `symlink` kind.
+    pub async fn stat(&self, path: &str) -> Result<Stat, SshError> {
+        let link = self
+            .session
+            .symlink_metadata(path)
+            .await
+            .map_err(|e| files_err(path, e))?;
+        let meta = if link.is_symlink() {
+            self.session
+                .metadata(path)
+                .await
+                .map_err(|e| files_err(path, e))?
+        } else {
+            link.clone()
+        };
+        Ok(Stat {
+            kind: kind_of(link.file_type()),
+            size: meta.size.unwrap_or(0),
+            modified: meta.mtime.map(u64::from),
+            permissions: meta.permissions.map(|p| p & 0o7777),
+            uid: meta.uid,
+            gid: meta.gid,
+        })
+    }
+
+    /// Reads a whole remote file, refusing files over `limit` bytes.
+    pub async fn read_file(&self, path: &str, limit: u64) -> Result<Vec<u8>, SshError> {
+        let size = self.stat(path).await?.size;
+        if size > limit {
+            return Err(files_err(
+                path,
+                format!(
+                    "is {} MB; files over {} MB are not opened for editing",
+                    size / 1_000_000,
+                    limit / 1_000_000
+                ),
+            ));
+        }
+        let mut file = self
+            .session
+            .open(path)
+            .await
+            .map_err(|e| files_err(path, e))?;
+        let mut out = Vec::with_capacity(usize::try_from(size).unwrap_or(0));
+        file.read_to_end(&mut out)
+            .await
+            .map_err(|e| files_err(path, e))?;
+        Ok(out)
+    }
+
+    /// Replaces a remote file's contents in place, so it keeps its owner,
+    /// group and permissions (unlike writing a new file and renaming it).
+    pub async fn write_file(&self, path: &str, data: &[u8]) -> Result<(), SshError> {
+        let mut file = self
+            .session
+            .open_with_flags(
+                path,
+                OpenFlags::WRITE | OpenFlags::TRUNCATE | OpenFlags::CREATE,
+            )
+            .await
+            .map_err(|e| files_err(path, e))?;
+        file.write_all(data).await.map_err(|e| files_err(path, e))?;
+        file.shutdown().await.map_err(|e| files_err(path, e))
+    }
+
+    async fn set_one(
+        &self,
+        path: &str,
+        mode: Option<u32>,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> Result<(), SshError> {
+        let mut attrs = russh_sftp::protocol::FileAttributes::empty();
+        attrs.permissions = mode.map(|m| m & 0o7777);
+        // SFTP sets user and group together, so keep this item's other one.
+        if uid.is_some() != gid.is_some() {
+            let now = self.stat(path).await?;
+            attrs.uid = uid.or(now.uid);
+            attrs.gid = gid.or(now.gid);
+        } else {
+            attrs.uid = uid;
+            attrs.gid = gid;
+        }
+        self.session
+            .set_metadata(path, attrs)
+            .await
+            .map_err(|e| files_err(path, e))
+    }
+
+    /// Changes mode and/or owner of `path`, and with `recursive` of
+    /// everything inside a folder. Inside a tree, folders get
+    /// [`folder_mode`] so they stay enterable; symlinks are left alone.
+    pub async fn set_attributes(
+        &self,
+        path: &str,
+        change: Change,
+        recursive: bool,
+    ) -> Result<Changed, SshError> {
+        let top = self.stat(path).await?;
+        let is_dir = top.kind == EntryKind::Dir;
+        let top_mode = match (change.mode, is_dir && recursive) {
+            (Some(m), true) => Some(folder_mode(m)),
+            (m, _) => m,
+        };
+        self.set_one(path, top_mode, change.uid, change.gid).await?;
+        let mut changed = Changed { items: 1 };
+        if !(is_dir && recursive) {
+            return Ok(changed);
+        }
+        let mut stack = vec![path.to_string()];
+        while let Some(dir) = stack.pop() {
+            for entry in self.list(&dir).await? {
+                let child = join_remote(&dir, &entry.name);
+                match entry.kind {
+                    EntryKind::Dir => {
+                        self.set_one(&child, change.mode.map(folder_mode), change.uid, change.gid)
+                            .await?;
+                        stack.push(child);
+                    }
+                    EntryKind::File | EntryKind::Other => {
+                        self.set_one(&child, change.mode, change.uid, change.gid)
+                            .await?
+                    }
+                    EntryKind::Symlink => continue,
+                }
+                changed.items += 1;
+            }
+        }
+        Ok(changed)
     }
 
     /// Lists a remote folder, without `.` and `..`.
@@ -392,12 +623,14 @@ impl Sftp {
         Ok(plan)
     }
 
-    /// Copies a remote file or folder into `local_dir`.
+    /// Copies a remote file or folder into `local_dir`. With `resume`, files
+    /// already complete are skipped and partial files are continued.
     pub async fn download(
         &self,
         remote: &str,
         local_dir: &Path,
-        cancel: &AtomicBool,
+        resume: bool,
+        control: &TransferControl,
         on_progress: impl FnMut(&Progress),
     ) -> Result<Progress, SshError> {
         let plan = self.plan_download(remote, local_dir).await?;
@@ -408,19 +641,46 @@ impl Sftp {
                 .map_err(|e| files_err(dir.display(), e))?;
         }
         let mut buf = vec![0u8; CHUNK];
-        for (src, dst, _, label) in &plan.files {
+        for (src, dst, size, label) in &plan.files {
             report.start(label);
+            let part = partial_local(dst);
+            let local_len =
+                |p: PathBuf| async move { tokio::fs::metadata(p).await.ok().map(|m| m.len()) };
+            let offset = match start_for(
+                resume,
+                *size,
+                local_len(dst.clone()).await,
+                local_len(part.clone()).await,
+            ) {
+                Start::Skip => {
+                    report.resumed(*size);
+                    report.file_done();
+                    continue;
+                }
+                Start::At(n) => n,
+            };
+            report.resumed(offset);
             let result = async {
                 let mut from = self
                     .session
                     .open(src)
                     .await
                     .map_err(|e| files_err(src, e))?;
-                let mut to = tokio::fs::File::create(dst)
+                if offset > 0 {
+                    from.seek(SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| files_err(src, e))?;
+                }
+                let mut to = tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .append(offset > 0)
+                    .truncate(offset == 0)
+                    .open(&part)
                     .await
-                    .map_err(|e| files_err(dst.display(), e))?;
+                    .map_err(|e| files_err(part.display(), e))?;
                 loop {
-                    if cancel.load(Ordering::Relaxed) {
+                    if control.stopped() {
                         return Err(SshError::Cancelled);
                     }
                     let n = from.read(&mut buf).await.map_err(|e| files_err(src, e))?;
@@ -429,15 +689,21 @@ impl Sftp {
                     }
                     to.write_all(&buf[..n])
                         .await
-                        .map_err(|e| files_err(dst.display(), e))?;
+                        .map_err(|e| files_err(part.display(), e))?;
                     report.add(n as u64);
                 }
-                to.flush().await.map_err(|e| files_err(dst.display(), e))?;
-                Ok(())
+                to.flush().await.map_err(|e| files_err(part.display(), e))?;
+                drop(to);
+                tokio::fs::rename(&part, dst)
+                    .await
+                    .map_err(|e| files_err(dst.display(), e))
             }
             .await;
             if let Err(e) = result {
-                let _ = tokio::fs::remove_file(dst).await;
+                // Pauses and errors keep the partial file for a resume.
+                if matches!(e, SshError::Cancelled) && !control.paused() {
+                    let _ = tokio::fs::remove_file(&part).await;
+                }
                 return Err(e);
             }
             report.file_done();
@@ -491,12 +757,14 @@ impl Sftp {
         Ok(plan)
     }
 
-    /// Copies a local file or folder into `remote_dir`.
+    /// Copies a local file or folder into `remote_dir`. With `resume`, files
+    /// already complete are skipped and partial files are continued.
     pub async fn upload(
         &self,
         local: &Path,
         remote_dir: &str,
-        cancel: &AtomicBool,
+        resume: bool,
+        control: &TransferControl,
         on_progress: impl FnMut(&Progress),
     ) -> Result<Progress, SshError> {
         let plan = Self::plan_upload(local, remote_dir)?;
@@ -508,19 +776,60 @@ impl Sftp {
             }
         }
         let mut buf = vec![0u8; CHUNK];
-        for (src, dst, _, label) in &plan.files {
+        for (src, dst, size, label) in &plan.files {
             report.start(label);
+            let part = format!("{dst}{PARTIAL_SUFFIX}");
+            let offset = if resume {
+                let dest = self
+                    .session
+                    .metadata(dst.as_str())
+                    .await
+                    .ok()
+                    .and_then(|m| m.size);
+                let partial = self
+                    .session
+                    .metadata(part.as_str())
+                    .await
+                    .ok()
+                    .and_then(|m| m.size);
+                start_for(true, *size, dest, partial)
+            } else {
+                Start::At(0)
+            };
+            let offset = match offset {
+                Start::Skip => {
+                    report.resumed(*size);
+                    report.file_done();
+                    continue;
+                }
+                Start::At(n) => n,
+            };
+            report.resumed(offset);
             let result = async {
                 let mut from = tokio::fs::File::open(src)
                     .await
                     .map_err(|e| files_err(src.display(), e))?;
-                let mut to = self
-                    .session
-                    .create(dst)
-                    .await
-                    .map_err(|e| files_err(dst, e))?;
+                let mut to = if offset > 0 {
+                    from.seek(SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| files_err(src.display(), e))?;
+                    let mut f = self
+                        .session
+                        .open_with_flags(part.as_str(), OpenFlags::WRITE)
+                        .await
+                        .map_err(|e| files_err(&part, e))?;
+                    f.seek(SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| files_err(&part, e))?;
+                    f
+                } else {
+                    self.session
+                        .create(part.as_str())
+                        .await
+                        .map_err(|e| files_err(&part, e))?
+                };
                 loop {
-                    if cancel.load(Ordering::Relaxed) {
+                    if control.stopped() {
                         return Err(SshError::Cancelled);
                     }
                     let n = from
@@ -532,15 +841,27 @@ impl Sftp {
                     }
                     to.write_all(&buf[..n])
                         .await
-                        .map_err(|e| files_err(dst, e))?;
+                        .map_err(|e| files_err(&part, e))?;
                     report.add(n as u64);
                 }
-                to.shutdown().await.map_err(|e| files_err(dst, e))?;
-                Ok(())
+                to.shutdown().await.map_err(|e| files_err(&part, e))?;
+                // SFTP's rename will not replace an existing file.
+                if self.session.try_exists(dst.as_str()).await.unwrap_or(false) {
+                    self.session
+                        .remove_file(dst.as_str())
+                        .await
+                        .map_err(|e| files_err(dst, e))?;
+                }
+                self.session
+                    .rename(part.as_str(), dst.as_str())
+                    .await
+                    .map_err(|e| files_err(dst, e))
             }
             .await;
             if let Err(e) = result {
-                let _ = self.session.remove_file(dst.as_str()).await;
+                if matches!(e, SshError::Cancelled) && !control.paused() {
+                    let _ = self.session.remove_file(part.as_str()).await;
+                }
                 return Err(e);
             }
             report.file_done();
@@ -549,9 +870,43 @@ impl Sftp {
     }
 }
 
+/// `name.setu-part` next to a local destination.
+fn partial_local(dst: &Path) -> PathBuf {
+    let mut name = dst.file_name().unwrap_or_default().to_os_string();
+    name.push(PARTIAL_SUFFIX);
+    dst.with_file_name(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folders_stay_enterable() {
+        assert_eq!(folder_mode(0o644), 0o755);
+        assert_eq!(folder_mode(0o640), 0o750);
+        assert_eq!(folder_mode(0o600), 0o700);
+        assert_eq!(folder_mode(0o4755), 0o4755);
+    }
+
+    #[test]
+    fn resume_decisions() {
+        assert_eq!(start_for(false, 10, Some(10), Some(4)), Start::At(0));
+        assert_eq!(start_for(true, 10, Some(10), None), Start::Skip);
+        assert_eq!(start_for(true, 10, Some(3), None), Start::At(0));
+        assert_eq!(start_for(true, 10, None, Some(4)), Start::At(4));
+        assert_eq!(start_for(true, 10, Some(10), Some(4)), Start::At(4));
+        assert_eq!(
+            start_for(true, 10, None, Some(12)),
+            Start::At(0),
+            "a partial larger than the source starts over"
+        );
+        assert_eq!(start_for(true, 10, None, None), Start::At(0));
+        assert_eq!(
+            partial_local(Path::new("/tmp/a.iso")),
+            PathBuf::from("/tmp/a.iso.setu-part")
+        );
+    }
 
     #[test]
     fn remote_paths() {
