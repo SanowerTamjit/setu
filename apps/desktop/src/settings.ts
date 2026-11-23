@@ -87,13 +87,13 @@ export const DEFAULTS: Settings = {
   features: {},
 };
 
-const HEX = /^#[0-9a-f]{6}$/;
+const HEX = /^#[0-9a-f]{6}$/i;
 
 /** A scheme from settings.json, or null if anything in it is not a plain colour. */
 function sanitizeScheme(raw: unknown): ColorSchemeSetting | null {
   if (!raw || typeof raw !== "object") return null;
   const q = raw as Record<string, unknown>;
-  const color = (v: unknown) => (typeof v === "string" && HEX.test(v) ? v : null);
+  const color = (v: unknown) => (typeof v === "string" && HEX.test(v) ? v.toLowerCase() : null);
   const name = typeof q.name === "string" ? q.name.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60) : "";
   const ansi = Array.isArray(q.ansi) ? q.ansi.map(color) : [];
   const foreground = color(q.foreground);

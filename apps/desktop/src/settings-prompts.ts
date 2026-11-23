@@ -150,6 +150,7 @@ registerSettingsSection({
         })
         .catch(() => {
           detected = [];
+          if (tools.isConnected) rerender();
         });
     }
     const recheck = el("button", { type: "button", className: "small" }, "Check again");

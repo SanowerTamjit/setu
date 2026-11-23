@@ -31,6 +31,12 @@ describe("colour schemes in settings.json", () => {
     expect(s.colorScheme).toBe("");
   });
 
+  it("accepts hand-written uppercase colours and stores them in lowercase", () => {
+    const s = sanitize({ colorSchemes: [{ ...scheme("Caps"), background: "#AABBCC" }] });
+    expect(s.colorSchemes).toHaveLength(1);
+    expect(s.colorSchemes[0].background).toBe("#aabbcc");
+  });
+
   it("strips control characters from names and keeps the first of duplicates", () => {
     const s = sanitize({ colorSchemes: [scheme("A\u001b]0;x\u0007"), scheme("A]0;x"), scheme("A]0;x", "#202020")] });
     expect(s.colorSchemes).toHaveLength(1);
