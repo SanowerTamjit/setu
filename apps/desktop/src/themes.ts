@@ -8,6 +8,8 @@ export const THEMES: { id: ThemeName; name: string; description: string }[] = [
   { id: "dark", name: "Dark", description: "The default: graphite with a blue accent, easy on the eyes" },
   { id: "light", name: "Light", description: "Clean white surfaces, for bright rooms" },
   { id: "high-contrast", name: "High contrast", description: "Black and white with strong focus outlines" },
+  { id: "ember", name: "Ember", description: "Warm charcoal with an amber glow, for late nights" },
+  { id: "sandstone", name: "Sandstone", description: "Soft paper tones with a teal accent, gentle in daylight" },
 ];
 
 const DARK: ITheme = {
@@ -83,19 +85,96 @@ const HIGH_CONTRAST: ITheme = {
   brightWhite: "#ffffff",
 };
 
+const EMBER: ITheme = {
+  background: "#16120f",
+  foreground: "#efe6dc",
+  cursor: "#f0883e",
+  cursorAccent: "#16120f",
+  selectionBackground: "#4a3424",
+  black: "#2a221c",
+  red: "#e8705f",
+  green: "#a3c06e",
+  yellow: "#e8b44a",
+  blue: "#7fa8d4",
+  magenta: "#c98bb8",
+  cyan: "#6fbfb0",
+  white: "#ddd2c4",
+  brightBlack: "#857565",
+  brightRed: "#ff9283",
+  brightGreen: "#c3dc8f",
+  brightYellow: "#f8d27a",
+  brightBlue: "#a3c4e8",
+  brightMagenta: "#e3aad3",
+  brightCyan: "#94dccd",
+  brightWhite: "#fff8ef",
+};
+
+const SANDSTONE: ITheme = {
+  background: "#f5f0e6",
+  foreground: "#2b2620",
+  cursor: "#0f766e",
+  cursorAccent: "#f5f0e6",
+  selectionBackground: "#cfe0d8",
+  black: "#2b2620",
+  red: "#b3372b",
+  green: "#3f7a2a",
+  yellow: "#8a5a00",
+  blue: "#2a6496",
+  magenta: "#8a3f8a",
+  cyan: "#0e7490",
+  white: "#d8cfbf",
+  brightBlack: "#6b6152",
+  brightRed: "#c84a3d",
+  brightGreen: "#4d8f36",
+  brightYellow: "#a06a00",
+  brightBlue: "#3678b0",
+  brightMagenta: "#9e52a0",
+  brightCyan: "#1589a8",
+  brightWhite: "#fffdf8",
+};
+
 /** Studio's terminal sits on a deeper, bluer background to match its panels. */
-const STUDIO_BACKGROUND: Partial<Record<ThemeName, string>> = { dark: "#0a0d14", light: "#fbfcff" };
+const STUDIO_BACKGROUND: Partial<Record<ThemeName, string>> = {
+  dark: "#0a0d14",
+  light: "#fbfcff",
+  ember: "#120e0b",
+  sandstone: "#fbf7ef",
+};
 
 export function terminalTheme(name: ThemeName, layout: LayoutName = "classic"): ITheme {
-  const base = name === "light" ? LIGHT : name === "high-contrast" ? HIGH_CONTRAST : DARK;
+  const base = name === "light"
+    ? LIGHT
+    : name === "high-contrast"
+      ? HIGH_CONTRAST
+      : name === "ember"
+        ? EMBER
+        : name === "sandstone"
+          ? SANDSTONE
+          : DARK;
   const background = layout === "studio" ? STUDIO_BACKGROUND[name] : undefined;
   return background ? { ...base, background, cursorAccent: background } : base;
 }
 
 /** Match highlights for find, readable on each theme. */
 export function findColors(name: ThemeName) {
-  const active = name === "light" ? "#2563eb" : name === "high-contrast" ? "#ffd400" : "#4c8dff";
-  const match = name === "light" ? "#cddcf7" : name === "high-contrast" ? "#444444" : "#2b3a55";
+  const active = name === "light"
+    ? "#2563eb"
+    : name === "high-contrast"
+      ? "#ffd400"
+      : name === "ember"
+        ? "#f0883e"
+        : name === "sandstone"
+          ? "#0f766e"
+          : "#4c8dff";
+  const match = name === "light"
+    ? "#cddcf7"
+    : name === "high-contrast"
+      ? "#444444"
+      : name === "ember"
+        ? "#4a3424"
+        : name === "sandstone"
+          ? "#cfe0d8"
+          : "#2b3a55";
   return {
     matchBackground: match,
     matchBorder: name === "high-contrast" ? "#ffffff" : "#7d8799",
