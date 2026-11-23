@@ -6,7 +6,7 @@
 
 Lists the private keys in `~/.ssh` with their type, SHA-256 fingerprint and comment, and shows whether each has a passphrase and whether ssh-agent holds it. Setu never shows or sends private key material to the window.
 
-- **New key** makes an Ed25519 key (recommended), ECDSA P-256 or RSA 4096 key in OpenSSH format, or a key on a security key (below),, with an optional passphrase (recommended). The private file is readable only by you (mode 0600), the folder is created private if missing, and an existing file is never overwritten.
+- **New key** makes an Ed25519 key (recommended), ECDSA P-256 or RSA 4096 key in OpenSSH format, or a key on a security key (below), with an optional passphrase (recommended). The private file is readable only by you (mode 0600), the folder is created private if missing, and an existing file is never overwritten.
 - **Copy public key** copies the `.pub` line, ready for a server's `~/.ssh/authorized_keys`.
 - **Add to agent** gives the key to the running ssh-agent after checking its passphrase, so connections stop asking for it.
 
