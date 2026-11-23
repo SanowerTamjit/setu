@@ -4,11 +4,13 @@
 //! vault run in Rust and talk to the UI through the commands in [`terminals`],
 //! [`ssh`], [`files`], [`hosts`], [`vault`], [`workflows`], [`memory`] and [`session`].
 
+mod color_schemes;
 mod files;
 mod hosts;
 mod keys;
 mod memory;
 mod packs;
+mod prompts;
 mod remote_edit;
 mod session;
 mod ssh;
@@ -99,6 +101,8 @@ pub fn run() {
             hosts::ssh_config_scan,
             hosts::ssh_config_import,
             hosts::hosts_parse_file,
+            color_schemes::color_scheme_parse,
+            prompts::prompt_detect,
             packs::packs_list,
             packs::pack_inspect,
             packs::pack_install,

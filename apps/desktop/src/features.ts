@@ -70,6 +70,15 @@ export const FLAGS = [
     default: true,
     since: "0.1.0",
   },
+  {
+    id: "promptThemes",
+    title: "Prompt themes (Powerlevel10k, Starship, Oh My Posh)",
+    description:
+      "Built-in Nerd Font symbols so prompt icons and Powerline arrows show with any font, Unicode 11 character widths so right-hand prompts line up, and colour schemes imported from other terminals.",
+    stage: "beta",
+    default: true,
+    since: "0.1.0",
+  },
 ] as const satisfies readonly FeatureFlag[];
 
 export type FlagId = (typeof FLAGS)[number]["id"];
