@@ -23,6 +23,8 @@ import "./known-hosts";
 import { openJumpMap } from "./jump-map";
 import { HostsHome } from "./hosts-home";
 import { WorkflowsView } from "./workflows-view";
+import { memoryRecording, onMemoryChange, refreshMemoryState, registerMemorySnippets } from "./work-memory";
+import { memorySettings, memoryView } from "./ipc";
 import { enabled } from "./features";
 import { icon, type IconName } from "./icons";
 import { loadPacks, openRolePicker, registerSnippets } from "./packs";
@@ -694,6 +696,31 @@ for (const c of [
     },
   },
   {
+    id: "view.memory",
+    title: "Open work memory and suggestions",
+    category: "View",
+    keywords: "history automate repeated routine suggestions snippets ai",
+    when: () => enabled("workflows") && enabled("workMemory"),
+    run: () => {
+      showView("workflows");
+      workflows.setMode("memory");
+      workflows.focus();
+    },
+  },
+  {
+    id: "memory.toggle",
+    title: "Pause or resume remembering commands",
+    category: "Work memory",
+    keywords: "record history privacy",
+    when: () => enabled("workMemory"),
+    run: async () => {
+      const v = await memoryView();
+      await memorySettings({ ...v.settings, recording: !v.settings.recording });
+      await refreshMemoryState();
+      if (view === "workflows") await workflows.refresh();
+    },
+  },
+  {
     id: "workflow.new",
     title: "New workflow",
     category: "Workflows",
@@ -779,14 +806,19 @@ registerProvider(() =>
     run: () => connectHost(host),
   })),
 );
-registerSnippets((command) => {
+const insertSnippet = (command: string) => {
   const pane = terminalOf(active);
   if (!pane) return;
   // Typed, not run: the person reads it, edits placeholders, then presses Enter.
   // One line only, so nothing runs before Enter even without bracketed paste.
   pane.term.paste(command.replace(/[\r\n]+/g, " ").trim());
   pane.focus();
-});
+};
+registerSnippets(insertSnippet);
+registerMemorySnippets(insertSnippet);
+const statusMemory = document.getElementById("status-memory") as HTMLButtonElement;
+statusMemory.onclick = () => void runCommand("view.memory");
+onMemoryChange(() => (statusMemory.hidden = !memoryRecording()));
 registerProvider(() =>
   launchable().map((shell) => ({
     id: `shell:${shell.id}`,
@@ -949,12 +981,16 @@ onSettingsChange((s, changed) => {
   if (changed.keymap) applyKeymap();
   if (changed.layout) applyLayout(s.layout);
   if (changed.shellProfiles) renderMenu();
+  // The Features switch for work memory hides its tab and indicator at once.
+  if (changed.features) statusMemory.hidden = !memoryRecording();
 });
 
 async function boot() {
   const [info, found] = await Promise.all([appInfo(), listShells(), loadSettings(), loadPacks()]);
   applyTheme(settings().theme);
   applyLayout(settings().layout);
+  // After settings: the work memory switch lives there.
+  void refreshMemoryState();
   shells = found;
   localUser = info.user;
   setDefaultUser(info.user);

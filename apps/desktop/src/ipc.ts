@@ -590,3 +590,65 @@ export interface Board {
 
 export const boardLoad = () => invoke<{ board: Board; path: string }>("board_load");
 export const boardSave = (board: Board) => invoke<void>("board_save", { board });
+
+// ---- Work memory ----
+
+export interface MemorySettings {
+  recording: boolean;
+  retention_days: number;
+  ignore: string[];
+}
+
+export interface MemoryEntry {
+  id: number;
+  at: number;
+  command: string;
+  host?: string;
+  session: string;
+  masked?: boolean;
+}
+
+export interface MemorySnippet {
+  id: string;
+  title: string;
+  command: string;
+  created: number;
+}
+
+export type SuggestionKind = "snippet" | "workflow" | "fleet";
+
+export interface MemorySuggestion {
+  id: string;
+  kind: SuggestionKind;
+  title: string;
+  reason: string;
+  commands: string[];
+  hosts: string[];
+  tag?: string;
+  count: number;
+  last: number;
+}
+
+export interface MemoryView {
+  settings: MemorySettings;
+  entries: MemoryEntry[];
+  total: number;
+  snippets: MemorySnippet[];
+  suggestions: MemorySuggestion[];
+  path: string;
+}
+
+export type Recorded = "kept" | "keptMasked" | "off" | "skipped";
+
+export const memoryView = () => invoke<MemoryView>("memory_view");
+export const memoryRecord = (command: string, host: string | null, session: string) =>
+  invoke<Recorded>("memory_record", { command, host, session });
+export const memorySettings = (settings: MemorySettings) => invoke<void>("memory_settings", { settings });
+export const memoryDelete = (id: number) => invoke<void>("memory_delete", { id });
+export const memoryClear = (everything: boolean) => invoke<void>("memory_clear", { everything });
+export const memoryDismiss = (id: string) => invoke<void>("memory_dismiss", { id });
+export const memorySnippetSave = (title: string, command: string) =>
+  invoke<MemorySnippet>("memory_snippet_save", { title, command });
+export const memorySnippetDelete = (id: string) => invoke<void>("memory_snippet_delete", { id });
+export const memoryWorkflowDraft = (id: string) => invoke<Workflow>("memory_workflow_draft", { id });
+export const memorySummary = () => invoke<string>("memory_summary");

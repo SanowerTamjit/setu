@@ -1,0 +1,22 @@
+[package]
+name = "setu-memory"
+description = "Work memory for Setu: remembers the commands you run (on this device only, secrets redacted) and suggests snippets and workflows for work you repeat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json = "1"
+thiserror.workspace = true
+setu-workflow.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

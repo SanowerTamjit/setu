@@ -36,6 +36,10 @@ Runs never ask for anything, because nobody may be watching:
 - Passwords and key passphrases come from the vault (unlock it first), or use ssh-agent. Keys and jump hosts set on the saved host are used as usual.
 - Each host gets one connection for the whole run, closed when the run ends.
 
+## From work memory
+
+Setu can also suggest workflows for you: turn on **Work memory** in the **Memory** tab and it notices commands you run in the same order again and again, or one command you run on host after host, and offers each as a workflow draft. See `docs/work-memory.md`.
+
 ## Task board
 
 The **Board** tab next to **Workflows** (or **Open the task board** in the command palette) is a simple board for ops work: cards in **To do**, **Doing** and **Done**.

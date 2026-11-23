@@ -4362,7 +4362,7 @@ button.with-icon {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 240px 1fr;
   background: var(--bg);
 }
 
@@ -5391,7 +5391,7 @@ button.with-icon {
 }
 
 :root[data-layout="studio"] .workflows-view {
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 230px 1fr;
 }
 
 /* ---- Workflows | Board switch ---- */
@@ -5456,7 +5456,7 @@ button.with-icon {
 
 .bd-header .wf-mode {
   margin: 0;
-  width: 220px;
+  width: 320px;
 }
 
 .bd-title {
@@ -5772,15 +5772,389 @@ button.with-icon {
   }
 }
 
-/* The Studio list is narrower: the switch drops its icons to fit. */
-:root[data-layout="studio"] .wf-list .wf-mode-tab {
-  padding: 0 6px;
+/* The list is narrow: the three-way switch drops its icons to fit. */
+.workflows-view .wf-list .wf-mode-tab {
+  padding: 0 4px;
 }
 
-:root[data-layout="studio"] .wf-list .wf-mode-tab svg {
+.workflows-view .wf-list .wf-mode-tab svg {
   display: none;
 }
 
 :root[data-layout] .workflows-view.board-mode {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* ---- Work memory (Memory tab in Workflows) ---- */
+.mem-view {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mem-view[hidden] {
+  display: none;
+}
+
+.mem-header .bd-title {
+  margin-right: 0;
+}
+
+.mem-header .bd-tools {
+  margin-left: auto;
+}
+
+.mem-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  font-size: var(--fs-sm);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.mem-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.mem-state.on {
+  color: var(--success-text);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+}
+
+.mem-state.on .mem-state-dot {
+  background: var(--success);
+}
+
+.mem-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.mem-body > .wf-banner {
+  margin: 0;
+}
+
+.mem-intro {
+  max-width: 640px;
+  margin: var(--space-5) auto;
+  padding: var(--space-5);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.mem-intro h3 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--fs-xl);
+}
+
+.mem-intro > p {
+  margin: 0 0 var(--space-4);
+  line-height: 1.5;
+}
+
+.mem-intro-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.workflows-view .mem-intro-icon .icon {
+  color: var(--accent);
+}
+
+.mem-points {
+  list-style: none;
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.mem-points li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.mem-points li > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mem-points small {
+  line-height: 1.4;
+}
+
+.mem-intro .actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mem-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.mem-section-head h3 {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.mem-empty {
+  margin: 0;
+  padding: var(--space-3) 0;
+}
+
+.mem-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.mem-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+}
+
+.mem-card.kind-fleet {
+  border-left-color: var(--cyan);
+}
+
+.mem-card.kind-snippet {
+  border-left-color: var(--success);
+}
+
+.mem-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mem-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.mem-kind.kind-fleet {
+  color: var(--cyan);
+}
+
+.mem-kind.kind-snippet {
+  color: var(--success-text);
+}
+
+.workflows-view .mem-kind .icon {
+  color: inherit;
+}
+
+.mem-when {
+  font-size: var(--fs-xs);
+}
+
+.mem-card-title {
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+.mem-reason {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.mem-commands {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mem-commands code,
+.mem-history code,
+.mem-snippets code,
+.mem-preview {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.mem-commands code {
+  padding: 1px 6px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+.mem-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.mem-snippets,
+.mem-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.mem-snippets li,
+.mem-history li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 34px;
+  padding: 4px var(--space-3);
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+
+.mem-snippets li:first-child,
+.mem-history li:first-child {
+  border-top: 0;
+}
+
+.mem-snippets li code,
+.mem-history li code {
+  flex: 1;
+  min-width: 0;
+}
+
+.mem-snippets li strong {
+  min-width: 140px;
+}
+
+.mem-history li.mem-empty {
+  justify-content: center;
+}
+
+.mem-time {
+  flex: none;
+  width: 92px;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.mem-where {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 110px;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--info-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mem-where.local {
+  color: var(--muted);
+}
+
+.workflows-view .mem-where .icon {
+  color: inherit;
+}
+
+.mem-masked {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--fs-xs);
+  color: var(--warn-text);
+}
+
+.mem-history li.masked code {
+  color: var(--muted);
+}
+
+.mem-history-tools {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.mem-search {
+  width: 260px;
+  height: 30px;
+  padding: 0 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.mem-preview {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  white-space: pre-wrap;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+.statusbar .memory-button {
+  color: var(--success-text);
+}
+
+:root[data-layout="studio"] .mem-card,
+:root[data-layout="studio"] .mem-intro,
+:root[data-layout="studio"] .mem-snippets li,
+:root[data-layout="studio"] .mem-history li {
+  background: var(--st-panel);
+}
+
+:root[data-theme="high-contrast"] .mem-card {
+  border-left-width: 4px;
+}
+
+@media (max-width: 760px) {
+  .mem-points {
+    grid-template-columns: 1fr;
+  }
+
+  .mem-where,
+  .mem-time {
+    width: auto;
+  }
 }
