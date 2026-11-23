@@ -182,7 +182,11 @@ registerSettingsSection({
         renderer,
         "Automatic draws with the GPU on macOS and Windows. On Linux it uses the compatible renderer, because some WebKitGTK setups show new output a frame late with the GPU; pick GPU to try it. The status bar shows which one a terminal uses.",
       ),
-      field("Font", font, "Leave empty for the first installed of JetBrains Mono, Cascadia Code, Fira Code, SF Mono, Menlo or Consolas."),
+      field(
+        "Font",
+        font,
+        "Leave empty for the first installed of JetBrains Mono, Cascadia Code, Fira Code, SF Mono, Menlo or Consolas. Prompt icons (Nerd Fonts) are built in, so any font works with Powerlevel10k or Starship.",
+      ),
       el(
         "label",
         { className: "check-row remember-row" },
