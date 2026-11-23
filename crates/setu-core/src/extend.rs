@@ -5,6 +5,10 @@
 //! own, or the Enterprise edition) can pass its own [`Extensions`] when it
 //! starts, to keep an audit trail or to refuse commands a team has ruled out.
 //!
+//! A build can also add a settings page of its own ([`SettingsPanel`]): the
+//! app draws it from plain data (rows, lines, buttons), so the extension
+//! never runs code in the web view.
+//!
 //! The hooks get only what they need. An [`AuditEvent`] never carries a
 //! password, key, passphrase or command output. A [`CommandCheck`] sees the
 //! command text, because that is what a policy decides on; an implementation
@@ -129,12 +133,70 @@ impl CommandPolicy for AllowAll {
     }
 }
 
+/// How a [`PanelSection`] is doing, shown as a coloured badge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PanelStatus {
+    Ok,
+    Warning,
+    Error,
+}
+
+/// A button on a panel. Pressing it calls [`SettingsPanel::action`] with `id`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PanelAction {
+    pub id: String,
+    pub label: String,
+}
+
+/// One block of a settings panel: a heading, label/value rows, optional
+/// monospace lines (a log tail, say) and buttons. All plain text.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize)]
+pub struct PanelSection {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<PanelStatus>,
+    /// A sentence under the heading.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    pub rows: Vec<(String, String)>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<PanelAction>,
+}
+
+/// What pressing a panel button did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionOutcome {
+    /// Show this sentence.
+    Message(String),
+    /// Save `contents` as a new file named `file_name` in the person's
+    /// Downloads folder (the app picks the folder and never overwrites).
+    Save { file_name: String, contents: String },
+}
+
+/// A settings page a build adds, such as an organisation's licence, audit
+/// log and policy.
+pub trait SettingsPanel: Send + Sync + fmt::Debug {
+    /// The page's name in Settings, e.g. "Organization".
+    fn title(&self) -> String;
+    /// The edition the build runs as, e.g. "Enterprise", for the title bar
+    /// and status bar. `None` keeps the plain product name.
+    fn edition(&self) -> Option<String>;
+    /// The page's contents, read each time it is shown.
+    fn sections(&self) -> Vec<PanelSection>;
+    /// Runs the button `id`. `Err` is shown to the person.
+    fn action(&self, id: &str) -> Result<ActionOutcome, String>;
+}
+
 /// The hooks a build of the app starts with. `Extensions::default()` is the
 /// open-source behaviour: nothing recorded, nothing blocked.
 #[derive(Debug, Clone)]
 pub struct Extensions {
     audit: Arc<dyn AuditSink>,
     policy: Arc<dyn CommandPolicy>,
+    panel: Option<Arc<dyn SettingsPanel>>,
 }
 
 impl Default for Extensions {
@@ -142,6 +204,7 @@ impl Default for Extensions {
         Extensions {
             audit: Arc::new(NoAudit),
             policy: Arc::new(AllowAll),
+            panel: None,
         }
     }
 }
@@ -155,6 +218,21 @@ impl Extensions {
     pub fn with_policy(mut self, policy: Arc<dyn CommandPolicy>) -> Self {
         self.policy = policy;
         self
+    }
+
+    pub fn with_panel(mut self, panel: Arc<dyn SettingsPanel>) -> Self {
+        self.panel = Some(panel);
+        self
+    }
+
+    /// The build's own settings page, if it has one.
+    pub fn panel(&self) -> Option<&Arc<dyn SettingsPanel>> {
+        self.panel.as_ref()
+    }
+
+    /// The edition name the build runs as, if it says.
+    pub fn edition(&self) -> Option<String> {
+        self.panel.as_ref().and_then(|p| p.edition())
     }
 
     pub fn audit(&self, event: AuditEvent) {
@@ -250,6 +328,13 @@ mod tests {
             "workflow deploy, step restart: rule `no-reboot`"
         );
         assert!(!events[0].detail.contains("hunter2"));
+    }
+
+    #[test]
+    fn no_panel_by_default() {
+        let ext = Extensions::default();
+        assert!(ext.panel().is_none());
+        assert_eq!(ext.edition(), None);
     }
 
     #[test]

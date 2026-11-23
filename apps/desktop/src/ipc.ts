@@ -26,7 +26,29 @@ export interface AppInfo {
   os: string;
   /** Local login name, the default SSH user. */
   user: string;
+  /** Set by builds with extensions, e.g. "Enterprise". */
+  edition?: string;
 }
+
+export type PanelStatus = "ok" | "warning" | "error";
+
+export interface PanelSection {
+  title: string;
+  status?: PanelStatus;
+  note?: string;
+  rows: [string, string][];
+  lines?: string[];
+  actions?: { id: string; label: string }[];
+}
+
+export interface PanelView {
+  title: string;
+  sections: PanelSection[];
+}
+
+/** The settings page a build with extensions adds; `null` in the open-source build. */
+export const extensionPanel = () => invoke<PanelView | null>("extension_panel");
+export const extensionAction = (id: string) => invoke<{ message: string }>("extension_action", { id });
 
 export const appInfo = () => invoke<AppInfo>("app_info");
 

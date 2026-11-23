@@ -13,7 +13,8 @@ use setu_desktop_lib::Extensions;
 fn main() {
     let extensions = Extensions::default()
         .with_audit(Arc::new(MyAuditLog::open()))
-        .with_policy(Arc::new(MyPolicy::load()));
+        .with_policy(Arc::new(MyPolicy::load()))
+        .with_panel(Arc::new(MyAdminPage::new()));
     setu_desktop_lib::run_with(extensions);
 }
 ```
@@ -38,6 +39,12 @@ Events never hold a password, passphrase, key or command output, and a failed lo
 `check(&CommandCheck)` is asked before each command a workflow step runs on a host, with the saved host's name, the command and where it came from (`CommandOrigin::Workflow { workflow, step }`). Return `PolicyDecision::Allow`, or `Deny { reason }`: the command is not run, that host fails with "blocked by policy: <reason>", and the refusal is recorded as `command.blocked`. Name the rule in the reason, not the command, because the reason is shown and recorded.
 
 Commands typed into a terminal are not checked: they are the person's own keystrokes.
+
+## A settings page: `SettingsPanel`
+
+A build can add one page to Settings (for example "Organization", with a licence, an audit log and a policy). The extension returns plain data: sections with a title, an optional status badge (`ok`, `warning`, `error`), a note, label/value rows, monospace lines and buttons. The web view draws it as text and never runs code or HTML from the extension. A button calls `action(id)`, off the main thread, which returns either a message to show or a file to save. Saved files go to a **new** file in the person's Downloads folder (or home folder), with mode 0600. The name is reduced to plain characters, and an existing file is never overwritten.
+
+`edition()` names the edition (for example "Enterprise"), which then shows in the window title and the status bar.
 
 ## Rules for the hooks
 

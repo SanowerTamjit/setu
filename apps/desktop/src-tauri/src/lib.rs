@@ -5,6 +5,7 @@
 //! [`ssh`], [`files`], [`hosts`], [`vault`], [`workflows`], [`memory`] and [`session`].
 
 mod color_schemes;
+mod extensions;
 mod files;
 mod hosts;
 mod keys;
@@ -28,14 +29,18 @@ struct AppInfo {
     os: &'static str,
     /// Local login name, the default SSH user (as in OpenSSH).
     user: String,
+    /// The edition a build with extensions runs as ("Enterprise"), if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edition: Option<String>,
 }
 
 #[tauri::command]
-fn app_info() -> AppInfo {
+fn app_info(extensions: tauri::State<'_, Extensions>) -> AppInfo {
     AppInfo {
         version: setu_core::VERSION,
         os: std::env::consts::OS,
         user: ssh::local_user(),
+        edition: extensions.edition(),
     }
 }
 
@@ -63,6 +68,11 @@ pub fn run_with(extensions: Extensions) {
         .manage(memory::Memory::from_env())
         .setup(|app| {
             use tauri::{Emitter, Manager};
+            if let Some(edition) = app.state::<Extensions>().edition() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_title(&format!("Setu {edition}"));
+                }
+            }
             let vault = app.state::<vault::VaultState>().inner().clone();
             vault.spawn_auto_lock(app.handle().clone());
             // Unlock from the OS keychain off the main thread (the keychain
@@ -85,6 +95,8 @@ pub fn run_with(extensions: Extensions) {
         })
         .invoke_handler(tauri::generate_handler![
             app_info,
+            extensions::extension_panel,
+            extensions::extension_action,
             terminals::list_shells,
             terminals::open_terminal,
             terminals::write_terminal,
