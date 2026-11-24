@@ -174,6 +174,11 @@ pub enum ActionOutcome {
     /// Save `contents` as a new file named `file_name` in the person's
     /// Downloads folder (the app picks the folder and never overwrites).
     Save { file_name: String, contents: String },
+    /// Open `url` in the person's web browser (a sign-in page, say) and
+    /// show `message`. The app opens only `https://` addresses, or
+    /// `http://` to this computer (127.0.0.1, localhost), and refuses
+    /// anything else.
+    OpenUrl { url: String, message: String },
 }
 
 /// A settings page a build adds, such as an organisation's licence, audit

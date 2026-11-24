@@ -37,6 +37,7 @@ pub struct ActionResult {
 /// Presses button `id` of the build's settings page.
 #[tauri::command]
 pub async fn extension_action(
+    app: tauri::AppHandle,
     extensions: State<'_, Extensions>,
     id: String,
 ) -> Result<ActionResult, String> {
@@ -62,7 +63,43 @@ pub async fn extension_action(
                 message: format!("Saved to {}", path.display()),
             })
         }
+        ActionOutcome::OpenUrl { url, message } => {
+            let url =
+                browser_url(&url).ok_or("the page asked to open an address Setu does not open")?;
+            use tauri_plugin_opener::OpenerExt;
+            app.opener()
+                .open_url(url, None::<&str>)
+                .map_err(|_| "could not open your web browser".to_string())?;
+            Ok(ActionResult { message })
+        }
     }
+}
+
+/// An address an extension may open in the browser: `https://`, or
+/// `http://` to this computer. No other schemes (no `file:`, no custom
+/// handlers), no user name or password, no control characters, at most
+/// 2048 bytes. Returns it unchanged when it passes.
+fn browser_url(url: &str) -> Option<&str> {
+    if url.len() > 2048 || url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return None;
+    }
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://").filter(|r| loopback_host(r)))?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() || authority.contains('@') || authority.contains('\\') {
+        return None;
+    }
+    Some(url)
+}
+
+fn loopback_host(rest: &str) -> bool {
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = match authority.strip_prefix("[::1]") {
+        Some(port) => return port.is_empty() || port.starts_with(':'),
+        None => authority.rsplit_once(':').map_or(authority, |(h, _)| h),
+    };
+    host == "127.0.0.1" || host.eq_ignore_ascii_case("localhost")
 }
 
 fn downloads_dir() -> PathBuf {
@@ -128,6 +165,37 @@ fn save_new(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_web_and_loopback_addresses_open() {
+        for ok in [
+            "https://setu.example.com/sso/start?login=abc",
+            "http://127.0.0.1:7440/sso/start",
+            "http://localhost:7440/x",
+            "http://[::1]:7440/",
+        ] {
+            assert_eq!(browser_url(ok), Some(ok), "{ok}");
+        }
+        for bad in [
+            "file:///etc/passwd",
+            "http://setu.example.com/",
+            "http://127.0.0.1.evil.example/",
+            "http://localhost.evil.example:80/",
+            "https://user:pw@setu.example.com/",
+            "https://",
+            "javascript:alert(1)",
+            "smb://share/x",
+            "https://a.example/\nx",
+            "https://a.example/ space",
+            "HTTPS://a.example/",
+        ] {
+            assert_eq!(browser_url(bad), None, "{bad}");
+        }
+        assert_eq!(
+            browser_url(&format!("https://a.example/{}", "x".repeat(2100))),
+            None
+        );
+    }
 
     #[test]
     fn names_stay_in_the_folder() {

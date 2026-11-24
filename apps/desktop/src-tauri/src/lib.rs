@@ -54,6 +54,8 @@ pub fn run() {
 #[allow(clippy::expect_used)]
 pub fn run_with(extensions: Extensions) {
     tauri::Builder::default()
+        // Rust-only: no capability grants the web view its commands.
+        .plugin(tauri_plugin_opener::init())
         .manage(extensions)
         .manage(terminals::Terminals::default())
         .manage(hosts::Hosts::from_env())

@@ -17,7 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- Extension points for builds of Setu that add their own hooks: an audit trail (SSH logins, file copies, finished workflow runs, refused commands) a command policy checked before each workflow step runs on a host, and a settings page of their own. The open-source app ships with none, so nothing changes for you. See `docs/extending.md`.
+- Extension points for builds of Setu that add their own hooks: an audit trail (SSH logins, file copies, finished workflow runs, refused commands), a command policy checked before each workflow step runs on a host, and a settings page of their own that can open a sign-in page in your browser. The open-source app ships with none, so nothing changes for you. See `docs/extending.md`.
 
 ### Changed
 
