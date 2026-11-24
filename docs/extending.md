@@ -14,6 +14,7 @@ fn main() {
     let extensions = Extensions::default()
         .with_audit(Arc::new(MyAuditLog::open()))
         .with_policy(Arc::new(MyPolicy::load()))
+        .with_access(Arc::new(MyAccessRules::new()))
         .with_panel(Arc::new(MyAdminPage::new()));
     setu_desktop_lib::run_with(extensions);
 }
@@ -27,7 +28,7 @@ The types live in `setu_core::extend`.
 
 | Action | When | `target` | `detail` |
 |---|---|---|---|
-| `ssh.connect` | a terminal tab logs in, or fails to | `user@host:port` | empty, or a fixed reason (`host key changed`, `needs a password`, …) |
+| `ssh.connect` | a terminal tab logs in, fails to, or the access policy refuses the login (outcome `blocked`) | `user@host:port` | empty, a fixed reason (`host key changed`, `needs a password`, …), or `not allowed: <reason>` |
 | `file.transfer` | an SFTP copy ends | host | `upload <source> to <folder>` (or `download`), `(paused)` when paused |
 | `workflow.run` | a workflow run finishes | workflow id | name and run id |
 | `command.blocked` | the policy refuses a command | saved host | workflow, step and the policy's reason |
@@ -39,6 +40,12 @@ Events never hold a password, passphrase, key or command output, and a failed lo
 `check(&CommandCheck)` is asked before each command a workflow step runs on a host, with the saved host's name, the command and where it came from (`CommandOrigin::Workflow { workflow, step }`). Return `PolicyDecision::Allow`, or `Deny { reason }`: the command is not run, that host fails with "blocked by policy: <reason>", and the refusal is recorded as `command.blocked`. Name the rule in the reason, not the command, because the reason is shown and recorded.
 
 Commands typed into a terminal are not checked: they are the person's own keystrokes.
+
+## Access policy: `AccessPolicy`
+
+`check_connect(&ConnectCheck)` is asked before every SSH login, from a terminal tab or a workflow, with the host's name, address, port, remote user and tags. A login typed into the connect form takes the name and tags of the saved host with the same address and port; otherwise the name is the address and there are no tags. Return `Allow`, or `Deny { reason }`: Setu does not open a connection, the person sees "Your organization does not allow this login: <reason>" (a workflow fails that host with the same text), and the refusal is recorded as a `blocked` `ssh.connect`. Only the target is checked, not a jump host on the way.
+
+The app calls it on a blocking thread, so it may take a moment (for example to ask a server), but every login waits for it: answer from a cache when you can.
 
 ## A settings page: `SettingsPanel`
 

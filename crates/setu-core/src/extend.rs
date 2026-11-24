@@ -123,7 +123,7 @@ pub trait CommandPolicy: Send + Sync + fmt::Debug {
     fn check(&self, command: &CommandCheck<'_>) -> PolicyDecision;
 }
 
-/// The default policy: every command may run.
+/// The default policy: every command may run, every login may happen.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AllowAll;
 
@@ -131,6 +131,32 @@ impl CommandPolicy for AllowAll {
     fn check(&self, _command: &CommandCheck<'_>) -> PolicyDecision {
         PolicyDecision::Allow
     }
+}
+
+impl AccessPolicy for AllowAll {
+    fn check_connect(&self, _login: &ConnectCheck<'_>) -> PolicyDecision {
+        PolicyDecision::Allow
+    }
+}
+
+/// An SSH login Setu is about to make, from a terminal tab or a workflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConnectCheck<'a> {
+    /// The saved host's name, or the address when the host is not saved.
+    pub name: &'a str,
+    /// The address connected to (DNS name or IP).
+    pub address: &'a str,
+    pub port: u16,
+    /// The remote user name.
+    pub login: &'a str,
+    /// The saved host's tags (empty when not saved).
+    pub tags: &'a [String],
+}
+
+/// Decides whether a login may happen, before Setu connects. It may take
+/// a moment (it can ask a server): the app calls it off the main thread.
+pub trait AccessPolicy: Send + Sync + fmt::Debug {
+    fn check_connect(&self, login: &ConnectCheck<'_>) -> PolicyDecision;
 }
 
 /// How a [`PanelSection`] is doing, shown as a coloured badge.
@@ -201,6 +227,7 @@ pub trait SettingsPanel: Send + Sync + fmt::Debug {
 pub struct Extensions {
     audit: Arc<dyn AuditSink>,
     policy: Arc<dyn CommandPolicy>,
+    access: Arc<dyn AccessPolicy>,
     panel: Option<Arc<dyn SettingsPanel>>,
 }
 
@@ -209,6 +236,7 @@ impl Default for Extensions {
         Extensions {
             audit: Arc::new(NoAudit),
             policy: Arc::new(AllowAll),
+            access: Arc::new(AllowAll),
             panel: None,
         }
     }
@@ -222,6 +250,11 @@ impl Extensions {
 
     pub fn with_policy(mut self, policy: Arc<dyn CommandPolicy>) -> Self {
         self.policy = policy;
+        self
+    }
+
+    pub fn with_access(mut self, access: Arc<dyn AccessPolicy>) -> Self {
+        self.access = access;
         self
     }
 
@@ -258,6 +291,21 @@ impl Extensions {
                         format!("workflow {workflow}, step {step}: {reason}")
                     }
                 },
+            });
+        }
+        decision
+    }
+
+    /// Asks the access policy about a login. A refusal is recorded in the
+    /// audit trail as a blocked `ssh.connect` before it is returned.
+    pub fn check_connect(&self, login: &ConnectCheck<'_>) -> PolicyDecision {
+        let decision = self.access.check_connect(login);
+        if let PolicyDecision::Deny { reason } = &decision {
+            self.audit(AuditEvent {
+                action: AuditAction::SshConnect,
+                outcome: AuditOutcome::Blocked,
+                target: format!("{}@{}:{}", login.login, login.address, login.port),
+                detail: format!("not allowed: {reason}"),
             });
         }
         decision
@@ -302,6 +350,52 @@ mod tests {
                 step: "restart",
             },
         }
+    }
+
+    #[derive(Debug)]
+    struct NoRoot;
+
+    impl AccessPolicy for NoRoot {
+        fn check_connect(&self, c: &ConnectCheck<'_>) -> PolicyDecision {
+            if c.login == "root" {
+                PolicyDecision::Deny {
+                    reason: "no access rule of your teams covers this host and login".into(),
+                }
+            } else {
+                PolicyDecision::Allow
+            }
+        }
+    }
+
+    #[test]
+    fn a_refused_login_is_audited() {
+        let rec = Arc::new(Recorder::default());
+        let ext = Extensions::default()
+            .with_audit(rec.clone())
+            .with_access(Arc::new(NoRoot));
+        let tags = vec!["web".to_string()];
+        let login = |login| ConnectCheck {
+            name: "web1",
+            address: "10.0.0.5",
+            port: 22,
+            login,
+            tags: &tags,
+        };
+        assert_eq!(ext.check_connect(&login("deploy")), PolicyDecision::Allow);
+        assert!(matches!(
+            ext.check_connect(&login("root")),
+            PolicyDecision::Deny { .. }
+        ));
+        let events = rec.0.lock().expect("lock").clone();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, AuditAction::SshConnect);
+        assert_eq!(events[0].outcome, AuditOutcome::Blocked);
+        assert_eq!(events[0].target, "root@10.0.0.5:22");
+        // The open-source default lets every login through.
+        assert_eq!(
+            Extensions::default().check_connect(&login("root")),
+            PolicyDecision::Allow
+        );
     }
 
     #[test]

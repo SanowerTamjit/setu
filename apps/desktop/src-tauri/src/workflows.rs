@@ -7,7 +7,7 @@
 //! passwords or passphrases come from the vault only.
 
 use crate::hosts::Hosts;
-use crate::ssh::{connect_client, ConnectRequest};
+use crate::ssh::{check_access, connect_client, ConnectRequest, Login};
 use crate::vault::VaultState;
 use serde::Serialize;
 use setu_core::extend::{
@@ -321,6 +321,9 @@ impl SshRunner {
             Arc::clone(map.entry(name.to_string()).or_default())
         };
         cell.get_or_init(|| async {
+            check_access(&self.extensions, Login::for_host(host))
+                .await
+                .map_err(|e| e.unattended_message())?;
             connect_client(ConnectRequest::for_host(host), &self.vault)
                 .await
                 .map(|(client, _)| Arc::new(client))
