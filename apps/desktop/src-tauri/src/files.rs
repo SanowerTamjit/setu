@@ -3,6 +3,7 @@
 
 use crate::terminals::Terminals;
 use serde::{Deserialize, Serialize};
+use setu_core::extend::{AuditAction, AuditEvent, AuditOutcome, Extensions};
 use setu_ssh::sftp::{self, Change, FileEntry, Progress, Sftp, Stat, TransferControl};
 use setu_ssh::{SshClient, SshError};
 use std::collections::HashMap;
@@ -207,6 +208,7 @@ pub enum Direction {
 #[allow(clippy::too_many_arguments)]
 pub async fn transfer(
     files: State<'_, Files>,
+    extensions: State<'_, Extensions>,
     id: u32,
     transfer_id: u32,
     direction: Direction,
@@ -242,9 +244,44 @@ pub async fn transfer(
     if let Ok(mut map) = files.transfers.lock() {
         map.remove(&transfer_id);
     }
+    extensions.audit(transfer_event(
+        session.client.host(),
+        direction,
+        &source,
+        &target_dir,
+        &result,
+        control.paused(),
+    ));
     match result {
         Err(SshError::Cancelled) if control.paused() => Err("paused".into()),
         other => other.map_err(err),
+    }
+}
+
+/// The audit record of a copy: which file went where, and how it ended.
+fn transfer_event<T>(
+    host: &str,
+    direction: Direction,
+    source: &str,
+    target_dir: &str,
+    result: &Result<T, SshError>,
+    paused: bool,
+) -> AuditEvent {
+    let outcome = match result {
+        Ok(_) => AuditOutcome::Succeeded,
+        Err(SshError::Cancelled) => AuditOutcome::Cancelled,
+        Err(_) => AuditOutcome::Failed,
+    };
+    let verb = match direction {
+        Direction::Download => "download",
+        Direction::Upload => "upload",
+    };
+    let paused = if paused { " (paused)" } else { "" };
+    AuditEvent {
+        action: AuditAction::FileTransfer,
+        outcome,
+        target: host.to_string(),
+        detail: format!("{verb} {source} to {target_dir}{paused}"),
     }
 }
 
@@ -385,6 +422,20 @@ pub fn transfer_pause(files: State<'_, Files>, transfer_id: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transfer_audit_names_the_file_and_outcome() {
+        let ok: Result<(), SshError> = Ok(());
+        let e = transfer_event("web1", Direction::Upload, "/tmp/a.tar", "/srv", &ok, false);
+        assert_eq!(e.action, AuditAction::FileTransfer);
+        assert_eq!(e.outcome, AuditOutcome::Succeeded);
+        assert_eq!(e.target, "web1");
+        assert_eq!(e.detail, "upload /tmp/a.tar to /srv");
+        let stopped: Result<(), SshError> = Err(SshError::Cancelled);
+        let e = transfer_event("web1", Direction::Download, "/a", "/b", &stopped, true);
+        assert_eq!(e.outcome, AuditOutcome::Cancelled);
+        assert_eq!(e.detail, "download /a to /b (paused)");
+    }
 
     #[test]
     fn local_listing_resolves_dot_dot() {

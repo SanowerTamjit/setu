@@ -3,6 +3,9 @@
 use crate::terminals::{output_sink, Session, Terminals};
 use crate::vault::{Availability, VaultState};
 use serde::{Deserialize, Serialize};
+use setu_core::extend::{
+    AuditAction, AuditEvent, AuditOutcome, ConnectCheck, Extensions, PolicyDecision,
+};
 use setu_ssh::{known_hosts, Auth, ConnectOptions, HostKeyInfo, ShellSize, SshError, Zeroizing};
 use setu_vault::SecretKind;
 use std::path::PathBuf;
@@ -291,20 +294,97 @@ pub async fn ssh_connect(
     state: State<'_, Terminals>,
     vault: State<'_, VaultState>,
     offered: State<'_, OfferedKeys>,
+    extensions: State<'_, Extensions>,
+    hosts: State<'_, crate::hosts::Hosts>,
     request: ConnectRequest,
     cols: u16,
     rows: u16,
     on_output: Channel<InvokeResponseBody>,
     on_exit: Channel<u32>,
 ) -> Result<OpenedSsh, ConnectFailure> {
+    // A refused login is audited by `check_connect` itself.
+    let saved = hosts.inventory().map(|i| i.hosts).unwrap_or_default();
+    check_access(&extensions, request.login_for(&saved)).await?;
+    let target = request.audit_target();
     let result = connect_and_open(
         window, &state, &vault, request, cols, rows, on_output, on_exit,
     )
     .await;
+    extensions.audit(connect_event(target, &result));
     if let Err(ConnectFailure::UnknownHostKey { key }) = &result {
         offered.offer(key);
     }
     result
+}
+
+/// A login to check against the build's access policy, owned so it can
+/// move to a blocking thread (an Enterprise build may ask its server).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Login {
+    pub name: String,
+    pub address: String,
+    pub port: u16,
+    pub login: String,
+    pub tags: Vec<String>,
+}
+
+impl Login {
+    pub(crate) fn for_host(host: &setu_hosts::Host) -> Self {
+        Login {
+            name: host.name.clone(),
+            address: host.host.trim().to_string(),
+            port: host.port,
+            login: user_or_local(host.user.as_deref().unwrap_or_default()),
+            tags: host.tags.clone(),
+        }
+    }
+}
+
+/// Asks the access policy before connecting. The open-source build allows
+/// every login; a refusal becomes an error the user can read.
+pub(crate) async fn check_access(
+    extensions: &Extensions,
+    login: Login,
+) -> Result<(), ConnectFailure> {
+    let extensions = extensions.clone();
+    let decision = tauri::async_runtime::spawn_blocking(move || {
+        extensions.check_connect(&ConnectCheck {
+            name: &login.name,
+            address: &login.address,
+            port: login.port,
+            login: &login.login,
+            tags: &login.tags,
+        })
+    })
+    .await
+    .map_err(|_| ConnectFailure::Error {
+        message: "the access check stopped unexpectedly".into(),
+    })?;
+    refusal(decision).map_or(Ok(()), Err)
+}
+
+fn refusal(decision: PolicyDecision) -> Option<ConnectFailure> {
+    match decision {
+        PolicyDecision::Allow => None,
+        PolicyDecision::Deny { reason } => Some(ConnectFailure::Error {
+            message: format!("Your organization does not allow this login: {reason}"),
+        }),
+    }
+}
+
+/// The audit record of a login: where, and why it failed (never a secret:
+/// [`ConnectFailure`] holds no password or passphrase).
+fn connect_event(target: String, result: &Result<OpenedSsh, ConnectFailure>) -> AuditEvent {
+    let (outcome, detail) = match result {
+        Ok(_) => (AuditOutcome::Succeeded, String::new()),
+        Err(e) => (AuditOutcome::Failed, e.audit_reason().to_string()),
+    };
+    AuditEvent {
+        action: AuditAction::SshConnect,
+        outcome,
+        target,
+        detail,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -380,6 +460,33 @@ pub(crate) async fn connect_client(
 }
 
 impl ConnectRequest {
+    /// The login this request makes, named and tagged as the saved host
+    /// with the same address and port when there is one.
+    fn login_for(&self, saved: &[setu_hosts::Host]) -> Login {
+        let address = self.host.trim();
+        let port = self.port.unwrap_or(22);
+        let host = saved
+            .iter()
+            .find(|h| h.host.trim().eq_ignore_ascii_case(address) && h.port == port);
+        Login {
+            name: host.map_or_else(|| address.to_string(), |h| h.name.clone()),
+            address: address.to_string(),
+            port,
+            login: user_or_local(&self.user),
+            tags: host.map(|h| h.tags.clone()).unwrap_or_default(),
+        }
+    }
+
+    /// `user@host:port` for an audit trail.
+    fn audit_target(&self) -> String {
+        format!(
+            "{}@{}:{}",
+            user_or_local(&self.user),
+            self.host.trim(),
+            self.port.unwrap_or(22)
+        )
+    }
+
     /// How a saved host connects, for runs nobody types into: secrets come
     /// from the vault only, nothing is saved.
     pub(crate) fn for_host(host: &setu_hosts::Host) -> Self {
@@ -411,6 +518,17 @@ impl ConnectRequest {
 }
 
 impl ConnectFailure {
+    /// A short, fixed reason for an audit trail.
+    fn audit_reason(&self) -> &'static str {
+        match self {
+            ConnectFailure::UnknownHostKey { .. } => "unknown host key",
+            ConnectFailure::HostKeyChanged { .. } => "host key changed",
+            ConnectFailure::NeedsPassphrase { .. } => "key needs a passphrase",
+            ConnectFailure::NeedsPassword { .. } => "needs a password",
+            ConnectFailure::Error { .. } => "connection or login failed",
+        }
+    }
+
     /// One sentence for a run log, where nobody can answer a prompt.
     pub(crate) fn unattended_message(&self) -> String {
         match self {
@@ -527,6 +645,114 @@ pub fn ssh_trust_host(offered: State<'_, OfferedKeys>, key: HostKeyInfo) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug, Default)]
+    struct Recorder(std::sync::Mutex<Vec<AuditEvent>>);
+
+    impl setu_core::extend::AuditSink for Recorder {
+        fn record(&self, event: &AuditEvent) {
+            if let Ok(mut events) = self.0.lock() {
+                events.push(event.clone());
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct OnlyDeploy;
+
+    impl setu_core::extend::AccessPolicy for OnlyDeploy {
+        fn check_connect(&self, c: &ConnectCheck<'_>) -> PolicyDecision {
+            if c.login == "deploy" && c.tags.iter().any(|t| t == "web") {
+                PolicyDecision::Allow
+            } else {
+                PolicyDecision::Deny {
+                    reason: "no access rule covers this host".into(),
+                }
+            }
+        }
+    }
+
+    fn request(host: &str, port: Option<u16>, user: &str) -> ConnectRequest {
+        ConnectRequest {
+            host: host.into(),
+            port,
+            user: user.into(),
+            auth: AuthRequest::Agent,
+            jump: None,
+        }
+    }
+
+    #[test]
+    fn a_typed_login_takes_the_saved_hosts_name_and_tags() {
+        let mut web = setu_hosts::Host::new("web1", "10.0.0.5");
+        web.tags = vec!["web".into()];
+        let saved = vec![web];
+        let login = request(" 10.0.0.5 ", None, "deploy").login_for(&saved);
+        assert_eq!(login.name, "web1");
+        assert_eq!(login.tags, vec!["web".to_string()]);
+        assert_eq!((login.address.as_str(), login.port), ("10.0.0.5", 22));
+        // Another port is another host: not saved, so no tags.
+        let other = request("10.0.0.5", Some(2222), "deploy").login_for(&saved);
+        assert_eq!(other.name, "10.0.0.5");
+        assert!(other.tags.is_empty());
+    }
+
+    #[test]
+    fn a_refused_login_does_not_connect_and_says_why() {
+        let rec = Arc::new(Recorder::default());
+        let ext = Extensions::default()
+            .with_audit(rec.clone())
+            .with_access(Arc::new(OnlyDeploy));
+        let mut web = setu_hosts::Host::new("web1", "10.0.0.5");
+        web.tags = vec!["web".into()];
+        web.user = Some("deploy".into());
+        let ok = tauri::async_runtime::block_on(check_access(&ext, Login::for_host(&web)));
+        assert!(ok.is_ok());
+        web.user = Some("root".into());
+        let refused = tauri::async_runtime::block_on(check_access(&ext, Login::for_host(&web)));
+        let Err(ConnectFailure::Error { message }) = refused else {
+            panic!("expected a refusal");
+        };
+        assert!(message.contains("does not allow this login"), "{message}");
+        assert!(
+            message.contains("no access rule covers this host"),
+            "{message}"
+        );
+        let events = rec.0.lock().expect("lock").clone();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].outcome, AuditOutcome::Blocked);
+        assert_eq!(events[0].target, "root@10.0.0.5:22");
+        // The open-source build lets it through.
+        let open = tauri::async_runtime::block_on(check_access(
+            &Extensions::default(),
+            Login::for_host(&web),
+        ));
+        assert!(open.is_ok());
+    }
+
+    #[test]
+    fn login_audit_has_where_and_why_but_no_secret() {
+        let request = ConnectRequest {
+            host: " db1.example ".into(),
+            port: Some(2222),
+            user: "ops".into(),
+            auth: AuthRequest::Password {
+                password: "hunter2".into(),
+                save: false,
+            },
+            jump: None,
+        };
+        let target = request.audit_target();
+        assert_eq!(target, "ops@db1.example:2222");
+        let failed: Result<OpenedSsh, ConnectFailure> = Err(ConnectFailure::Error {
+            message: "Permission denied for hunter2".into(),
+        });
+        let e = connect_event(target, &failed);
+        assert_eq!(e.action, AuditAction::SshConnect);
+        assert_eq!(e.outcome, AuditOutcome::Failed);
+        assert_eq!(e.detail, "connection or login failed");
+        assert!(!format!("{e:?}").contains("hunter2"));
+    }
 
     #[test]
     fn only_offered_keys_can_be_trusted() {

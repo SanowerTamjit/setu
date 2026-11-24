@@ -6377,3 +6377,89 @@ button.with-icon {
 .prompt-tools-title h3 {
   margin: 0;
 }
+
+/* A build's own settings page (settings-extension.ts). */
+.ext-section {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.settings-body .ext-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: var(--fs-md);
+}
+
+.ext-badge {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.ext-ok {
+  color: var(--success-text);
+}
+
+.ext-warning {
+  color: var(--warn-text);
+}
+
+.ext-error {
+  color: var(--danger-text);
+}
+
+.ext-rows {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.ext-rows th {
+  width: 34%;
+  text-align: left;
+  font-weight: normal;
+  color: var(--muted);
+  padding: 4px 8px 4px 0;
+  vertical-align: top;
+}
+
+.ext-rows td {
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+.ext-lines {
+  margin: 8px 0 0;
+  padding: 8px;
+  max-height: 180px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: pre;
+}
+
+.ext-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ext-message:empty {
+  display: none;
+}
+
+.ext-message {
+  font-size: var(--fs-sm);
+  color: var(--info-text);
+}

@@ -38,6 +38,14 @@ pub trait Runner: Send + Sync + 'static {
 
     /// Asks the person to approve step `step`; `true` goes on.
     fn approve(&self, step: &str, message: &str) -> impl Future<Output = bool> + Send;
+
+    /// Whether step `step` may run `command` on `host`, asked just before
+    /// [`Runner::exec`]. `Err` holds the reason it may not (a policy said
+    /// no); the host then fails without running anything. Allows by default.
+    fn check(&self, step: &str, host: &str, command: &str) -> Result<(), String> {
+        let _ = (step, host, command);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -421,6 +429,12 @@ async fn run_host<R: Runner>(
         output: String::new(),
         error: None,
     };
+    if let Err(reason) = runner.check(&step.id, host, &step.command) {
+        r.state = State::Failed;
+        r.error = Some(format!("blocked by policy: {reason}"));
+        let _ = tx.send(host_event(&step.id, &r));
+        return r;
+    }
     let _ = tx.send(host_event(&step.id, &r));
     let exec = runner.exec(host, &step.command);
     let result = match timeout {
@@ -463,6 +477,28 @@ mod tests {
     struct Fake {
         log: Mutex<Vec<String>>,
         approve: bool,
+    }
+
+    /// Like [`Fake`], but refuses any command containing `reboot`.
+    #[derive(Default)]
+    struct Strict(Fake);
+
+    impl Runner for Strict {
+        async fn exec(&self, host: &str, command: &str) -> Result<ExecOutput, String> {
+            self.0.exec(host, command).await
+        }
+
+        async fn approve(&self, step: &str, message: &str) -> bool {
+            self.0.approve(step, message).await
+        }
+
+        fn check(&self, _step: &str, _host: &str, command: &str) -> Result<(), String> {
+            if command.contains("reboot") {
+                Err("rule `no-reboot`".into())
+            } else {
+                Ok(())
+            }
+        }
     }
 
     impl Runner for Fake {
@@ -520,6 +556,28 @@ mod tests {
 
     fn state(rec: &RunRecord, id: &str) -> State {
         rec.steps.iter().find(|s| s.step == id).expect("step").state
+    }
+
+    #[tokio::test]
+    async fn a_refused_command_never_runs() {
+        let (w, t) = workflow(
+            vec![
+                Step::command("a", "A", "sudo reboot", &["h1", "h2"]),
+                Step::command("b", "B", "echo b", &["h1"]),
+            ],
+            vec![Link::new("a", "b", When::Success)],
+        );
+        let strict = Arc::new(Strict::default());
+        let (_tx, rx) = watch::channel(false);
+        let rec = run("r1".into(), w, t, Arc::clone(&strict), rx, |_| {}).await;
+        assert_eq!(rec.status, RunStatus::Failed);
+        assert_eq!(state(&rec, "a"), State::Failed);
+        assert_eq!(
+            rec.steps[0].hosts[0].error.as_deref(),
+            Some("blocked by policy: rule `no-reboot`")
+        );
+        // Nothing reached a host: neither the refused step nor the one after it.
+        assert!(strict.0.log.lock().expect("lock").is_empty());
     }
 
     #[tokio::test]

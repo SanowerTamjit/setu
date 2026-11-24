@@ -17,6 +17,7 @@ import { openSettings } from "./settings-dialog";
 import "./settings-shells";
 import "./settings-features";
 import "./settings-prompts";
+import { registerExtensionPanel } from "./settings-extension";
 import { glyphTestCard, preloadSymbols, promptThemesOn } from "./prompt-themes";
 import { pasteAllowed } from "./paste-guard";
 import { openKeyManager } from "./key-manager";
@@ -1039,7 +1040,8 @@ async function boot() {
   setSidebar(sidebar !== "closed");
   void hostsPanel.reload();
   void vaultStatus().then(renderVault);
-  statusVersion.textContent = `Setu ${info.version} · ${info.os}`;
+  statusVersion.textContent = `Setu ${info.edition ? info.edition + " " : ""}${info.version} · ${info.os}`;
+  void registerExtensionPanel();
   applyKeymap();
   if (detachedToken !== null && (await receiveTab(detachedToken))) {
     restoring = false;
