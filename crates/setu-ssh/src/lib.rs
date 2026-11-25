@@ -13,6 +13,8 @@
 //! - **Interactive shells** with a PTY, streamed to a callback like `setu-pty`.
 //! - **SFTP**: browse, create, rename and delete remote files, and copy files
 //!   or whole folders either way with progress and cancel ([`sftp`]).
+//! - **Tunnels**: local, remote and dynamic (SOCKS5) port forwarding
+//!   ([`tunnel`]).
 //! - Local checks on private keys and ssh-agent for `setu doctor` ([`keys`]).
 //!
 //! Secrets (passwords, key passphrases) are wrapped in [`zeroize::Zeroizing`]
@@ -25,6 +27,7 @@ pub mod keys;
 pub mod known_hosts;
 pub mod sftp;
 mod shell;
+pub mod tunnel;
 
 pub use client::{connect, Auth, ConnectOptions, SshClient};
 pub use error::SshError;

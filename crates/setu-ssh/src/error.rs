@@ -64,6 +64,10 @@ pub enum SshError {
     #[error("{path}: {reason}")]
     Files { path: String, reason: String },
 
+    /// A port forward could not start (port in use, refused by the server).
+    #[error("{0}")]
+    Tunnel(String),
+
     #[error("the transfer was cancelled")]
     Cancelled,
 }

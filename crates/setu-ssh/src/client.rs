@@ -2,8 +2,9 @@
 
 use crate::known_hosts::{self, HostKeyInfo, Verdict};
 use crate::shell::{ShellSize, SshShell};
+use crate::tunnel::{self, RemoteForwards, RemoteTarget};
 use crate::SshError;
-use russh::client::{self, Handle};
+use russh::client::{self, ChannelOpenHandle, Handle, Msg};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -122,15 +123,31 @@ impl ConnectOptions {
 }
 
 /// The russh handler: verifies the server key and remembers why it refused one.
-struct Verifier {
+pub(crate) struct Verifier {
     host: String,
     port: u16,
     known_hosts: PathBuf,
     refusal: Arc<Mutex<Option<SshError>>>,
+    /// Remote forwards this connection asked for; others are refused.
+    forwards: RemoteForwards,
 }
 
 impl client::Handler for Verifier {
     type Error = russh::Error;
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        tunnel::accept_forwarded(&self.forwards, channel, connected_port, reply).await;
+        Ok(())
+    }
 
     async fn check_server_key(
         &mut self,
@@ -182,6 +199,7 @@ pub struct SshClient {
     /// Jump connections must stay open while this one uses them.
     _via: Vec<SshClient>,
     host: String,
+    forwards: RemoteForwards,
 }
 
 impl std::fmt::Debug for SshClient {
@@ -196,6 +214,28 @@ impl SshClient {
     /// The host this connection logged in to (the last hop, not a jump host).
     pub fn host(&self) -> &str {
         &self.host
+    }
+
+    /// Whether the connection has closed (the server went away, the network
+    /// dropped, or [`SshClient::disconnect`] was called).
+    pub fn is_closed(&self) -> bool {
+        self.handle.is_closed()
+    }
+
+    pub(crate) fn handle(&self) -> &Handle<Verifier> {
+        &self.handle
+    }
+
+    pub(crate) fn remember_remote(&self, port: u32, target: RemoteTarget) {
+        if let Ok(mut forwards) = self.forwards.lock() {
+            forwards.insert(port, target);
+        }
+    }
+
+    pub(crate) fn forget_remote(&self, port: u32) {
+        if let Ok(mut forwards) = self.forwards.lock() {
+            forwards.remove(&port);
+        }
     }
 }
 
@@ -255,6 +295,7 @@ fn verifier(opts: &ConnectOptions) -> (Verifier, Arc<Mutex<Option<SshError>>>) {
             port: opts.port,
             known_hosts: opts.known_hosts.clone(),
             refusal: Arc::clone(&refusal),
+            forwards: RemoteForwards::default(),
         },
         refusal,
     )
@@ -281,10 +322,11 @@ fn handshake_error(
 
 async fn connect_tcp(opts: &ConnectOptions) -> Result<SshClient, SshError> {
     let (handler, refusal) = verifier(opts);
+    let forwards = Arc::clone(&handler.forwards);
     let handle = client::connect(config(), (opts.host.as_str(), opts.port), handler)
         .await
         .map_err(|e| handshake_error(opts, &refusal, e))?;
-    finish(handle, opts).await
+    finish(handle, opts, forwards).await
 }
 
 async fn connect_through(prev: &SshClient, opts: &ConnectOptions) -> Result<SshClient, SshError> {
@@ -298,21 +340,24 @@ async fn connect_through(prev: &SshClient, opts: &ConnectOptions) -> Result<SshC
             reason: format!("jump host {} could not open a tunnel: {e}", prev.host),
         })?;
     let (handler, refusal) = verifier(opts);
+    let forwards = Arc::clone(&handler.forwards);
     let handle = client::connect_stream(config(), channel.into_stream(), handler)
         .await
         .map_err(|e| handshake_error(opts, &refusal, e))?;
-    finish(handle, opts).await
+    finish(handle, opts, forwards).await
 }
 
 async fn finish(
     mut handle: Handle<Verifier>,
     opts: &ConnectOptions,
+    forwards: RemoteForwards,
 ) -> Result<SshClient, SshError> {
     authenticate(&mut handle, opts).await?;
     Ok(SshClient {
         handle,
         _via: Vec::new(),
         host: opts.host.clone(),
+        forwards,
     })
 }
 

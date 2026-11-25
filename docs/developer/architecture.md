@@ -26,7 +26,7 @@ Setu is a Rust core with thin clients on top. Everything that touches a network,
 |---|---|---|
 | `setu-core` | Where files live on each OS (`SETU_HOME`, XDG, `%APPDATA%`), the version, and the extension points (`extend.rs`) | `paths.rs`, `extend.rs` |
 | `setu-pty` | Detecting local shells (bash, zsh, fish, sh, PowerShell, cmd, WSL distros) and running them in a pseudo-terminal (`portable-pty`) | `shells.rs`, `session.rs`, `launch.rs` |
-| `setu-ssh` | SSH connections on `russh`: auth (agent, keys, password, FIDO2 keys through the agent), ProxyJump chains, strict `known_hosts` checking, interactive shells, SFTP with resumable transfers, key generation | `client.rs`, `known_hosts.rs`, `shell.rs`, `sftp.rs`, `keys.rs`, `keygen.rs` |
+| `setu-ssh` | SSH connections on `russh`: auth (agent, keys, password, FIDO2 keys through the agent), ProxyJump chains, strict `known_hosts` checking, interactive shells, SFTP with resumable transfers, key generation, tunnels (local, remote and SOCKS5 port forwarding) | `client.rs`, `known_hosts.rs`, `shell.rs`, `sftp.rs`, `tunnel.rs`, `keys.rs`, `keygen.rs` |
 | `setu-hosts` | The host inventory (`hosts.toml`) and importers: `ssh_config` (with `Include` and OpenSSH's first-match rules), PuTTY `.reg`, MobaXterm, CSV, Ansible INI/YAML | `model.rs`, `store.rs`, `ssh_config.rs`, `sources.rs`, `import.rs` |
 | `setu-vault` | The encrypted vault (Argon2id + XChaCha20-Poly1305) and the optional OS keychain unlock | `vault.rs`, `file.rs`, `keychain.rs` |
 | `setu-workflow` | Workflows: the model and its checks, the plan (which steps run when), the async engine over a `Runner` trait, files and run history, templates, and the task board | `model.rs`, `plan.rs`, `engine.rs`, `store.rs`, `board.rs` |
