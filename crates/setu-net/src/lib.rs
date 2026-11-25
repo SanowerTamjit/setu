@@ -179,8 +179,9 @@ pub fn parse_mac(text: &str) -> Result<[u8; 6], NetError> {
 /// Six 0xff bytes, then the MAC sixteen times.
 pub fn magic_packet(mac: [u8; 6]) -> [u8; 102] {
     let mut packet = [0xffu8; 102];
-    for chunk in packet[6..].chunks_exact_mut(6) {
-        chunk.copy_from_slice(&mac);
+    for i in 0..16 {
+        let at = 6 + i * 6;
+        packet[at..at + 6].copy_from_slice(&mac);
     }
     packet
 }
@@ -245,7 +246,7 @@ mod tests {
         assert!(parse_mac("zz:52:82:1a:9e:07").is_err());
         let p = magic_packet(mac);
         assert_eq!(&p[..6], &[0xff; 6]);
-        assert!(p[6..].chunks(6).all(|c| c == mac));
+        assert!((0..16).all(|i| p[6 + i * 6..12 + i * 6] == mac));
     }
 
     #[test]
