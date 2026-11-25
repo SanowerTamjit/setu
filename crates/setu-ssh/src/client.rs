@@ -636,21 +636,32 @@ impl SshClient {
                 let _ = channel.close().await;
                 Ok(took)
             }
-            // The server does not say why; ConnectFailed covers refused,
-            // no route and its own timeout.
-            Ok(Err(russh::Error::ChannelOpenFailure(russh::ChannelOpenFailure::ConnectFailed))) => {
-                Err(SshError::Tunnel(format!(
-                    "the server could not connect to {host}:{port} (nothing is listening, or a firewall refused it)"
-                )))
-            }
-            Ok(Err(russh::Error::ChannelOpenFailure(
-                russh::ChannelOpenFailure::AdministrativelyProhibited,
-            ))) => Err(SshError::Tunnel(
-                "the server does not allow forwarding (AllowTcpForwarding in its sshd_config)".into(),
-            )),
-            Ok(Err(e)) => Err(SshError::Tunnel(format!(
-                "the server could not connect to {host}:{port} ({e})"
+            Ok(Err(e)) => Err(open_failure(e, host, port)),
+            Err(_) => Err(SshError::Tunnel(format!(
+                "no answer from {host}:{port} in time"
             ))),
+        }
+    }
+
+    /// A TCP connection made by the server to `host:port`, as a byte
+    /// stream (a `direct-tcpip` channel, like one tunnel connection). Used to
+    /// look at a TLS certificate as the server sees it. `host` must be a host
+    /// name or address.
+    pub async fn open_tcp(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> Result<russh::ChannelStream<client::Msg>, SshError> {
+        crate::known_hosts::check_host(host).map_err(|_| {
+            SshError::Tunnel(format!("{host:?} is not a valid host name or address"))
+        })?;
+        let open = self
+            .handle
+            .channel_open_direct_tcpip(host, u32::from(port), "127.0.0.1", 0);
+        match tokio::time::timeout(timeout, open).await {
+            Ok(Ok(channel)) => Ok(channel.into_stream()),
+            Ok(Err(e)) => Err(open_failure(e, host, port)),
             Err(_) => Err(SshError::Tunnel(format!(
                 "no answer from {host}:{port} in time"
             ))),
@@ -664,4 +675,19 @@ impl SshClient {
             .await?;
         Ok(())
     }
+}
+
+/// Why the server could not open a forwarding channel, in words. The
+/// server does not say why; ConnectFailed covers refused, no route and its
+/// own timeout.
+fn open_failure(e: russh::Error, host: &str, port: u16) -> SshError {
+    SshError::Tunnel(match e {
+        russh::Error::ChannelOpenFailure(russh::ChannelOpenFailure::ConnectFailed) => format!(
+            "the server could not connect to {host}:{port} (nothing is listening, or a firewall refused it)"
+        ),
+        russh::Error::ChannelOpenFailure(russh::ChannelOpenFailure::AdministrativelyProhibited) => {
+            "the server does not allow forwarding (AllowTcpForwarding in its sshd_config)".into()
+        }
+        e => format!("the server could not connect to {host}:{port} ({e})"),
+    })
 }

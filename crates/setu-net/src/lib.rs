@@ -4,10 +4,14 @@
 //!   (a "TCP ping": it needs no administrator rights, unlike ICMP ping).
 //! - [`lookup`]: what addresses a name resolves to, using the system resolver.
 //! - [`wake`]: send a Wake-on-LAN magic packet.
+//! - [`tls::check`]: look at a server's TLS certificate (who it is for, who
+//!   signed it, when it expires, whether this computer trusts it).
 //!
 //! Every input is checked here ([`check_target`], [`parse_mac`]) so callers
 //! that pass on text from a window cannot reach anything but a host name or
 //! address. Nothing is ever run in a shell.
+
+pub mod tls;
 
 use serde::Serialize;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -28,6 +32,8 @@ pub enum NetError {
     Lookup { name: String, reason: String },
     #[error("could not send the Wake-on-LAN packet: {0}")]
     Send(String),
+    #[error("{0}")]
+    Tls(String),
 }
 
 /// A host name or IP address, nothing else: no spaces, no option-like

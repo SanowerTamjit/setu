@@ -839,3 +839,29 @@ export function monitorStart(host: string, interval: number, limits: MonitorLimi
   return invoke<string>("monitor_start", { host, interval, cpu: limits.cpu, mem: limits.mem, disk: limits.disk, onEvent: channel });
 }
 export const monitorStop = (id: string) => invoke<void>("monitor_stop", { id });
+
+export interface CertInfo {
+  subject: string;
+  issuer: string;
+  names: string[];
+  /** Seconds since 1970. */
+  notBefore: number;
+  notAfter: number;
+  daysLeft: number;
+  sha256: string;
+}
+
+export interface TlsReport {
+  trusted: boolean;
+  problem?: string | null;
+  protocol: string;
+  cipher: string;
+  /** Leaf first. */
+  chain: CertInfo[];
+  /** The name the certificate was checked for. */
+  name: string;
+  from: string;
+}
+
+export const netTls = (host: string, port: number, name?: string, through?: string) =>
+  invoke<TlsReport>("net_tls", { host, port, name: name || null, through: through || null });

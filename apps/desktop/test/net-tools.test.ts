@@ -70,3 +70,54 @@ describe("port check words", () => {
     expect(fromLabel("bastion")).toBe("through bastion");
   });
 });
+
+import { commonName, dateText, expiryWords, tlsHeadline, tlsVerdict } from "../src/net-tools";
+import type { TlsReport } from "../src/ipc";
+
+const tls = (over: Partial<TlsReport> = {}, daysLeft = 54): TlsReport => ({
+  trusted: true,
+  protocol: "TLS 1.3",
+  cipher: "TLS13_AES_128_GCM_SHA256",
+  name: "example.com",
+  from: "this computer",
+  chain: [
+    {
+      subject: "CN=example.com,O=Example\\, Inc.",
+      issuer: "CN=Example CA,O=Example",
+      names: ["example.com"],
+      notBefore: 1_790_000_000,
+      notAfter: 1_800_000_000,
+      daysLeft,
+      sha256: "AA:BB",
+    },
+  ],
+  ...over,
+});
+
+describe("TLS words", () => {
+  it("dates and expiry", () => {
+    expect(dateText(1_800_000_000)).toBe("2027-01-15");
+    expect(expiryWords(54)).toBe("expires in 54 days");
+    expect(expiryWords(1)).toBe("expires in 1 day");
+    expect(expiryWords(0)).toBe("expires today");
+    expect(expiryWords(-1)).toBe("expired 1 day ago");
+  });
+  it("judges trust and how soon it expires", () => {
+    expect(tlsVerdict(tls())).toBe("good");
+    expect(tlsVerdict(tls({}, 10))).toBe("mixed");
+    expect(tlsVerdict(tls({}, -2))).toBe("bad");
+    expect(tlsVerdict(tls({ trusted: false, problem: "the certificate has expired" }))).toBe("bad");
+    expect(tlsVerdict(tls({ chain: [] }))).toBe("bad");
+  });
+  it("says it in one line", () => {
+    expect(tlsHeadline(tls())).toBe("Trusted for example.com · expires in 54 days (2027-01-15)");
+    expect(tlsHeadline(tls({ trusted: false, problem: "the certificate is not for db" }))).toBe(
+      "Not trusted: the certificate is not for db · expires in 54 days (2027-01-15)",
+    );
+  });
+  it("picks the common name", () => {
+    expect(commonName("CN=example.com,O=Example\\, Inc.")).toBe("example.com");
+    expect(commonName("O=Acme,CN=a\\,b")).toBe("a,b");
+    expect(commonName("O=No CN")).toBe("O=No CN");
+  });
+});

@@ -196,6 +196,7 @@ pub fn run_with(extensions: Extensions) {
             nettools::net_lookup,
             nettools::net_ping,
             nettools::net_wake,
+            nettools::net_tls,
             monitor::monitor_start,
             monitor::monitor_stop,
         ])

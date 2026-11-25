@@ -5,8 +5,8 @@
 
 import { el, errorText, field } from "./dom";
 import { icon, type IconName } from "./icons";
-import { netCheckPort, netLookup, netPing, netWake, type Host } from "./ipc";
-import { attemptLine, checkBroadcast, checkMac, checkTarget, fromLabel, parsePort, portHeadline, verdict } from "./net-tools";
+import { netCheckPort, netLookup, netPing, netTls, netWake, type CertInfo, type Host } from "./ipc";
+import { attemptLine, checkBroadcast, checkMac, checkTarget, commonName, dateText, expiryWords, fromLabel, parsePort, portHeadline, tlsHeadline, tlsVerdict, verdict } from "./net-tools";
 
 export interface NetActions {
   hosts: () => Host[];
@@ -47,7 +47,7 @@ export class NetView {
           { className: "muted tunnel-intro" },
           "Check what a computer or a server can reach. Through a saved host, checks run on that server, so you see its network, not yours. Setu logs in the way the host's tunnels and workflows do.",
         ),
-        el("div", { className: "net-grid" }, this.portTool(), this.lookupTool(), this.pingTool(), this.wakeTool()),
+        el("div", { className: "net-grid" }, this.portTool(), this.tlsTool(), this.lookupTool(), this.pingTool(), this.wakeTool()),
       ),
     );
   }
@@ -155,6 +155,63 @@ export class NetView {
       },
     );
     return t.card;
+  }
+
+  private tlsTool() {
+    const host = el("input", { placeholder: "example.com or 10.0.0.5", spellcheck: false, autocomplete: "off" });
+    const port = el("input", { value: "443", inputMode: "numeric", autocomplete: "off" });
+    const name = el("input", { placeholder: "Same as host", spellcheck: false, autocomplete: "off" });
+    const t = this.tool(
+      "lock",
+      "TLS certificate",
+      "Who a server's certificate is for, who signed it, when it expires, and whether this computer trusts it.",
+      [
+        el("div", { className: "net-row" }, field("Host", host), field("Port", port), el("span", {})),
+        field("Check for name", name, "Optional: the name people use, when you connect by address or through a load balancer."),
+      ],
+      "Check",
+      async () => {
+        const target = checkTarget(host.value);
+        const p = parsePort(port.value);
+        const n = name.value.trim() ? checkTarget(name.value) : "";
+        if (!target) return this.bad(t.result, "Type a host name or IP address, like example.com.");
+        if (p === null) return this.bad(t.result, "The port is a number from 1 to 65535.");
+        if (n === null) return this.bad(t.result, "The name to check for is a host name, like www.example.com.");
+        const r = await netTls(target, p, n, this.through);
+        const chain = el(
+          "ol",
+          { className: "net-chain" },
+          ...r.chain.map((c, i) => this.cert(c, i)),
+        );
+        this.show(
+          t.result,
+          tlsVerdict(r),
+          tlsHeadline(r),
+          el(
+            "div",
+            {},
+            el("p", { className: "muted net-small" }, `${r.protocol} · ${r.cipher} · ${fromLabel(r.from === "this computer" ? "" : r.from)}`),
+            chain,
+          ),
+        );
+      },
+    );
+    return t.card;
+  }
+
+  private cert(c: CertInfo, i: number) {
+    const rows: [string, string][] = [
+      ["Issued by", commonName(c.issuer)],
+      ["Valid", `${dateText(c.notBefore)} to ${dateText(c.notAfter)} (${expiryWords(c.daysLeft)})`],
+      ...(c.names.length ? ([["Names", c.names.join(", ")]] as [string, string][]) : []),
+      ["SHA-256", c.sha256],
+    ];
+    return el(
+      "li",
+      { className: c.daysLeft < 0 ? "expired" : "" },
+      el("strong", { title: c.subject }, `${i === 0 ? "" : i === 1 ? "Signed by: " : "Then: "}${commonName(c.subject)}`),
+      el("dl", {}, ...rows.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])),
+    );
   }
 
   private lookupTool() {
