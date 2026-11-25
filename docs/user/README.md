@@ -15,6 +15,7 @@ Setu is a free, open-source terminal, SSH client and ops workbench for macOS, Li
 | [Terminal tabs](terminal.md) | Tabs, split panes, the command palette, find in scrollback, tabs that come back after a restart, hidden secrets, shell profiles, tabs in their own window |
 | [Connecting with SSH](ssh.md) | The connect dialog, ways to sign in, host-key trust, jump hosts |
 | [Saved hosts](hosts.md) | The hosts view, folders and tags, importing from `~/.ssh/config`, PuTTY, MobaXterm, CSV and Ansible, the jump-host map |
+| [Tunnels](tunnels.md) | Local, remote and SOCKS port forwarding over a saved host, with reconnect after a drop |
 | [Files (SFTP)](files.md) | Upload and download, the transfer queue (pause, resume, retry), editing remote files in your editor, permissions |
 | [The vault](vault.md) | Saving passwords and passphrases, auto-lock, unlocking with the OS keychain |
 | [SSH keys and known hosts](ssh-keys.md) | Making keys, ssh-agent, YubiKey and FIDO2 keys, managing `known_hosts` |

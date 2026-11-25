@@ -43,6 +43,9 @@ const PATHS = {
   // Three boxes joined by arrows: a workflow.
   calendar: "M4.5 6h15v14h-15zM4.5 10h15M8.5 4v4M15.5 4v4",
   board: "M4 5h16v14H4zM9.33 5v14M14.67 5v14M5.8 8h2M11 8h2M16.4 8h2M5.8 11h2M11 11h2",
+  // A tunnel portal over a road.
+  tunnel: "M3 19v-7a9 9 0 0 1 18 0v7M7.5 19v-6.5a4.5 4.5 0 0 1 9 0V19M2.5 19h19",
+  stop: "M7 7h10v10H7z",
   workflow: "M3.5 4.5h6v5h-6zM14.5 4.5h6v5h-6zM9 17h6v4H9zM9.5 7h5M17.5 9.5v3.5H12V17M6.5 9.5v3.5H12",
 } as const;
 

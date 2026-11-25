@@ -686,3 +686,235 @@ async fn sftp_edit_in_place_and_permissions() {
     assert_eq!(mode(&site.join("index.html")), 0o640);
     assert_eq!(mode(&site.join("css/app.css")), 0o640);
 }
+
+// ---- Tunnels ----
+
+/// A TCP server on localhost that echoes every line back with a prefix, so a
+/// test can tell it reached this server and not something else.
+async fn echo_server() -> u16 {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        while let Ok((tcp, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let (read, mut write) = tcp.into_split();
+                let mut lines = BufReader::new(read).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if write
+                        .write_all(format!("echo:{line}\n").as_bytes())
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    port
+}
+
+/// Sends one line over `tcp` and returns the answer.
+async fn round_trip(tcp: &mut tokio::net::TcpStream, line: &str) -> String {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    tcp.write_all(format!("{line}\n").as_bytes())
+        .await
+        .expect("write");
+    let mut answer = String::new();
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        BufReader::new(tcp).read_line(&mut answer),
+    )
+    .await
+    .expect("answer in time")
+    .expect("read");
+    answer
+}
+
+/// Waits until `check` is true, for counters updated on other tasks.
+async fn eventually(check: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !check() {
+        assert!(Instant::now() < deadline, "condition not met in time");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn local_forward_carries_connections_and_stops() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let echo = echo_server().await;
+    let client = std::sync::Arc::new(connect(&sshd.opts()).await.expect("connect"));
+    let fwd = client
+        .forward_local("127.0.0.1", 0, "127.0.0.1", echo)
+        .await
+        .expect("forward");
+    assert_ne!(fwd.port(), 0, "a free port is picked");
+    assert_eq!(fwd.listening(), format!("127.0.0.1:{}", fwd.port()));
+
+    // Two connections at once, each with its own channel.
+    let mut a = tokio::net::TcpStream::connect(("127.0.0.1", fwd.port()))
+        .await
+        .expect("connect a");
+    let mut b = tokio::net::TcpStream::connect(("127.0.0.1", fwd.port()))
+        .await
+        .expect("connect b");
+    assert_eq!(round_trip(&mut a, "one").await, "echo:one\n");
+    assert_eq!(round_trip(&mut b, "two").await, "echo:two\n");
+    let stats = std::sync::Arc::clone(fwd.stats());
+    eventually(|| stats.active() == 2 && stats.total() == 2).await;
+    drop(a);
+    eventually(|| stats.active() == 1).await;
+
+    // Stopping frees the port and ends the connections it carried.
+    let port = fwd.port();
+    fwd.stop().await;
+    eventually(|| stats.active() == 0).await;
+    eventually(|| std::net::TcpStream::connect(("127.0.0.1", port)).is_err()).await;
+    client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn local_forward_to_a_closed_port_counts_a_failure() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let client = std::sync::Arc::new(connect(&sshd.opts()).await.expect("connect"));
+    let closed = free_port();
+    let fwd = client
+        .forward_local("127.0.0.1", 0, "127.0.0.1", closed)
+        .await
+        .expect("forward");
+    let _tcp = tokio::net::TcpStream::connect(("127.0.0.1", fwd.port()))
+        .await
+        .expect("connect");
+    let stats = std::sync::Arc::clone(fwd.stats());
+    eventually(|| stats.failed() == 1).await;
+    assert_eq!(stats.total(), 0);
+
+    // A port already taken here is a clear error.
+    let taken = fwd.port();
+    match client
+        .forward_local("127.0.0.1", taken, "127.0.0.1", 22)
+        .await
+    {
+        Err(SshError::Tunnel(message)) => {
+            assert!(message.contains("could not listen"), "{message}")
+        }
+        other => panic!("expected a tunnel error, got {other:?}"),
+    }
+    // A destination that is not a host name is refused before anything opens.
+    assert!(client
+        .forward_local("127.0.0.1", 0, "bad host\n", 22)
+        .await
+        .is_err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dynamic_forward_is_a_socks5_proxy() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let echo = echo_server().await;
+    let client = std::sync::Arc::new(connect(&sshd.opts()).await.expect("connect"));
+    let fwd = client.forward_dynamic("127.0.0.1", 0).await.expect("socks");
+
+    // By name: the server resolves "localhost".
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", fwd.port()))
+        .await
+        .expect("connect");
+    tcp.write_all(&[5, 1, 0]).await.expect("greeting");
+    let mut answer = [0u8; 2];
+    tcp.read_exact(&mut answer).await.expect("method");
+    assert_eq!(answer, [5, 0]);
+    let mut request = vec![5, 1, 0, 3, 9];
+    request.extend_from_slice(b"localhost");
+    request.extend_from_slice(&echo.to_be_bytes());
+    tcp.write_all(&request).await.expect("request");
+    let mut reply = [0u8; 10];
+    tcp.read_exact(&mut reply).await.expect("reply");
+    assert_eq!(reply[1], 0, "the SOCKS request was not granted");
+    assert_eq!(round_trip(&mut tcp, "via-socks").await, "echo:via-socks\n");
+
+    // A destination the server cannot reach gets "host unreachable".
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", fwd.port()))
+        .await
+        .expect("connect");
+    tcp.write_all(&[5, 1, 0]).await.expect("greeting");
+    tcp.read_exact(&mut answer).await.expect("method");
+    let mut request = vec![5, 1, 0, 1, 127, 0, 0, 1];
+    request.extend_from_slice(&free_port().to_be_bytes());
+    tcp.write_all(&request).await.expect("request");
+    tcp.read_exact(&mut reply).await.expect("reply");
+    assert_eq!(reply[1], 4);
+    let stats = std::sync::Arc::clone(fwd.stats());
+    eventually(|| stats.total() == 1 && stats.failed() == 1).await;
+
+    // Asking for a username and password only is turned down.
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", fwd.port()))
+        .await
+        .expect("connect");
+    tcp.write_all(&[5, 1, 2]).await.expect("greeting");
+    tcp.read_exact(&mut answer).await.expect("method");
+    assert_eq!(answer, [5, 0xff]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn remote_forward_carries_server_connections_back() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let echo = echo_server().await;
+    let client = std::sync::Arc::new(connect(&sshd.opts()).await.expect("connect"));
+    let fwd = client
+        .forward_remote("127.0.0.1", 0, "127.0.0.1", echo)
+        .await
+        .expect("remote forward");
+    assert_ne!(fwd.port(), 0, "the server picked a port");
+    assert!(fwd.listening().ends_with("on the server"));
+
+    // sshd runs on this machine, so its port is reachable from the test.
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", fwd.port()))
+        .await
+        .expect("connect to the server's port");
+    assert_eq!(round_trip(&mut tcp, "back").await, "echo:back\n");
+    let stats = std::sync::Arc::clone(fwd.stats());
+    eventually(|| stats.total() == 1).await;
+
+    let port = fwd.port();
+    fwd.stop().await;
+    eventually(|| std::net::TcpStream::connect(("127.0.0.1", port)).is_err()).await;
+    client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_closed_connection_is_noticed() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let client = std::sync::Arc::new(connect(&sshd.opts()).await.expect("connect"));
+    let fwd = client.forward_dynamic("127.0.0.1", 0).await.expect("socks");
+    assert!(!client.is_closed());
+    client.disconnect().await.expect("disconnect");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !client.is_closed() {
+        assert!(
+            Instant::now() < deadline,
+            "the closed connection was not noticed"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    // A tunnel on a closed connection still answers, but cannot carry anything.
+    let port = fwd.port();
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect");
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    tcp.write_all(&[5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1, 0, 22])
+        .await
+        .expect("request");
+    let mut reply = [0u8; 12];
+    tcp.read_exact(&mut reply).await.expect("reply");
+    assert_eq!(reply[3], 4, "expected host unreachable");
+}

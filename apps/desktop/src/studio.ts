@@ -11,7 +11,7 @@ import { el } from "./dom";
 import { icon, type IconName } from "./icons";
 import type { Tab } from "./tab";
 
-export type StudioView = "terminals" | "hosts" | "workflows";
+export type StudioView = "terminals" | "hosts" | "workflows" | "tunnels";
 
 export type SessionKind = "local" | "ssh" | "files";
 
@@ -38,6 +38,8 @@ export interface StudioActions {
   showView: (view: StudioView) => void;
   /** Whether the Workflows view is turned on (feature flag). */
   workflows: () => boolean;
+  /** Whether the Tunnels view is turned on (feature flag). */
+  tunnels: () => boolean;
   palette: () => void;
   /** Runs a command by id; `can` says whether it applies right now. */
   run: (id: string) => void;
@@ -81,6 +83,7 @@ export class Studio {
       ["terminals", "Terminals", "terminal"],
       ["hosts", "Hosts", "hosts"],
       ...(actions.workflows() ? ([["workflows", "Workflows", "workflow"]] as const) : []),
+      ...(actions.tunnels() ? ([["tunnels", "Tunnels", "tunnel"]] as const) : []),
     ] as const) {
       const b = el("button", { type: "button", className: "st-view" }, icon(name, 15), label);
       b.setAttribute("role", "tab");

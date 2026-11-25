@@ -28,6 +28,15 @@ impl Hosts {
     }
 
     /// The saved hosts as they are on disk now.
+    /// Hosts kept in `store` (tests).
+    #[cfg(test)]
+    pub fn with_store(store: HostStore) -> Self {
+        Hosts {
+            store: Ok(store),
+            lock: Mutex::new(()),
+        }
+    }
+
     pub fn inventory(&self) -> Result<Inventory, String> {
         let store = self.store()?;
         let _guard = self.lock.lock().map_err(|_| "hosts lock poisoned")?;

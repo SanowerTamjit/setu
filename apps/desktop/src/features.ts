@@ -79,6 +79,15 @@ export const FLAGS = [
     default: true,
     since: "0.1.0",
   },
+  {
+    id: "tunnels",
+    title: "Tunnels",
+    description:
+      "The Tunnels view: saved port forwards (ssh -L, -R and a SOCKS proxy like -D) over a saved host's login, with live status and reconnect after a drop. Off here hides the view; tunnels already running keep going until you quit.",
+    stage: "beta",
+    default: true,
+    since: "0.2.0",
+  },
 ] as const satisfies readonly FeatureFlag[];
 
 export type FlagId = (typeof FLAGS)[number]["id"];

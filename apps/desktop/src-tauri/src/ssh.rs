@@ -547,7 +547,7 @@ impl ConnectFailure {
     /// One sentence for a run log, where nobody can answer a prompt.
     pub(crate) fn unattended_message(&self) -> String {
         match self {
-            ConnectFailure::UnknownHostKey { .. } => "Setu does not know this server's host key yet. Connect to it once from Hosts to check and trust the key, then run again.".into(),
+            ConnectFailure::UnknownHostKey { .. } => "Setu does not know this server's host key yet. Connect to it once from Hosts to check and trust the key, then try again.".into(),
             ConnectFailure::HostKeyChanged { .. } => "the server's host key has CHANGED. Setu will not connect; connect from Hosts to see the warning.".into(),
             ConnectFailure::NeedsPassphrase { path, .. } => format!("the key {path} needs a passphrase. Save it in the vault (connect once and tick Save) or load the key into ssh-agent."),
             ConnectFailure::NeedsPassword { .. } => "this host logs in with a password and the vault has none for it (or is locked). Unlock the vault, or save the password when you connect.".into(),

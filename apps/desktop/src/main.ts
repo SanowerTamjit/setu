@@ -26,6 +26,7 @@ import "./known-hosts";
 import { openJumpMap } from "./jump-map";
 import { HostsHome } from "./hosts-home";
 import { WorkflowsView } from "./workflows-view";
+import { TunnelsView } from "./tunnels-view";
 import { memoryRecording, onMemoryChange, refreshMemoryState, registerMemorySnippets } from "./work-memory";
 import { memorySettings, memoryView } from "./ipc";
 import { enabled } from "./features";
@@ -357,8 +358,11 @@ const hostsHome = new HostsHome(hostsHomeEl, hostsPanel, {
 const workflowsEl = document.getElementById("workflows")!;
 const workflows = new WorkflowsView(workflowsEl, { hosts: () => hostsPanel.hosts });
 
-// The hosts view, workflows and the terminals share the space right of the rail.
-type View = "terminals" | "hosts" | "workflows";
+const tunnelsEl = document.getElementById("tunnels")!;
+const tunnels = new TunnelsView(tunnelsEl, { hosts: () => hostsPanel.hosts, showHosts: () => showView("hosts") });
+
+// The hosts view, workflows, tunnels and the terminals share the space right of the rail.
+type View = "terminals" | "hosts" | "workflows" | "tunnels";
 let view: View = "terminals";
 let sidebarWanted = true;
 const railButtons = new Map<string, HTMLButtonElement>();
@@ -372,11 +376,12 @@ function showView(next: View) {
   const hosts = next === "hosts";
   hostsHomeEl.hidden = !hosts;
   workflowsEl.hidden = next !== "workflows";
+  tunnelsEl.hidden = next !== "tunnels";
   terminalsEl.hidden = next !== "terminals";
   syncSidebar();
   sidebarButton.hidden = next !== "terminals";
   for (const [id, b] of railButtons) {
-    if (id === "hosts" || id === "terminals" || id === "workflows") b.classList.toggle("current", id === next);
+    if (id === "hosts" || id === "terminals" || id === "workflows" || id === "tunnels") b.classList.toggle("current", id === next);
   }
   studio.render();
   if (hosts) {
@@ -384,6 +389,8 @@ function showView(next: View) {
     hostsHome.focusSearch();
   } else if (next === "workflows") {
     void workflows.refresh().then(() => workflows.focus());
+  } else if (next === "tunnels") {
+    void tunnels.refresh().then(() => tunnels.focus());
   } else {
     active?.refit();
     active?.focus();
@@ -413,6 +420,7 @@ function buildRail() {
     item("hosts", "hosts", "Hosts", () => showView("hosts")),
     item("terminals", "terminal", "Terminals", () => showView("terminals")),
     ...(enabled("workflows") ? [item("workflows", "workflow", "Workflows", () => showView("workflows"))] : []),
+    ...(enabled("tunnels") ? [item("tunnels", "tunnel", "Tunnels", () => showView("tunnels"))] : []),
     item("keys", "key", "SSH keys and known hosts", () => void runCommand("keys.open")),
     item("snippets", "snippet", "Snippets", () => void showPalette("Snippet ")),
     item("vault", "vault", "Vault", () => void openVaultDialog().then(() => active?.focus())),
@@ -455,6 +463,7 @@ const studio: Studio = new Studio({
   },
   showView: (v) => showView(v),
   workflows: () => enabled("workflows"),
+  tunnels: () => enabled("tunnels"),
   palette: () => void showPalette(),
   run: (id) => void runCommand(id),
   can: (id) => {
@@ -686,6 +695,7 @@ for (const c of [
   { id: "view.hosts", title: "Go to hosts", category: "View", keywords: "cards home servers", run: () => showView("hosts") },
   { id: "view.terminals", title: "Go to terminals", category: "View", run: () => showView("terminals") },
   { id: "view.workflows", title: "Go to workflows", category: "View", keywords: "automation runbook pipeline flow", when: () => enabled("workflows"), run: () => showView("workflows") },
+  { id: "view.tunnels", title: "Go to tunnels", category: "View", keywords: "port forward socks proxy -L -R -D", when: () => enabled("tunnels"), run: () => showView("tunnels") },
   {
     id: "view.board",
     title: "Open the task board",

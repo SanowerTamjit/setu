@@ -18,6 +18,7 @@ Setu ships newer features behind flags, so a feature that misbehaves on someone'
 | `remoteEdit` | beta | The Files tab's **Edit** button (F4): edit a remote file in a local editor. |
 | `pasteGuard` | beta | Ask before pasting several lines into a shell without bracketed paste, where each line would run at once. |
 | `workflows` | beta | The Workflows view: steps that run commands on saved hosts, with approvals, failure branches and run history, plus the task board. See `docs/user/workflows.md`. |
+| `tunnels` | beta | The Tunnels view (rail, Studio title bar, `Go to tunnels`). Tunnels marked *start when Setu opens* still start, since only people who saw the view can have made them. See `docs/user/tunnels.md`. |
 | `promptThemes` | beta | The built-in Nerd Font symbols, Unicode 11 character widths (new tabs) and imported terminal colour schemes in Settings → Prompts. Off gives terminals your font as it is and the app theme's colours. See `docs/user/appearance.md`. |
 | `workMemory` | beta | The Memory tab in Workflows and the terminal's command capture. Remembering itself is off until you turn it on there; turning the flag off hides the tab and stops all remembering. See `docs/user/work-memory.md`. |
 

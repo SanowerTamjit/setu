@@ -4,7 +4,7 @@
 
 It aims to replace the toolbox most operators juggle every day (a terminal, an SFTP client, a tunnel manager, a password vault, a text editor, a folder of scripts and a wiki of runbooks) with one fast, local-first workbench.
 
-> **Status: pre-alpha.** Setu is in Phase 1 (MVP). [Nightly builds](docs/user/getting-started.md#1-install-setu) are there to try it, not yet for production machines. See [ROADMAP.md](ROADMAP.md) for what is being built and in what order.
+> **Status: pre-alpha.** Phase 1 (MVP) is done and Phase 2 (Public 1.0) is being built. [Nightly builds](docs/user/getting-started.md#1-install-setu) are there to try it, not yet for production machines. See [ROADMAP.md](ROADMAP.md) for what is being built and in what order.
 
 ## What Phase 1 delivers
 

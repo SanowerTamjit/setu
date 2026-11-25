@@ -27,6 +27,7 @@ Newer features ship behind switches, so if one misbehaves on your computer you c
 | Edit remote files in a local editor | Hides **Edit** (F4) in Files |
 | Ask before pasting several lines | Pastes go straight to the shell, without the check |
 | Workflows | Hides the Workflows view and the task board |
+| Tunnels | Hides the Tunnels view (tunnels already running keep going until you quit) |
 | Work memory and automation suggestions | Hides the Memory tab and stops all remembering |
 | Prompt themes | No built-in Nerd Font symbols, Unicode 11 widths or imported colour schemes |
 
@@ -49,6 +50,7 @@ Everything is a plain file in one folder, so you can back it up, copy it to anot
 | `vault.json` | Saved passwords and passphrases, encrypted ([details](vault.md)) | Encrypted |
 | `session.json` | The tabs to reopen after a restart: hosts, users, ports, key paths | No |
 | `workflows/*.toml`, `workflow-runs.json` | Workflows and their run history ([format](workflows.md#files)) | No |
+| `tunnels.toml` | Saved tunnels ([format](tunnels.md#files)) | No |
 | `board.toml` | The task board ([format](workflows.md#task-board)) | No |
 | `work-memory.json` | Commands remembered, if you turned work memory on ([details](work-memory.md)) | Masked |
 | `packs/` | Packs you installed | No |
