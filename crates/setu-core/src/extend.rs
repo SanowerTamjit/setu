@@ -5,6 +5,12 @@
 //! own, or the Enterprise edition) can pass its own [`Extensions`] when it
 //! starts, to keep an audit trail or to refuse commands a team has ruled out.
 //!
+//! A build can also record SSH terminal sessions ([`SessionRecorder`]) so
+//! they can be replayed for an audit. The app then tells the person in the
+//! terminal ([`RECORDING_NOTICE`]) before anything is recorded. A recorder
+//! sees what the server sends (the screen), never what the person types,
+//! so a password typed at a prompt that does not echo it is not recorded.
+//!
 //! A build can also add a settings page of its own ([`SettingsPanel`]): the
 //! app draws it from plain data (rows, lines, buttons), so the extension
 //! never runs code in the web view.
@@ -15,7 +21,7 @@
 //! must not log it unmasked.
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// What happened, for an audit trail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -159,6 +165,87 @@ pub trait AccessPolicy: Send + Sync + fmt::Debug {
     fn check_connect(&self, login: &ConnectCheck<'_>) -> PolicyDecision;
 }
 
+/// What the app writes at the top of a terminal it records, before any
+/// output from the server, so the person always knows.
+pub const RECORDING_NOTICE: &str =
+    "\x1b[2m[Setu] This session is recorded by your organization.\x1b[0m\r\n";
+
+/// An SSH shell that just opened, for a [`SessionRecorder`] to decide on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionStart<'a> {
+    /// The saved host's name, or the address when the host is not saved.
+    pub name: &'a str,
+    pub address: &'a str,
+    pub port: u16,
+    pub login: &'a str,
+    /// The saved host's tags (empty when not saved).
+    pub tags: &'a [String],
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// Decides which sessions are recorded, and starts a [`SessionTape`] for
+/// each. Called once per shell, on an async task: return quickly (open a
+/// file, do not ask a server).
+pub trait SessionRecorder: Send + Sync + fmt::Debug {
+    /// `None` leaves this session unrecorded.
+    fn start(&self, session: &SessionStart<'_>) -> Option<Box<dyn SessionTape>>;
+}
+
+/// One recording. Its methods are called on the thread that reads the
+/// session, so they must return quickly (buffer, write to a local file).
+pub trait SessionTape: Send + fmt::Debug {
+    /// Bytes the server sent, exactly as the terminal got them (a
+    /// multi-byte character can be split across two calls).
+    fn output(&mut self, bytes: &[u8]);
+    /// The terminal changed size.
+    fn resize(&mut self, cols: u16, rows: u16);
+    /// The session ended: `Some(code)` when the shell exited with one.
+    /// Called once; nothing is sent after it.
+    fn finish(&mut self, exit_code: Option<u32>);
+}
+
+/// The default recorder: records nothing.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoRecording;
+
+impl SessionRecorder for NoRecording {
+    fn start(&self, _session: &SessionStart<'_>) -> Option<Box<dyn SessionTape>> {
+        None
+    }
+}
+
+/// A recording under way, shared by a session's reader (output), its tab
+/// (resize, close) and its exit. After [`Recording::finish`] every call
+/// does nothing, so finishing twice (a closed tab whose shell then exits)
+/// is safe.
+#[derive(Debug, Clone)]
+pub struct Recording(Arc<Mutex<Option<Box<dyn SessionTape>>>>);
+
+impl Recording {
+    fn with(&self, f: impl FnOnce(&mut dyn SessionTape)) {
+        let mut tape = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(t) = tape.as_mut() {
+            f(t.as_mut());
+        }
+    }
+
+    pub fn output(&self, bytes: &[u8]) {
+        self.with(|t| t.output(bytes));
+    }
+
+    pub fn resize(&self, cols: u16, rows: u16) {
+        self.with(|t| t.resize(cols, rows));
+    }
+
+    pub fn finish(&self, exit_code: Option<u32>) {
+        let tape = self.0.lock().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(mut t) = tape {
+            t.finish(exit_code);
+        }
+    }
+}
+
 /// How a [`PanelSection`] is doing, shown as a coloured badge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -228,6 +315,7 @@ pub struct Extensions {
     audit: Arc<dyn AuditSink>,
     policy: Arc<dyn CommandPolicy>,
     access: Arc<dyn AccessPolicy>,
+    recorder: Arc<dyn SessionRecorder>,
     panel: Option<Arc<dyn SettingsPanel>>,
 }
 
@@ -237,6 +325,7 @@ impl Default for Extensions {
             audit: Arc::new(NoAudit),
             policy: Arc::new(AllowAll),
             access: Arc::new(AllowAll),
+            recorder: Arc::new(NoRecording),
             panel: None,
         }
     }
@@ -256,6 +345,19 @@ impl Extensions {
     pub fn with_access(mut self, access: Arc<dyn AccessPolicy>) -> Self {
         self.access = access;
         self
+    }
+
+    pub fn with_recorder(mut self, recorder: Arc<dyn SessionRecorder>) -> Self {
+        self.recorder = recorder;
+        self
+    }
+
+    /// Asks the recorder whether to record this session. When it says
+    /// yes, show [`RECORDING_NOTICE`] in the terminal before any output.
+    pub fn start_recording(&self, session: &SessionStart<'_>) -> Option<Recording> {
+        self.recorder
+            .start(session)
+            .map(|tape| Recording(Arc::new(Mutex::new(Some(tape)))))
     }
 
     pub fn with_panel(mut self, panel: Arc<dyn SettingsPanel>) -> Self {
@@ -440,5 +542,88 @@ mod tests {
     fn names_are_stable() {
         assert_eq!(AuditAction::SshConnect.as_str(), "ssh.connect");
         assert_eq!(AuditOutcome::Blocked.as_str(), "blocked");
+    }
+
+    #[derive(Debug, Default)]
+    struct Log(Arc<Mutex<Vec<String>>>);
+
+    impl SessionTape for Log {
+        fn output(&mut self, bytes: &[u8]) {
+            self.0
+                .lock()
+                .expect("lock")
+                .push(format!("o {}", String::from_utf8_lossy(bytes)));
+        }
+        fn resize(&mut self, cols: u16, rows: u16) {
+            self.0
+                .lock()
+                .expect("lock")
+                .push(format!("r {cols}x{rows}"));
+        }
+        fn finish(&mut self, exit_code: Option<u32>) {
+            self.0
+                .lock()
+                .expect("lock")
+                .push(format!("end {exit_code:?}"));
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct ProdOnly(Arc<Mutex<Vec<String>>>);
+
+    impl SessionRecorder for ProdOnly {
+        fn start(&self, s: &SessionStart<'_>) -> Option<Box<dyn SessionTape>> {
+            s.tags
+                .iter()
+                .any(|t| t == "prod")
+                .then(|| Box::new(Log(Arc::clone(&self.0))) as Box<dyn SessionTape>)
+        }
+    }
+
+    fn start(tags: &[String]) -> SessionStart<'_> {
+        SessionStart {
+            name: "db1",
+            address: "10.0.0.7",
+            port: 22,
+            login: "ops",
+            tags,
+            cols: 80,
+            rows: 24,
+        }
+    }
+
+    #[test]
+    fn nothing_is_recorded_by_default() {
+        let prod = vec!["prod".to_string()];
+        assert!(Extensions::default()
+            .start_recording(&start(&prod))
+            .is_none());
+    }
+
+    #[test]
+    fn a_recording_ends_once_and_then_ignores_everything() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let ext = Extensions::default().with_recorder(Arc::new(ProdOnly(Arc::clone(&log))));
+        assert!(ext.start_recording(&start(&[])).is_none());
+        let prod = vec!["prod".to_string()];
+        let rec = ext.start_recording(&start(&prod)).expect("recorded");
+        let tab = rec.clone();
+        rec.output(b"$ uptime\r\n");
+        tab.resize(120, 40);
+        tab.finish(None);
+        // The shell's own exit comes after the tab closed it.
+        rec.finish(Some(0));
+        rec.output(b"late");
+        assert_eq!(
+            *log.lock().expect("lock"),
+            vec!["o $ uptime\r\n", "r 120x40", "end None"]
+        );
+    }
+
+    #[test]
+    fn the_notice_is_one_line_that_resets_its_style() {
+        assert!(RECORDING_NOTICE.ends_with("\x1b[0m\r\n"));
+        assert_eq!(RECORDING_NOTICE.matches('\n').count(), 1);
+        assert!(RECORDING_NOTICE.contains("recorded"));
     }
 }

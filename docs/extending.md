@@ -15,6 +15,7 @@ fn main() {
         .with_audit(Arc::new(MyAuditLog::open()))
         .with_policy(Arc::new(MyPolicy::load()))
         .with_access(Arc::new(MyAccessRules::new()))
+        .with_recorder(Arc::new(MyRecorder::new()))
         .with_panel(Arc::new(MyAdminPage::new()));
     setu_desktop_lib::run_with(extensions);
 }
@@ -46,6 +47,18 @@ Commands typed into a terminal are not checked: they are the person's own keystr
 `check_connect(&ConnectCheck)` is asked before every SSH login, from a terminal tab or a workflow, with the host's name, address, port, remote user and tags. A login typed into the connect form takes the name and tags of the saved host with the same address and port; otherwise the name is the address and there are no tags. Return `Allow`, or `Deny { reason }`: Setu does not open a connection, the person sees "Your organization does not allow this login: <reason>" (a workflow fails that host with the same text), and the refusal is recorded as a `blocked` `ssh.connect`. Only the target is checked, not a jump host on the way.
 
 The app calls it on a blocking thread, so it may take a moment (for example to ask a server), but every login waits for it: answer from a cache when you can.
+
+## Session recording: `SessionRecorder`
+
+`start(&SessionStart)` is asked each time an SSH shell opens in a terminal tab or a split pane, after the login worked, with the host's name, address, port, remote user, tags and the terminal size. Return `None` to leave it unrecorded, or a `SessionTape`, which then gets:
+
+- `output(bytes)`: everything the server sends, exactly as the terminal gets it (a multi-byte character can be split across two calls);
+- `resize(cols, rows)`: when the terminal changes size;
+- `finish(exit_code)`: once, when the shell exits or the tab closes (`None` when there was no exit status). Nothing is sent after it.
+
+When a session is recorded, the app first writes a dimmed line at the top of the terminal, before any output from the server: `[Setu] This session is recorded by your organization.` The person always knows. Keystrokes are **not** given to the recorder, so a password typed at a `sudo` or `passwd` prompt (which the server does not echo) is not recorded; what the server echoes back, and everything it prints, is. Local shells and workflow runs are not recorded.
+
+`start` runs on an async task and the tape's methods on the thread reading the session, so keep them fast: open a local file, buffer, and upload elsewhere.
 
 ## A settings page: `SettingsPanel`
 
