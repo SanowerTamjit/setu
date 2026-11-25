@@ -27,6 +27,7 @@ Setu is a Rust core with thin clients on top. Everything that touches a network,
 | `setu-core` | Where files live on each OS (`SETU_HOME`, XDG, `%APPDATA%`), the version, and the extension points (`extend.rs`) | `paths.rs`, `extend.rs` |
 | `setu-pty` | Detecting local shells (bash, zsh, fish, sh, PowerShell, cmd, WSL distros) and running them in a pseudo-terminal (`portable-pty`) | `shells.rs`, `session.rs`, `launch.rs` |
 | `setu-ssh` | SSH connections on `russh`: auth (agent, keys, password, FIDO2 keys through the agent), ProxyJump chains, strict `known_hosts` checking, interactive shells, SFTP with resumable transfers, key generation, tunnels (local, remote and SOCKS5 port forwarding) | `client.rs`, `known_hosts.rs`, `shell.rs`, `sftp.rs`, `tunnel.rs`, `keys.rs`, `keygen.rs` |
+| `setu-monitor` | Agentless monitoring: the fixed `/proc` and `df` command, parsing its (untrusted) output, and rates and alerts from two readings | `lib.rs` |
 | `setu-net` | Network tools run from this computer: port check (TCP connect timing), DNS lookup, Wake-on-LAN, and the input checks every network tool uses | `lib.rs` |
 | `setu-hosts` | The host inventory (`hosts.toml`) and importers: `ssh_config` (with `Include` and OpenSSH's first-match rules), PuTTY `.reg`, MobaXterm, CSV, Ansible INI/YAML | `model.rs`, `store.rs`, `ssh_config.rs`, `sources.rs`, `import.rs` |
 | `setu-vault` | The encrypted vault (Argon2id + XChaCha20-Poly1305) and the optional OS keychain unlock | `vault.rs`, `file.rs`, `keychain.rs` |
@@ -52,6 +53,7 @@ Crates do not know about Tauri. Anything a crate needs from the outside (the env
 | `session.rs` | `session.json` (tabs to restore) and `settings.json` |
 | `workflows.rs` | Workflows, runs, history and the task board |
 | `tunnels.rs` | Saved tunnels: start, stop, live status, reconnect after a drop |
+| `monitor.rs` | Watching hosts: one SSH connection each, a reading every few seconds, reconnect |
 | `nettools.rs` | Port check, DNS lookup, ping and Wake-on-LAN, here or through a saved host |
 | `memory.rs` | Work memory |
 | `packs.rs`, `color_schemes.rs`, `prompts.rs` | Packs, colour scheme import, prompt tool detection |
@@ -75,6 +77,7 @@ Plain TypeScript and DOM, no framework; Vite builds it and the Rust crate embeds
 | Vault | `vault-dialog.ts` |
 | Workflows | `workflows-view.ts`, `board-view.ts`, `memory-view.ts`, `work-memory.ts` |
 | Tunnels | `tunnels-view.ts` (view and dialog), `tunnel-form.ts` (form checks and labels, tested in Node) |
+| Monitoring | `monitor-view.ts` (view and panels), `monitor-model.ts` (history, sparklines, words; tested in Node) |
 | Network tools | `net-view.ts` (view), `net-tools.ts` (input checks and result words, tested in Node) |
 | Settings | `settings.ts` (the model, `sanitize`), `settings-dialog.ts` and one `settings-*.ts` per page, `features.ts`, `themes.ts`, `prompt-themes.ts`, `packs.ts` |
 | Shared | `ipc.ts` (typed wrappers for every Rust command), `dom.ts`, `icons.ts`, `styles.css` |

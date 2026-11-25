@@ -117,6 +117,13 @@ Every host name is checked by `setu_net::check_target` first (letters, digits, `
 | `net_ping` | Through a host only: `ping -c 4 -W 2 NAME`, output capped at 16 KiB and stripped to plain text (no escape sequences) |
 | `net_wake` | A Wake-on-LAN packet for a checked MAC address, sent to UDP port 9 on 255.255.255.255 or a given IPv4 address that ends in `.255`; nothing else can be a destination |
 
+## Monitoring (`monitor.rs`)
+
+| Command | What it does |
+|---|---|
+| `monitor_start` | Watches a saved host (looked up by name in Rust): logs in like a tunnel (vault or agent only, never a prompt, host key must be trusted, access policy first), then every `interval` seconds (clamped 2-60) runs the fixed `setu_monitor::COMMAND`, parses it in Rust and sends a `Snapshot` (numbers and cleaned mount points only) on the window's channel. Alert limits are clamped to 1-100 %. At most 8 at once; stops when the window's channel closes, or after 10 failures in a row. Returns an id |
+| `monitor_stop` | Stops a monitor by id and disconnects |
+
 ## Adding a command
 
 See [How-to recipes](how-to.md#add-an-ipc-command).
