@@ -1,10 +1,11 @@
 //! SSH tabs: connect, handle host-key trust, and open a remote shell.
 
-use crate::terminals::{output_sink, Session, Terminals};
+use crate::terminals::{recorded_sink, Session, Terminals};
 use crate::vault::{Availability, VaultState};
 use serde::{Deserialize, Serialize};
 use setu_core::extend::{
-    AuditAction, AuditEvent, AuditOutcome, ConnectCheck, Extensions, PolicyDecision,
+    AuditAction, AuditEvent, AuditOutcome, ConnectCheck, Extensions, PolicyDecision, SessionStart,
+    RECORDING_NOTICE,
 };
 use setu_ssh::{known_hosts, Auth, ConnectOptions, HostKeyInfo, ShellSize, SshError, Zeroizing};
 use setu_vault::SecretKind;
@@ -304,10 +305,20 @@ pub async fn ssh_connect(
 ) -> Result<OpenedSsh, ConnectFailure> {
     // A refused login is audited by `check_connect` itself.
     let saved = hosts.inventory().map(|i| i.hosts).unwrap_or_default();
-    check_access(&extensions, request.login_for(&saved)).await?;
+    let login = request.login_for(&saved);
+    check_access(&extensions, login.clone()).await?;
     let target = request.audit_target();
     let result = connect_and_open(
-        window, &state, &vault, request, cols, rows, on_output, on_exit,
+        window,
+        &state,
+        &vault,
+        &extensions,
+        login,
+        request,
+        cols,
+        rows,
+        on_output,
+        on_exit,
     )
     .await;
     extensions.audit(connect_event(target, &result));
@@ -392,6 +403,8 @@ async fn connect_and_open(
     window: tauri::Window,
     state: &Terminals,
     vault: &VaultState,
+    extensions: &Extensions,
+    login: Login,
     request: ConnectRequest,
     cols: u16,
     rows: u16,
@@ -404,6 +417,8 @@ async fn connect_and_open(
         state,
         window.label(),
         Arc::new(client),
+        extensions,
+        Arc::new(login),
         cols,
         rows,
         on_output,
@@ -546,11 +561,33 @@ enum ShellError {
     State(String),
 }
 
-/// Opens an interactive shell on `client` and registers it as terminal session.
+/// Asks the build whether to record a shell that is opening.
+fn start_recording(
+    extensions: &Extensions,
+    login: &Login,
+    cols: u16,
+    rows: u16,
+) -> Option<setu_core::extend::Recording> {
+    extensions.start_recording(&SessionStart {
+        name: &login.name,
+        address: &login.address,
+        port: login.port,
+        login: &login.login,
+        tags: &login.tags,
+        cols,
+        rows,
+    })
+}
+
+/// Opens an interactive shell on `client` and registers it as terminal
+/// session. When the build records it, the terminal says so first.
+#[allow(clippy::too_many_arguments)]
 async fn open_shell(
     state: &Terminals,
     window: &str,
     client: Arc<setu_ssh::SshClient>,
+    extensions: &Extensions,
+    login: Arc<Login>,
     cols: u16,
     rows: u16,
     on_output: Channel<InvokeResponseBody>,
@@ -558,28 +595,57 @@ async fn open_shell(
 ) -> Result<u32, ShellError> {
     let id = state.next_id();
     let pipes = state.pipes(id, on_output, on_exit, window);
+    let recording = start_recording(extensions, &login, cols, rows);
+    if recording.is_some() {
+        pipes.notice(RECORDING_NOTICE);
+    }
     let on_exit = state.exit_handler(id, Arc::clone(&pipes));
+    let ends = recording.clone();
     let shell = client
         .open_shell(
             ShellSize { cols, rows },
-            output_sink(pipes),
+            recorded_sink(pipes, recording.clone()),
             // 255 is what OpenSSH reports when the connection drops without a status.
-            move |code| on_exit(code.unwrap_or(255)),
+            move |code| {
+                if let Some(r) = &ends {
+                    r.finish(code);
+                }
+                on_exit(code.unwrap_or(255))
+            },
         )
-        .await
-        .map_err(ShellError::Ssh)?;
+        .await;
+    let shell = match shell {
+        Ok(s) => s,
+        Err(e) => {
+            if let Some(r) = &recording {
+                r.finish(None);
+            }
+            return Err(ShellError::Ssh(e));
+        }
+    };
     state
-        .insert(id, Session::Ssh { shell, client })
+        .insert(
+            id,
+            Session::Ssh {
+                shell,
+                client,
+                login,
+                recording,
+            },
+        )
         .map_err(ShellError::State)?;
     Ok(id)
 }
 
 /// Opens another shell on the connection of SSH terminal `terminal_id`, for a
 /// split pane: no new login, and it shares the connection's jump hosts.
+// A Tauri command's arguments are what the UI sends; grouping them would only move the list.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn ssh_open_shell(
     window: tauri::Window,
     state: State<'_, Terminals>,
+    extensions: State<'_, Extensions>,
     terminal_id: u32,
     cols: u16,
     rows: u16,
@@ -589,10 +655,15 @@ pub async fn ssh_open_shell(
     let client = state
         .ssh_client(terminal_id)
         .ok_or("that pane is not an open SSH connection")?;
+    let login = state
+        .ssh_login(terminal_id)
+        .ok_or("that pane is not an open SSH connection")?;
     open_shell(
         &state,
         window.label(),
         client,
+        &extensions,
+        login,
         cols,
         rows,
         on_output,

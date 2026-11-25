@@ -6,6 +6,7 @@
 //! characters split across reads are reassembled by xterm.js, not mangled here.
 
 use serde::Serialize;
+use setu_core::extend::Recording;
 use setu_pty::{detect_shells, PtySession, PtySize, ShellProfile, SpawnOptions};
 use setu_ssh::{ShellSize, SshClient, SshShell};
 use std::collections::HashMap;
@@ -22,6 +23,10 @@ pub enum Session {
         shell: SshShell,
         /// Keeps the connection (and any jump hosts) open while the tab lives.
         client: Arc<SshClient>,
+        /// Who logged in where, for split panes on the same connection.
+        login: Arc<crate::ssh::Login>,
+        /// Set when the build records this session.
+        recording: Option<Recording>,
     },
 }
 
@@ -38,17 +43,30 @@ impl Session {
             Session::Local(pty) => pty
                 .resize(PtySize { rows, cols })
                 .map_err(|e| e.to_string()),
-            Session::Ssh { shell, .. } => shell
-                .resize(ShellSize { cols, rows })
-                .map_err(|e| e.to_string()),
+            Session::Ssh {
+                shell, recording, ..
+            } => {
+                shell
+                    .resize(ShellSize { cols, rows })
+                    .map_err(|e| e.to_string())?;
+                if let Some(r) = recording {
+                    r.resize(cols, rows);
+                }
+                Ok(())
+            }
         }
     }
 
     fn close(&self) -> Result<(), String> {
         match self {
             Session::Local(pty) => pty.kill().map_err(|e| e.to_string()),
-            Session::Ssh { shell, .. } => {
+            Session::Ssh {
+                shell, recording, ..
+            } => {
                 shell.close();
+                if let Some(r) = recording {
+                    r.finish(None);
+                }
                 Ok(())
             }
         }
@@ -161,6 +179,15 @@ impl Terminals {
         }
     }
 
+    /// The login behind an SSH tab, for opening another shell on it.
+    pub(crate) fn ssh_login(&self, id: u32) -> Option<Arc<crate::ssh::Login>> {
+        let sessions = self.sessions.lock().ok()?;
+        match sessions.get(&id)?.as_ref() {
+            Session::Ssh { login, .. } => Some(Arc::clone(login)),
+            Session::Local(_) => None,
+        }
+    }
+
     /// Creates the pipes for session `id`, shown in `window`.
     pub(crate) fn pipes(
         &self,
@@ -255,6 +282,26 @@ impl Terminals {
 /// Sends raw output bytes to whichever window shows the session.
 pub(crate) fn output_sink(pipes: Arc<Pipes>) -> impl FnMut(&[u8]) + Send {
     move |chunk: &[u8]| pipes.send(chunk)
+}
+
+/// [`output_sink`] that also hands every chunk to a recording.
+pub(crate) fn recorded_sink(
+    pipes: Arc<Pipes>,
+    recording: Option<Recording>,
+) -> impl FnMut(&[u8]) + Send {
+    move |chunk: &[u8]| {
+        if let Some(r) = &recording {
+            r.output(chunk);
+        }
+        pipes.send(chunk);
+    }
+}
+
+impl Pipes {
+    /// Shows text from Setu itself (not the server) in the terminal.
+    pub(crate) fn notice(&self, text: &str) {
+        self.send(text.as_bytes());
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -361,7 +408,66 @@ pub fn close_terminal(state: State<'_, Terminals>, id: u32) -> Result<(), String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use setu_core::extend::{
+        Extensions, SessionRecorder, SessionStart, SessionTape, RECORDING_NOTICE,
+    };
     use setu_pty::ShellKind;
+
+    #[derive(Debug, Default)]
+    struct Tape(Arc<Mutex<Vec<u8>>>);
+
+    impl SessionTape for Tape {
+        fn output(&mut self, bytes: &[u8]) {
+            self.0.lock().expect("lock").extend_from_slice(bytes);
+        }
+        fn resize(&mut self, _: u16, _: u16) {}
+        fn finish(&mut self, _: Option<u32>) {}
+    }
+
+    #[derive(Debug, Default)]
+    struct All(Arc<Mutex<Vec<u8>>>);
+
+    impl SessionRecorder for All {
+        fn start(&self, _: &SessionStart<'_>) -> Option<Box<dyn SessionTape>> {
+            Some(Box::new(Tape(Arc::clone(&self.0))))
+        }
+    }
+
+    /// The terminal gets the notice and then the server's output; the
+    /// recording gets only the server's output.
+    #[test]
+    fn a_recorded_terminal_shows_the_notice_and_records_only_the_server() {
+        let shown = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&shown);
+        let output = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(b) = body {
+                seen.lock().expect("lock").extend_from_slice(&b);
+            }
+            Ok(())
+        });
+        let terms = Terminals::default();
+        let pipes = terms.pipes(1, output, Channel::new(|_| Ok(())), "main");
+        let taped = Arc::new(Mutex::new(Vec::new()));
+        let ext = Extensions::default().with_recorder(Arc::new(All(Arc::clone(&taped))));
+        let recording = ext.start_recording(&SessionStart {
+            name: "db1",
+            address: "10.0.0.7",
+            port: 22,
+            login: "ops",
+            tags: &[],
+            cols: 80,
+            rows: 24,
+        });
+        pipes.notice(RECORDING_NOTICE);
+        let mut sink = recorded_sink(Arc::clone(&pipes), recording);
+        sink(b"ops@db1:~$ ");
+        let shown = shown.lock().expect("lock").clone();
+        assert_eq!(
+            shown,
+            [RECORDING_NOTICE.as_bytes(), b"ops@db1:~$ "].concat()
+        );
+        assert_eq!(*taped.lock().expect("lock"), b"ops@db1:~$ ");
+    }
 
     fn shell(id: &str) -> ShellProfile {
         ShellProfile {
