@@ -2,6 +2,8 @@
 
 A Files tab shows your computer on the left and an SSH host on the right, and copies files between them over SFTP. It uses the connection of an open SSH tab, so there is no second login.
 
+![A Files tab with a paused copy in the transfer queue](images/files-transfers.png)
+
 ## Opening a Files tab
 
 - From an SSH tab: click **Files** in the status bar, or press **Ctrl+Shift+E**.
@@ -33,7 +35,7 @@ The Files tab keeps the connection open even if you close its SSH tab.
 
 ## Editing a remote file in your editor
 
-Select a file on the server side and click **Edit** (or press **F4**). Setu copies it to a private temporary folder (`setu-edit` in your system's temp folder, readable only by you) and opens it in your editor. Every time you save, Setu writes it back to the server. The **Editing** list shows when each file was last saved.
+Select a file on the server side and click **Edit** (or press **F4**). Setu copies it to a private folder that only you can read (on Linux under `$XDG_RUNTIME_DIR/setu-edit`, or `~/.cache/setu/edit`; on macOS and Windows in your per-user temp folder), never the shared `/tmp`, and opens it in your editor. Every time you save, Setu writes it back to the server. The **Editing** list shows when each file was last saved.
 
 - Choose the editor in Settings → Files → **Editor**: a command such as `code`, `subl`, `gedit`, or `"C:\Program Files\Notepad++\notepad++.exe"`. Put `{file}` where the path goes if it is not last (for example `xterm -e vim {file}`). Empty means the app your system opens that kind of file with.
 - Saves replace the file's contents in place, so the file keeps its owner, group and permissions.
@@ -49,6 +51,8 @@ Select one or more items on the server side and click the **lock** button. The d
 - **User** and **Group** take a name or a number. Names are looked up on the server with `getent`. Changing them usually needs root on the server.
 - For folders, **Also apply to everything inside** changes the whole tree. Files inside get the mode as set; folders get it with execute added wherever read is allowed, so they can still be opened. Symbolic links are left alone.
 - The dialog shows the equivalent `chmod`/`chown` command, so you can see exactly what Apply will do.
+
+![The permissions dialog](images/files-permissions.png)
 
 ## Limits in this version
 

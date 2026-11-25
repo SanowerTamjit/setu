@@ -4,7 +4,7 @@
 
 It aims to replace the toolbox most operators juggle every day (a terminal, an SFTP client, a tunnel manager, a password vault, a text editor, a folder of scripts and a wiki of runbooks) with one fast, local-first workbench.
 
-> **Status: pre-alpha.** Setu is in Phase 1 (MVP). Nothing is usable yet. See [ROADMAP.md](ROADMAP.md) for what is being built and in what order.
+> **Status: pre-alpha.** Setu is in Phase 1 (MVP). [Nightly builds](docs/user/getting-started.md#1-install-setu) are there to try it, not yet for production machines. See [ROADMAP.md](ROADMAP.md) for what is being built and in what order.
 
 ## What Phase 1 delivers
 
@@ -15,6 +15,11 @@ It aims to replace the toolbox most operators juggle every day (a terminal, an S
 - An encrypted local vault for passwords and key passphrases (Argon2id + AEAD).
 
 No account, no telemetry, no cloud required.
+
+## Documentation
+
+- **[User guide](docs/user/README.md)**: install, first steps, and every feature. Start with [Getting started](docs/user/getting-started.md).
+- **[Developer guide](docs/developer/README.md)**: build from source, architecture, testing and contributing.
 
 ## Principles
 
@@ -45,10 +50,10 @@ pnpm desktop            # run the desktop app with hot reload
 pnpm build:ui           # build the UI once (needed before plain cargo builds)
 cargo test --workspace
 
-cargo install --path crates/setu-cli   # the `setu` command (see docs/cli.md)
+cargo install --path crates/setu-cli   # the `setu` command (see docs/user/cli.md)
 ```
 
-Nightly builds for macOS, Linux and Windows: see [docs/releasing.md](docs/releasing.md).
+Nightly builds for macOS, Linux and Windows: see [docs/developer/releasing.md](docs/developer/releasing.md).
 
 ## Contributing
 

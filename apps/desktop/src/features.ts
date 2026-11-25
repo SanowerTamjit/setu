@@ -8,7 +8,7 @@
 // - stable: kept only for one release so people can still turn it off,
 //   then the flag is removed and the feature is always on.
 //
-// Choices are saved in settings.json under "features". See docs/feature-flags.md.
+// Choices are saved in settings.json under "features". See docs/developer/feature-flags.md.
 
 import { settings, updateSettings } from "./settings";
 

@@ -1,8 +1,10 @@
 # Terminal tabs
 
-Each tab is a local shell or an SSH session. Shortcuts use Ctrl+Shift (Cmd+Shift on macOS), so plain Ctrl keys still reach the shell.
+Each tab is a local shell or an SSH session. Shortcuts use Ctrl+Shift (Cmd+Shift on macOS), so plain Ctrl keys still reach the shell. For themes, layouts, fonts and prompts, see [Appearance](appearance.md); for connecting to servers, see [Connecting with SSH](ssh.md).
 
 ## Keyboard shortcuts
+
+These are the main ones; [Keyboard shortcuts](keyboard-shortcuts.md) lists every shortcut in one place.
 
 | Shortcut | Action |
 |----------|--------|
@@ -25,47 +27,7 @@ Each tab is a local shell or an SSH session. Shortcuts use Ctrl+Shift (Cmd+Shift
 
 Ctrl+Shift+P opens one search box over everything: commands, saved hosts (`Connect: web-01`), shells and shell profiles (`New tab: …`), open tabs, themes, keybinding profiles and snippets from your packs. Type a few letters in any order of words; Enter runs the highlighted entry. With nothing typed, the commands you used last come first. Each entry shows its shortcut, if it has one.
 
-## Themes
-
-Settings → Appearance has five themes, each covering the whole app and the terminal colours, in both the Classic and Studio layouts: **Dark** (the default), **Light**, **High contrast** (pure black and white with strong focus outlines), **Ember** (warm charcoal with an amber accent) and **Sandstone** (soft paper tones with a teal accent). The terminal font size is set there too. Themes are also in the palette (`Theme`).
-
-## Layouts: Classic and Studio
-
-Settings → Appearance → **Layout** switches how the window is arranged. Both show the same tabs, hosts and dialogs, and switching keeps every shell and connection running.
-
-- **Classic** (the default): the icon rail on the left, tabs across the top, the hosts sidebar beside the terminal and a status bar at the bottom.
-- **Studio**: a futuristic look (glass panels over a deep background with a faint grid, neon edges and glows, HUD-style labels; High contrast stays plain black and white) with a title bar with a search box for everything (it opens the command palette), a **Terminals / Hosts** switch, and the vault, keys, snippets and settings on the right. The navigator on the left lists open sessions with their state (a green dot for a connected SSH session, amber while it waits to reconnect, red once it has exited), with the saved hosts tree under them. Above the terminal, a header shows the session's name, state, address and size, with buttons for Files, Split right, Split down, Find and Move to a new window. The button left of the Setu name hides or shows the navigator.
-
-Switch from the palette too (`Layout: Classic layout`, `Layout: Studio layout`), or with the layout button in the Classic rail and in the Studio title bar. The choice is saved as `"layout"` in `settings.json`.
-
-## Rendering, fonts and ligatures
-
-Settings → Terminal → Rendering chooses how terminals are drawn:
-
-- **Automatic** (the default) draws with the GPU (WebGL) on macOS and Windows. On Linux it uses the compatible DOM renderer, because under some WebKitGTK setups the GPU canvas shows new output one frame late.
-- **GPU (WebGL)** always draws with the GPU. If the GPU context is lost (a driver reset, waking from sleep) the terminal falls back to the DOM renderer.
-- **Compatible (DOM)** never uses the GPU.
-
-The status bar shows which renderer the current terminal uses, after its size (`97×31 · GPU`).
-
-**Font** sets the terminal font; empty means the first installed of JetBrains Mono, Cascadia Code, Fira Code, SF Mono, Menlo or Consolas. Nerd Font icons work with any of them (see Prompt themes below). **Font ligatures** (on by default) joins sequences such as `->`, `=>`, `!=` and `>=` into one symbol when the font has ligatures, as JetBrains Mono, Cascadia Code and Fira Code do. Changes apply to open terminals straight away.
-
-## Prompt themes: Powerlevel10k, Oh My Zsh, Starship, Oh My Posh
-
-Prompts from these tools work in Setu without a patched font:
-
-- **Icons and Powerline arrows are built in.** Setu ships the Nerd Font symbols (Symbols Nerd Font Mono, from Nerd Fonts 3.4) and uses them only for icon characters your terminal font does not have. If you set a Nerd Font yourself (Settings → Terminal → Font, for example `MesloLGS NF`), its own icons are used. With the GPU renderer, Powerline arrows and box lines are drawn to fit each cell exactly.
-- **Widths match your shell.** Terminals count wide characters (CJK, emoji, some symbols) with Unicode 11 widths, as zsh and bash do, so right-hand prompts, icons and emoji stay in their columns. This applies to tabs opened after the setting changes.
-- **True colour.** Local shells get `TERM=xterm-256color`, `COLORTERM=truecolor` and `TERM_PROGRAM=Setu`. SSH sessions ask the server to set `COLORTERM=truecolor` too; most servers accept only `LANG` and `LC_*` (`AcceptEnv` in `sshd_config`), so add `export COLORTERM=truecolor` to the server's start-up file if a prompt there looks washed out.
-
-Run **Prompt check** from the command palette (Ctrl+Shift+P) to see a Powerline prompt, Nerd Font icons, a true-colour ramp, the 16 ANSI colours and a width ruler drawn in the current terminal. It is only written to the screen; the shell never sees it.
-
-### Settings → Prompts
-
-- **Terminal colours**: keep following the app theme, or import a colour scheme from another terminal: iTerm2 `.itermcolors`, Windows Terminal JSON (one scheme, a list, or a whole `settings.json` with all its `schemes`), Alacritty `.toml`, base16 or base24 `.yaml`, and kitty, Ghostty or Xresources colour files. Thousands are at iterm2colorschemes.com. Only the colours are read (16 ANSI colours, foreground, background, cursor and selection); imported schemes are saved in `settings.json` (at most 50) and also listed in the palette under `Terminal colours`. The app's own theme stays as it is.
-- **Prompt themes on this computer**: whether Powerlevel10k, Oh My Zsh, Starship and Oh My Posh are installed and turned on in your shell start-up files, with the lines to copy for the ones that are not. Setu only looks; it never installs or runs them. To use them over SSH, set them up on the server the same way.
-
-All of this sits behind the `promptThemes` flag in Settings → Features.
+![The command palette](images/command-palette.png)
 
 ## Keybinding profiles
 
@@ -94,15 +56,19 @@ Setu covers things that look like secrets in terminal output with a striped bar:
 
 The text underneath is not changed: selecting and copying gives the real value. Hover a bar to see what kind of secret it hid; click it to show that one. Turn the feature off in Settings → Terminal or with the palette (`Hide secrets in output`). It is pattern matching, so treat it as a guard against shoulder-surfing and screen shares, not a guarantee.
 
+![Secrets covered in terminal output](images/secrets-hidden.png)
+
 ## Split panes
 
 A tab can hold several terminals. **Ctrl+Shift+D** splits the focused pane side by side, **Ctrl+Alt+Shift+D** splits it stacked; both are also in the **▾** menu next to the new-tab button. Splits nest, so you can build any grid.
 
 - **What opens in the new pane:** for an SSH pane, another shell on the same server over the same connection, so there is no new login, password or passphrase prompt (jump hosts are shared too). For a local pane, a new shell of the same kind (bash, PowerShell, …).
-- **Focus:** click a pane or use **Alt+Arrow keys**. The focused pane has an orange line along its top; the others are slightly dimmed. The tab title, the status bar, **Files** and **Find** follow the focused pane.
+- **Focus:** click a pane or use **Alt+Arrow keys**. The focused pane has a line in the theme's accent colour along its top; the others are slightly dimmed. The tab title, the status bar, **Files** and **Find** follow the focused pane.
 - **Resize:** drag the line between two panes. Double-click it to share the space evenly again.
 - **Close:** **Ctrl+Shift+W** closes the focused pane and its neighbour takes the space. A shell that exits (`exit`, Ctrl+D) closes its pane too, unless it is the last one in the tab, which stays to show the exit code. The **×** on the tab closes all of its panes.
 - The tab shows **⊞ 2**, **⊞ 3**, … when it holds more than one pane.
+
+![A tab split into three panes](images/split-panes.png)
 
 Closing one SSH pane leaves the connection open for the others; it closes when the last pane or Files tab using it closes.
 
@@ -116,6 +82,8 @@ When Setu starts, it reopens the tabs you had open, with the same splits, divide
 
 The layout is saved as `session.json` in Setu's config folder (`setu paths` shows where) a moment after each change. It holds host names, ports, user names, the authentication method and key file paths, never passwords, passphrases, anything you typed or any output. On Unix only you can read it. To start with a single fresh tab, quit Setu and delete that file.
 
+![SSH panes waiting for Enter after a restart](images/session-restore.png)
+
 ## Find in scrollback
 
 Press **Ctrl+Shift+F** in a terminal tab (in a split tab, it searches the focused pane). If text is selected on one line, the search starts with it.
@@ -126,3 +94,5 @@ Press **Ctrl+Shift+F** in a terminal tab (in a split tab, it searches the focuse
 - **Escape** closes the bar, clears the highlights and returns to the shell.
 
 The search covers the tab's scrollback, which keeps the last 10,000 lines.
+
+![Find in scrollback](images/find-in-scrollback.png)

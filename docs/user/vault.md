@@ -11,6 +11,8 @@ Setu can remember SSH passwords and private-key passphrases in an encrypted vaul
 - **Remove a secret, or change the master password:** open the vault from the status bar.
 - **Unlock automatically:** tick **Unlock automatically on this computer** when you unlock, or turn it on in the vault dialog. See below.
 
+![Unlocking the vault](images/vault-unlock.png)
+
 There is no recovery. If you forget the master password, the saved secrets are gone; nobody can reset it.
 
 ## Unlocking automatically
@@ -22,6 +24,8 @@ With **Unlock automatically on this computer** on, Setu keeps the vault's derive
 | macOS | Keychain |
 | Windows | Credential Manager |
 | Linux | Secret Service (GNOME Keyring, KWallet or KeePassXC), over D-Bus |
+
+![Unlock automatically on this computer](images/vault-unlock-automatically.png)
 
 The entry is named `dev.setu.vault`, with the vault file's path as the account.
 

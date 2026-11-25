@@ -9,7 +9,7 @@ Setu is maintained by one person a few hours a day, with AI coding assistants do
 3. **Tests first-class.** `just check` (fmt, clippy, Rust and UI tests, `cargo deny`) passes before a PR opens, and every fix adds a test. Git hooks (`just install-hooks`) stop secrets, unformatted code and failing UI tests before they are even committed.
 4. **Show, don't tell.** UI changes come with screenshots from the real app (all themes when it is visual); the PR says how it was tested.
 5. **Two reviews.** An automated one (CI, CodeQL, dependency review, `/security-review` against the checklist in `CLAUDE.md`) and the maintainer's. Nothing merges on AI review alone.
-6. **Ship behind a flag when unsure** (`docs/feature-flags.md`), so a problem is one switch away from fixed.
+6. **Ship behind a flag when unsure** (`docs/developer/feature-flags.md`), so a problem is one switch away from fixed.
 7. **Write it down.** `CHANGELOG.md` for users, `docs/` for how it works, project memory or ADRs for decisions, so the next session (human or AI) starts with context.
 
 ## Ground rules for AI assistants

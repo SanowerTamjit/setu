@@ -1,6 +1,6 @@
 // Work memory in the terminal: notices each command line you run and
 // hands it to Rust, which keeps it only when remembering is on (masking
-// secrets). See docs/work-memory.md.
+// secrets). See docs/user/work-memory.md.
 //
 // We read the line from the terminal itself when you press Enter (so tab
 // completion and history recall are seen as the shell shows them), minus

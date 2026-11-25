@@ -1,0 +1,101 @@
+# IPC commands
+
+The web view talks to Rust only through Tauri commands, registered in `generate_handler!` in `apps/desktop/src-tauri/src/lib.rs`, with typed wrappers in `apps/desktop/src/ipc.ts`. This is the attack surface between the UI and your computer, so every command is listed here.
+
+**Rule:** treat every argument as coming from an attacker who controls the web view. A command checks its own inputs (paths stay in their folder, sizes are capped, ids are validated, names are single path parts) and never returns a stored secret. Adding or changing a command also updates this page and the [threat model](../security/threat-model.md).
+
+## App and windows
+
+| Command | What it does |
+|---|---|
+| `app_info` | Version, OS, local user name, and the edition of a build with extensions |
+| `window_detach` | Moves a tab into a new window |
+| `window_take` | The payload for a new window; each token works once |
+| `extension_panel` | The settings page a build with extensions adds; `None` in the open-source build |
+| `extension_action` | Presses a button (by id, at most 64 characters) on that page |
+
+## Terminals (`terminals.rs`)
+
+| Command | What it does |
+|---|---|
+| `list_shells` | The local shells found on this computer |
+| `open_terminal` | Starts a local shell; output and exit code stream over `Channel`s |
+| `write_terminal`, `resize_terminal`, `close_terminal` | Input, size and close for a terminal session (local or SSH) |
+| `terminal_hold` | Holds a session's output while its tab moves to another window |
+| `terminal_attach` | Shows a session in the calling window, with what it printed meanwhile |
+
+## SSH and keys (`ssh.rs`, `keys.rs`)
+
+| Command | What it does |
+|---|---|
+| `ssh_connect` | Connects (with jump hosts), checks the host key strictly, signs in; asks the access policy first in builds with one |
+| `ssh_open_shell` | Opens a shell on a connection (a tab or a split pane) |
+| `ssh_trust_host` | Saves a host key the person accepted; only a key that server actually offered can be trusted |
+| `ssh_keys_list` | Keys in `~/.ssh`: type, fingerprint, passphrase and agent state, never key material |
+| `ssh_key_generate` | Makes a key (0600, never overwriting); security keys through `ssh-keygen` |
+| `ssh_key_add_to_agent` | Gives a key to ssh-agent |
+| `ssh_key_load_resident` | Copies keys stored on a security key into `~/.ssh` (`ssh-keygen -K`) |
+| `known_hosts_list`, `known_hosts_remove` | Lists and forgets `known_hosts` entries; keeps `known_hosts.old` |
+
+## Hosts (`hosts.rs`)
+
+| Command | What it does |
+|---|---|
+| `hosts_list`, `host_save`, `host_delete` | The saved hosts in `hosts.toml` |
+| `ssh_config_scan` | Reads `~/.ssh/config` and compares it with saved hosts |
+| `hosts_parse_file` | Reads hosts from a PuTTY, MobaXterm, CSV or Ansible file; saves nothing |
+| `ssh_config_import` | Saves the hosts the person picked |
+
+## Files (`files.rs`, `remote_edit.rs`)
+
+| Command | What it does |
+|---|---|
+| `files_open`, `files_close` | SFTP on the connection of an SSH tab |
+| `files_list`, `local_list` | Lists a remote or local folder |
+| `files_mkdir`, `files_rename`, `files_remove` | Changes on the server |
+| `files_stat`, `files_set_attributes` | Mode, owner and group; optionally recursive |
+| `transfer` | Copies a file or folder, with progress on a `Channel`; can resume a `.setu-part` file |
+| `transfer_pause`, `transfer_cancel` | Stops a copy, keeping or deleting its partial file |
+| `remote_edit_open` | Copies a remote file to a private folder, opens it in the editor, writes saves back |
+| `remote_edit_push` | Writes the local copy now, even if the server's copy changed |
+| `remote_edit_stop` | Stops watching and deletes the local copy |
+
+## Vault (`vault.rs`)
+
+| Command | What it does |
+|---|---|
+| `vault_status` | Whether a vault exists, is unlocked, can unlock automatically, and the saved targets (never the secrets) |
+| `vault_create`, `vault_unlock`, `vault_lock` | Set up, unlock with the master password, lock |
+| `vault_remember` | Turns OS-keychain unlock on or off |
+| `vault_remove` | Removes one saved secret |
+| `vault_change_password` | Re-encrypts with a new master password and salt |
+
+## Session, settings, packs, appearance
+
+| Command | What it does |
+|---|---|
+| `session_load`, `session_save`, `session_clear` | `session.json`: tabs to reopen (no secrets) |
+| `settings_load`, `settings_save` | `settings.json`, size-limited; the UI's `sanitize` checks it again on load |
+| `packs_list`, `pack_inspect`, `pack_install`, `pack_remove` | Packs: data only, checked before install |
+| `color_scheme_parse` | Reads colours from another terminal's scheme file (at most 2 MB, 100 schemes) |
+| `prompt_detect` | Whether Powerlevel10k, Oh My Zsh, Starship or Oh My Posh are set up; takes no input, returns no file contents |
+
+## Workflows and work memory (`workflows.rs`, `memory.rs`)
+
+| Command | What it does |
+|---|---|
+| `workflows_list`, `workflow_save`, `workflow_delete` | Workflow files in `workflows/`; ids are checked so paths stay in that folder |
+| `workflow_run` | Runs a workflow **as saved on disk** (never one sent by the window); progress on a `Channel` |
+| `workflow_answer`, `workflow_cancel` | Approve or reject an approval step; stop a run |
+| `workflow_history`, `workflow_history_clear` | `workflow-runs.json` |
+| `board_load`, `board_save` | The task board; every card is checked before writing |
+| `memory_view`, `memory_settings` | Work memory and its settings |
+| `memory_record` | Keeps one command; refuses while remembering is off, masks secrets itself |
+| `memory_delete`, `memory_clear`, `memory_dismiss` | Forget a command, everything, or a suggestion |
+| `memory_snippet_save`, `memory_snippet_delete` | Snippets made from work memory |
+| `memory_workflow_draft` | Rebuilds a suggested workflow in Rust from its id; not saved |
+| `memory_summary` | A Markdown summary of routine work, masked commands left out |
+
+## Adding a command
+
+See [How-to recipes](how-to.md#add-an-ipc-command).

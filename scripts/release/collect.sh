@@ -42,7 +42,7 @@ stage=$(mktemp -d)
 pkg="setu-cli-$version-$platform"
 mkdir -p "$stage/$pkg"
 cp "$cli" LICENSE README.md "$stage/$pkg/"
-cp docs/cli.md "$stage/$pkg/CLI.md"
+cp docs/user/cli.md "$stage/$pkg/CLI.md"
 if [[ "$cli" == *.exe ]]; then
   (cd "$stage" && 7z a -tzip -bso0 "$pkg.zip" "$pkg")
   mv "$stage/$pkg.zip" "$out/"

@@ -7,7 +7,7 @@ pub const HOSTS_FILE: &str = "hosts.toml";
 
 const HEADER: &str = "\
 # Setu saved hosts. Plain TOML: safe to edit by hand, back up or keep in Git.
-# No passwords or keys are stored here. Format: docs/hosts.md in the Setu repo.
+# No passwords or keys are stored here. Format: docs/user/hosts.md in the Setu repo.
 
 ";
 

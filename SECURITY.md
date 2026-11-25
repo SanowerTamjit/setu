@@ -42,4 +42,4 @@ See [docs/security/threat-model.md](docs/security/threat-model.md) for what is p
 
 ## Verifying a download
 
-Every build comes with `SHA256SUMS`, a GitHub build-provenance attestation (`gh attestation verify <file> --repo SanowerTamjit/setu`) and an SPDX software bill of materials. See [docs/releasing.md](docs/releasing.md).
+Every build comes with `SHA256SUMS`, a GitHub build-provenance attestation (`gh attestation verify <file> --repo SanowerTamjit/setu`) and an SPDX software bill of materials. See [docs/developer/releasing.md](docs/developer/releasing.md).

@@ -43,7 +43,7 @@ These are tagged P1 in the plan but are not required for the gate:
 ### Also delivered in P1
 
 - GPU-rendered terminal with ligatures, resumable transfer queue (pause, resume, retry), editing a remote file in a local editor, a remote permissions editor, and YubiKey/FIDO2 SSH keys.
-- Visual workflows (moved forward from module 9, automation): a canvas of steps that run commands on saved hosts in order or in parallel, with approvals, failure branches, a live run view and run history (`crates/setu-workflow`, `docs/workflows.md`). Scheduled runs, variables and fleet-wide jobs with dry-run stay in P2–P3.
+- Visual workflows (moved forward from module 9, automation): a canvas of steps that run commands on saved hosts in order or in parallel, with approvals, failure branches, a live run view and run history (`crates/setu-workflow`, `docs/user/workflows.md`). Scheduled runs, variables and fleet-wide jobs with dry-run stay in P2–P3.
 
 ### Explicitly not in P1
 

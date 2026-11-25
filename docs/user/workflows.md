@@ -4,6 +4,8 @@ The **Workflows** view lets you draw the steps you would otherwise type into sev
 
 Open it from the rail (Classic), the **Workflows** switch in the title bar (Studio), or the command palette (`Go to workflows`, `New workflow`). It can be turned off in Settings → Features (`workflows`).
 
+![A workflow running: each step lights up as it goes](images/workflow-running.png)
+
 ## Steps
 
 | Step | What it does |
@@ -30,6 +32,8 @@ A run **fails** when a step fails and nothing handles it (no failure or always l
 
 **Run** saves the workflow and shows every command and the hosts it will run on before anything starts. While it runs, each step shows its state (waiting, running, needs approval, done, failed, skipped, stopped) and the links that fired are highlighted. Click a step to see each host's exit code and output. **Stop run** cancels steps that are running and everything still waiting.
 
+![A run waiting for approval](images/workflow-approval.png)
+
 Runs never ask for anything, because nobody may be watching:
 
 - The host key must already be trusted: connect to the host once from Hosts to check and trust it. A changed key stops the step with a warning.
@@ -38,7 +42,7 @@ Runs never ask for anything, because nobody may be watching:
 
 ## From work memory
 
-Setu can also suggest workflows for you: turn on **Work memory** in the **Memory** tab and it notices commands you run in the same order again and again, or one command you run on host after host, and offers each as a workflow draft. See `docs/work-memory.md`.
+Setu can also suggest workflows for you: turn on **Work memory** in the **Memory** tab and it notices commands you run in the same order again and again, or one command you run on host after host, and offers each as a workflow draft. See [Work memory](work-memory.md).
 
 ## Task board
 
@@ -49,6 +53,8 @@ The **Board** tab next to **Workflows** (or **Open the task board** in the comma
 - A card with a workflow shows that workflow's last run (green succeeded, red failed); click the chip to open the workflow in the builder.
 - High-priority cards have a red edge, and a due date in the past turns red until the card is done.
 - **Filter cards** matches titles, notes, hosts and workflow names.
+
+![The task board](images/task-board.png)
 
 The board saves as you go to `board.toml` in Setu's config folder, readable only by you. Cards never run anything on their own: a linked workflow runs only when you open it and press **Run**. If the file can't be read (for example after a hand edit with a mistake), the board says so and doesn't write over it.
 

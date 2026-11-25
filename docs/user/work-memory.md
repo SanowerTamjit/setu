@@ -45,7 +45,9 @@ Setu looks for three kinds of repeated work. A *sitting* is the commands of one 
 
 `ls`, `cd`, `clear` and similar everyday commands are never suggested on their own. In a workflow, a `cd` or `export` is carried into the steps after it (`cd /srv/app && ./deploy.sh`), because each step runs in a fresh SSH session.
 
-**Open as workflow** opens a draft in the builder. Nothing runs: check the steps, rename it, add an approval step if you like, then **Save** and **Run** as with any workflow (see `docs/workflows.md`). The suggestion is then hidden.
+![Suggestions from work memory](images/work-memory-suggestions.png)
+
+**Open as workflow** opens a draft in the builder. Nothing runs: check the steps, rename it, add an approval step if you like, then **Save** and **Run** as with any workflow (see [Workflows](workflows.md)). The suggestion is then hidden.
 
 **Save as snippet** asks for a name. Snippets show in the palette under *Snippet*; picking one types the command into the terminal **without pressing Enter**. A command that holds a secret cannot be a snippet.
 

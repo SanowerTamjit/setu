@@ -11,7 +11,7 @@ A review of everything in Phase 1 (PRs #1 to #23) for ways data could leak or be
 | 3 | Medium (Windows) | SFTP downloads, remote edit | `check_name` allowed `C:name` (a path on drive C, which `Path::join` treats as absolute) and `name:stream` (an NTFS alternate data stream). A malicious server's listing could write outside the chosen download folder. | `check_local_name`: one plain path part, and no `:` on Windows (test in `sftp.rs`). |
 | 4 | Medium (shared Linux machines) | Remote edit temp files | Copies went to `/tmp/setu-edit`, shared by every user. Another user could create it first, so Setu's permission change would fail (denial of service), and the old sweep ran inside a folder another user controlled. | Per-user root (`$XDG_RUNTIME_DIR/setu-edit`, else `~/.cache/setu/edit`), 0700, refused if it is not a folder; each edit gets a fresh random 0700 folder (test `edit_folders_are_private_and_new`). |
 | 5 | Medium | Remote edit | With no editor set, the file was handed to the system's default app. For `deploy.bat`, `x.exe`, `run.command`, `app.desktop`, … that **runs** the server's file on your computer instead of opening it. | Those types are refused with no editor set, with a message to set one (test `default_app_never_runs_programs`). |
-| 6 | Medium | Packs | Snippets could contain line breaks. Picking one types it into the terminal; in a shell without bracketed paste each line break is Enter, so a pack could run commands you never saw. | Multi-line snippets are refused at install, and the app joins lines before typing (test in `packs.rs`; `docs/packs.md` updated). |
+| 6 | Medium | Packs | Snippets could contain line breaks. Picking one types it into the terminal; in a shell without bracketed paste each line break is Enter, so a pack could run commands you never saw. | Multi-line snippets are refused at install, and the app joins lines before typing (test in `packs.rs`; `docs/user/packs.md` updated). |
 | 7 | Low | Pasting | Pasting several lines into a shell without bracketed paste runs them at once (a known trick: web pages can hide extra lines in copied text). | New paste guard (feature flag `pasteGuard`, on): shows the lines and asks first. |
 
 ## Checked, no problem found
@@ -60,7 +60,7 @@ These need a click in GitHub settings; nothing in the repository can do them:
 ## Project practices added
 
 - `CLAUDE.md` (and `AGENTS.md`): how AI assistants work in this repository, with a security checklist.
-- `docs/development-workflow.md`: the AI-assisted development method.
-- `docs/feature-flags.md`: feature flags and their life cycle.
+- `docs/developer/development-workflow.md`: the AI-assisted development method.
+- `docs/developer/feature-flags.md`: feature flags and their life cycle.
 - `docs/security/threat-model.md`: what is protected, from whom, and known gaps.
-- Release notes: `CHANGELOG.md` gains a **Security** section; `.github/release.yml` groups generated notes by label; `docs/releasing.md` has the release checklist.
+- Release notes: `CHANGELOG.md` gains a **Security** section; `.github/release.yml` groups generated notes by label; `docs/developer/releasing.md` has the release checklist.

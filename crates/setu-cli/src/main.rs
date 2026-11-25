@@ -20,7 +20,7 @@ use std::process::ExitCode;
     name = "setu",
     version,
     about = "Setu, the open-source ops IDE, on the command line",
-    after_help = "Docs: https://github.com/SanowerTamjit/setu/blob/master/docs/cli.md"
+    after_help = "Docs: https://github.com/SanowerTamjit/setu/blob/master/docs/user/cli.md"
 )]
 struct Cli {
     #[command(subcommand)]
