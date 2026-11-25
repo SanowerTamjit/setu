@@ -17,6 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Monitoring**: watch servers' CPU, memory, network traffic and disks live, with a two-minute history and alerts when a reading passes the limits you set. Setu reads Linux's own figures over SSH, so nothing is installed on the server. See `docs/user/monitoring.md`.
 - **Network tools**: check a port (with timings, even where ping is blocked), look up a name, ping a host and wake a computer with Wake-on-LAN. Run a check from your computer or through a saved host, to see a server's network the way the server does. See `docs/user/network-tools.md`.
 - **Tunnels**: save SSH port forwards and start them with one click: a local port that reaches a database or admin page inside a server's network (like `ssh -L`), a SOCKS proxy for browsing through a host (like `ssh -D`), or a port on the server that reaches your computer (like `ssh -R`). Each tunnel shows whether it is running and how many connections it carries, can start when Setu opens, and reconnects by itself when the connection drops. Tunnels listen only on your own computer unless you choose otherwise. See `docs/user/tunnels.md`.
 - Documentation: a **user guide** (`docs/user/`: getting started, every feature, keyboard shortcuts, settings and files, troubleshooting, with screenshots) and a **developer guide** (`docs/developer/`: building, architecture, IPC commands, testing, how-to recipes and how to keep the docs current). Start at `docs/README.md`.

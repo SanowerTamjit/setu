@@ -28,6 +28,7 @@ import { HostsHome } from "./hosts-home";
 import { WorkflowsView } from "./workflows-view";
 import { TunnelsView } from "./tunnels-view";
 import { NetView } from "./net-view";
+import { MonitorView } from "./monitor-view";
 import { memoryRecording, onMemoryChange, refreshMemoryState, registerMemorySnippets } from "./work-memory";
 import { memorySettings, memoryView } from "./ipc";
 import { enabled } from "./features";
@@ -365,8 +366,11 @@ const tunnels = new TunnelsView(tunnelsEl, { hosts: () => hostsPanel.hosts, show
 const networkEl = document.getElementById("network")!;
 const network = new NetView(networkEl, { hosts: () => hostsPanel.hosts });
 
+const monitorEl = document.getElementById("monitor")!;
+const monitor = new MonitorView(monitorEl, { hosts: () => hostsPanel.hosts, showHosts: () => showView("hosts") });
+
 // The hosts view, workflows, tunnels, network tools and the terminals share the space right of the rail.
-type View = "terminals" | "hosts" | "workflows" | "tunnels" | "network";
+type View = "terminals" | "hosts" | "workflows" | "tunnels" | "network" | "monitor";
 let view: View = "terminals";
 let sidebarWanted = true;
 const railButtons = new Map<string, HTMLButtonElement>();
@@ -382,11 +386,12 @@ function showView(next: View) {
   workflowsEl.hidden = next !== "workflows";
   tunnelsEl.hidden = next !== "tunnels";
   networkEl.hidden = next !== "network";
+  monitorEl.hidden = next !== "monitor";
   terminalsEl.hidden = next !== "terminals";
   syncSidebar();
   sidebarButton.hidden = next !== "terminals";
   for (const [id, b] of railButtons) {
-    if (id === "hosts" || id === "terminals" || id === "workflows" || id === "tunnels" || id === "network") b.classList.toggle("current", id === next);
+    if (id === "hosts" || id === "terminals" || id === "workflows" || id === "tunnels" || id === "network" || id === "monitor") b.classList.toggle("current", id === next);
   }
   studio.render();
   if (hosts) {
@@ -399,6 +404,9 @@ function showView(next: View) {
   } else if (next === "network") {
     network.refresh();
     network.focus();
+  } else if (next === "monitor") {
+    monitor.refresh();
+    monitor.focus();
   } else {
     active?.refit();
     active?.focus();
@@ -430,6 +438,7 @@ function buildRail() {
     ...(enabled("workflows") ? [item("workflows", "workflow", "Workflows", () => showView("workflows"))] : []),
     ...(enabled("tunnels") ? [item("tunnels", "tunnel", "Tunnels", () => showView("tunnels"))] : []),
     ...(enabled("networkTools") ? [item("network", "network", "Network tools", () => showView("network"))] : []),
+    ...(enabled("monitoring") ? [item("monitor", "pulse", "Monitoring", () => showView("monitor"))] : []),
     item("keys", "key", "SSH keys and known hosts", () => void runCommand("keys.open")),
     item("snippets", "snippet", "Snippets", () => void showPalette("Snippet ")),
     item("vault", "vault", "Vault", () => void openVaultDialog().then(() => active?.focus())),
@@ -446,6 +455,7 @@ buildRail();
 hostsPanel.onChange(() => {
   hostsHome.render();
   network.refresh();
+  monitor.refresh();
 });
 
 // ---- Layouts: Classic (rail + tab bar) and Studio (title bar + navigator) ----
@@ -477,6 +487,7 @@ const studio: Studio = new Studio({
   workflows: () => enabled("workflows"),
   tunnels: () => enabled("tunnels"),
   network: () => enabled("networkTools"),
+  monitor: () => enabled("monitoring"),
   palette: () => void showPalette(),
   run: (id) => void runCommand(id),
   can: (id) => {
@@ -710,6 +721,7 @@ for (const c of [
   { id: "view.workflows", title: "Go to workflows", category: "View", keywords: "automation runbook pipeline flow", when: () => enabled("workflows"), run: () => showView("workflows") },
   { id: "view.tunnels", title: "Go to tunnels", category: "View", keywords: "port forward socks proxy -L -R -D", when: () => enabled("tunnels"), run: () => showView("tunnels") },
   { id: "view.network", title: "Go to network tools", category: "View", keywords: "port check tcp ping dns lookup nslookup dig wake on lan wol", when: () => enabled("networkTools"), run: () => showView("network") },
+  { id: "view.monitor", title: "Go to monitoring", category: "View", keywords: "cpu memory ram disk usage load network top metrics", when: () => enabled("monitoring"), run: () => showView("monitor") },
   {
     id: "view.board",
     title: "Open the task board",

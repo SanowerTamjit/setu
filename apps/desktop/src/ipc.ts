@@ -790,3 +790,52 @@ export const netLookup = (name: string, through?: string) =>
 export const netPing = (host: string, through: string) => invoke<PingReport>("net_ping", { host, through });
 export const netWake = (mac: string, broadcast?: string) =>
   invoke<void>("net_wake", { mac, broadcast: broadcast || null });
+
+// ---- Monitoring (src-tauri/src/monitor.rs, crates/setu-monitor) ----
+
+export interface DiskUse {
+  mount: string;
+  totalKb: number;
+  usedKb: number;
+  percent: number;
+}
+
+export type MonitorAlert =
+  | { kind: "cpu"; percent: number }
+  | { kind: "memory"; percent: number }
+  | { kind: "disk"; mount: string; percent: number };
+
+export interface Snapshot {
+  cpuPercent?: number | null;
+  cpus: number;
+  memPercent?: number | null;
+  memUsedKb: number;
+  memTotalKb: number;
+  swapPercent?: number | null;
+  load?: [number, number, number] | null;
+  uptimeSecs?: number | null;
+  netRxPerSec?: number | null;
+  netTxPerSec?: number | null;
+  disks: DiskUse[];
+  alerts: MonitorAlert[];
+}
+
+export type MonitorEvent =
+  | { kind: "connecting" }
+  | { kind: "sample"; snapshot: Snapshot }
+  | { kind: "problem"; message: string; stopped: boolean }
+  | { kind: "stopped" };
+
+export interface MonitorLimits {
+  cpu: number;
+  mem: number;
+  disk: number;
+}
+
+/** Starts watching a saved host; returns an id for monitorStop. */
+export function monitorStart(host: string, interval: number, limits: MonitorLimits, onEvent: (e: MonitorEvent) => void) {
+  const channel = new Channel<MonitorEvent>();
+  channel.onmessage = onEvent;
+  return invoke<string>("monitor_start", { host, interval, cpu: limits.cpu, mem: limits.mem, disk: limits.disk, onEvent: channel });
+}
+export const monitorStop = (id: string) => invoke<void>("monitor_stop", { id });

@@ -10,6 +10,7 @@ mod files;
 mod hosts;
 mod keys;
 mod memory;
+mod monitor;
 mod nettools;
 mod packs;
 mod prompts;
@@ -71,6 +72,7 @@ pub fn run_with(extensions: Extensions) {
         .manage(workflows::Workflows::from_env())
         .manage(memory::Memory::from_env())
         .manage(tunnels::Tunnels::from_env())
+        .manage(monitor::Monitors::default())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             if let Some(edition) = app.state::<Extensions>().edition() {
@@ -194,6 +196,8 @@ pub fn run_with(extensions: Extensions) {
             nettools::net_lookup,
             nettools::net_ping,
             nettools::net_wake,
+            monitor::monitor_start,
+            monitor::monitor_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

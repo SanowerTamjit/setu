@@ -29,6 +29,7 @@ Newer features ship behind switches, so if one misbehaves on your computer you c
 | Workflows | Hides the Workflows view and the task board |
 | Tunnels | Hides the Tunnels view (tunnels already running keep going until you quit) |
 | Network tools | Hides the Network tools view |
+| Monitoring | Hides the Monitoring view |
 | Work memory and automation suggestions | Hides the Memory tab and stops all remembering |
 | Prompt themes | No built-in Nerd Font symbols, Unicode 11 widths or imported colour schemes |
 

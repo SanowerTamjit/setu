@@ -97,6 +97,15 @@ export const FLAGS = [
     default: true,
     since: "0.2.0",
   },
+  {
+    id: "monitoring",
+    title: "Monitoring",
+    description:
+      "The Monitoring view: live CPU, memory, network and disk use for Linux hosts, read over SSH with nothing installed, with alerts above the limits you set. Off here hides the view.",
+    stage: "beta",
+    default: true,
+    since: "0.2.0",
+  },
 ] as const satisfies readonly FeatureFlag[];
 
 export type FlagId = (typeof FLAGS)[number]["id"];
