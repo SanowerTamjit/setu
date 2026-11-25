@@ -805,6 +805,9 @@ export type MonitorAlert =
   | { kind: "memory"; percent: number }
   | { kind: "disk"; mount: string; percent: number };
 
+/** A reading over its limit: `secs` so far, `firing` once it has lasted the hold time. */
+export type ActiveAlert = MonitorAlert & { secs: number; firing: boolean };
+
 export interface Snapshot {
   cpuPercent?: number | null;
   cpus: number;
@@ -829,7 +832,7 @@ export interface Snapshot {
 
 export type MonitorEvent =
   | { kind: "connecting" }
-  | { kind: "sample"; snapshot: Snapshot }
+  | { kind: "sample"; snapshot: Snapshot; active: ActiveAlert[] }
   | { kind: "problem"; message: string; stopped: boolean }
   | { kind: "stopped" };
 
@@ -839,11 +842,18 @@ export interface MonitorLimits {
   disk: number;
 }
 
+export interface MonitorOptions extends MonitorLimits {
+  /** Seconds a reading must stay over a limit before it alerts. */
+  hold: number;
+  /** Show a desktop notification when an alert starts or clears. */
+  notify: boolean;
+}
+
 /** Starts watching a saved host; returns an id for monitorStop. */
-export function monitorStart(host: string, interval: number, limits: MonitorLimits, onEvent: (e: MonitorEvent) => void) {
+export function monitorStart(host: string, interval: number, o: MonitorOptions, onEvent: (e: MonitorEvent) => void) {
   const channel = new Channel<MonitorEvent>();
   channel.onmessage = onEvent;
-  return invoke<string>("monitor_start", { host, interval, cpu: limits.cpu, mem: limits.mem, disk: limits.disk, onEvent: channel });
+  return invoke<string>("monitor_start", { host, interval, cpu: o.cpu, mem: o.mem, disk: o.disk, hold: o.hold, notify: o.notify, onEvent: channel });
 }
 export const monitorStop = (id: string) => invoke<void>("monitor_stop", { id });
 

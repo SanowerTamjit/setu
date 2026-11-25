@@ -8,6 +8,8 @@
 //! interface and process names) is stripped of control characters and
 //! shortened.
 
+pub mod alerts;
+
 use serde::Serialize;
 use std::collections::HashMap;
 

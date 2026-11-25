@@ -7074,3 +7074,110 @@ button.with-icon {
 .mon-core.level-high .mon-core-fill {
   background: var(--danger);
 }
+
+/* Monitoring alerts (monitor-view.ts): a reading over its limit that has not
+   lasted the hold time yet is amber; it turns red once it alerts. */
+.mon-alert.pending {
+  font-weight: 500;
+  color: var(--warn-text);
+  background: color-mix(in srgb, var(--warn-text) 14%, transparent);
+}
+
+.mon-notify {
+  cursor: pointer;
+}
+
+.mon-notify input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.mon-hour {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mon-hour-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.mon-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mon-key-line,
+.mon-key-limit {
+  display: inline-block;
+  width: 18px;
+  border-top: 2px solid var(--accent);
+}
+
+.mon-key-line.second {
+  border-top: 2px dashed var(--muted);
+}
+
+.mon-key-limit {
+  border-top: 1px dashed var(--danger-text);
+}
+
+.mon-hour-plot {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+}
+
+.mon-hour-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mon-hour-chart {
+  width: 100%;
+  height: 140px;
+  overflow: visible;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.mon-hour-chart .mon-line {
+  stroke-linecap: round;
+}
+
+.mon-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.mon-limit-line {
+  stroke: var(--danger-text);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.8;
+}
+
+.mon-limit-line.second {
+  opacity: 0.5;
+}
+
+.mon-hour-x {
+  display: flex;
+  justify-content: space-between;
+  margin-left: 40px;
+  font-size: var(--fs-xs);
+}
+
+:root[data-theme="high-contrast"] .mon-alert.pending {
+  border: 1px dashed currentColor;
+}
