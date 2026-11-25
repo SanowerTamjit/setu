@@ -367,7 +367,7 @@ const networkEl = document.getElementById("network")!;
 const network = new NetView(networkEl, { hosts: () => hostsPanel.hosts });
 
 const monitorEl = document.getElementById("monitor")!;
-const monitor = new MonitorView(monitorEl, { hosts: () => hostsPanel.hosts, showHosts: () => showView("hosts") });
+const monitor = new MonitorView(monitorEl, { hosts: () => hostsPanel.hosts, showHosts: () => showView("hosts"), autostart: isMainWindow && enabled("monitoring") });
 
 // The hosts view, workflows, tunnels, network tools and the terminals share the space right of the rail.
 type View = "terminals" | "hosts" | "workflows" | "tunnels" | "network" | "monitor";

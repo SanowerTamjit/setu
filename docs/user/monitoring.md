@@ -17,11 +17,11 @@ Pick a saved host at the top right and press **Watch**. A panel appears and fill
 | **Network** | Bytes a second received (↓, solid line) and sent (↑, dashed line) on every interface except loopback. |
 | **Disks** | Each real file system (not `tmpfs`, `overlay` or snap loop devices): its mount point, a bar, and space used. |
 
-The panel's subtitle shows how long the server has been up.
+The panel's subtitle shows how long the server has been up. Panels keep updating while you work in other views; close a panel (✕) to stop watching that host.
 
 ## Details
 
-Under the disks, four tabs open more detail (press the open tab again to close it):
+Under the disks, tabs open more detail (press the open tab again to close it). **Last hour** is described under [Alerts](#the-last-hour); the others are:
 
 | Tab | Shows |
 |---|---|
@@ -32,7 +32,28 @@ Under the disks, four tabs open more detail (press the open tab again to close i
 
 ![The busiest processes on a host](images/monitoring-processes.png)
 
-Process names come from the server and are shown only as text, cut to 64 characters. Setu does not read command lines or arguments, which can hold passwords. Watch as many as eight hosts at once; panels keep updating while you work in other views, and close a panel (✕) to stop watching that host.
+Process names come from the server and are shown only as text, cut to 64 characters. Setu does not read command lines or arguments, which can hold passwords.
+
+## Many hosts at once
+
+Watch as many as 24 hosts at once. **Watch all** starts every saved host (up to 24) in one go.
+
+With more than a couple of hosts, switch from **Panels** to **Table** (at the right, above the panels). The table has one row per host: a coloured dot for its health, whether it is live, CPU, memory, its fullest disk, network traffic and its alerts. A host that stopped says why.
+
+| Dot | Means |
+|---|---|
+| Green | Every figure is well under its limit. |
+| Amber | A figure is within 15 points of its limit, or over it but not for long enough to alert yet. |
+| Red | An alert is firing, a figure is at its limit, or the host stopped. |
+| Hollow | Connecting or reconnecting. |
+
+Click a host's name to open its panel. Setu remembers your choice of panels or table.
+
+![Four hosts in the table: two alerting, one waiting, one stopped](images/monitoring-table.png)
+
+### Watch when Setu opens
+
+Tick **Watch when Setu opens** on a host's panel, and Setu starts watching it each time it opens, without you opening Monitoring. Its alerts and notifications work from the start. The list is kept on this computer; a host you delete or rename drops off it.
 
 ## Alerts
 

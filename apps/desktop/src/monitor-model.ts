@@ -208,3 +208,41 @@ export function seriesPath(values: (number | null)[], width: number, height: num
   });
   return parts.join(" ");
 }
+
+/** Most hosts watched at once (src-tauri/src/monitor.rs MAX_MONITORS). */
+export const MAX_WATCHED = 24;
+
+/**
+ * A host's health for the fleet table: "high" with an alert firing, "warn"
+ * with one waiting or a figure near its limit, else "ok".
+ */
+export function health(s: Snapshot | null, active: ActiveAlert[], limits: { cpu: number; mem: number; disk: number }): Level {
+  if (active.some((a) => a.firing)) return "high";
+  if (active.length) return "warn";
+  if (!s) return "ok";
+  const levels = [level(s.cpuPercent, limits.cpu), level(s.memPercent, limits.mem), ...s.disks.map((d) => level(d.percent, limits.disk))];
+  return levels.includes("high") ? "high" : levels.includes("warn") ? "warn" : "ok";
+}
+
+/** The fullest disk, for one cell of the fleet table. */
+export function fullestDisk(s: Snapshot | null): { mount: string; percent: number } | null {
+  if (!s || s.disks.length === 0) return null;
+  return s.disks.reduce((a, b) => (b.percent > a.percent ? b : a));
+}
+
+/** The hosts to watch when Setu opens: saved names still in the inventory, once each, at most `max`. */
+export function startupHosts(saved: unknown, names: string[], max = MAX_WATCHED): string[] {
+  if (!Array.isArray(saved)) return [];
+  const out: string[] = [];
+  for (const n of saved) {
+    if (typeof n === "string" && names.includes(n) && !out.includes(n)) out.push(n);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Adds or removes `name` from a list of host names. */
+export function withName(list: string[], name: string, on: boolean): string[] {
+  const rest = list.filter((n) => n !== name);
+  return on ? [...rest, name] : rest;
+}

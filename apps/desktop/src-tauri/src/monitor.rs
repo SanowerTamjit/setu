@@ -32,7 +32,7 @@ use tauri_plugin_notification::NotificationExt;
 use tokio::sync::watch;
 
 /// Most monitors open at once.
-const MAX_MONITORS: usize = 8;
+const MAX_MONITORS: usize = 24;
 /// Failed samples or logins in a row before a monitor gives up.
 const MAX_FAILURES: u32 = 10;
 /// Longest a single sample may take.

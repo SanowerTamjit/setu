@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **Monitoring**: watch servers' CPU, memory, network traffic and disks live, with a two-minute history and alerts when a reading passes the limits you set. Setu reads Linux's own figures over SSH, so nothing is installed on the server. See `docs/user/monitoring.md`.
+- **Monitoring many hosts**: watch up to 24 hosts, start them all with **Watch all**, see them in one table with a health colour for each, and choose hosts that Setu starts watching each time it opens.
 - **Monitoring alerts that reach you**: an alert only once a reading has stayed over its limit for a while you choose (2 minutes by default), so short spikes stay quiet; a desktop notification when an alert starts and when it clears; and a chart of CPU and memory over the last hour.
 - **Monitoring details**: a watched host's busiest processes (CPU and memory), a bar for each CPU core, traffic on each network interface, and read and write speed for each disk.
 - **Network tools**: check a port (with timings, even where ping is blocked), see a server's TLS certificate (trusted or not and why, when it expires, the whole chain), look up a name, ping a host and wake a computer with Wake-on-LAN. Run a check from your computer or through a saved host, to see a server's network the way the server does. See `docs/user/network-tools.md`.
