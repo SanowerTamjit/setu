@@ -918,3 +918,29 @@ async fn a_closed_connection_is_noticed() {
     tcp.read_exact(&mut reply).await.expect("reply");
     assert_eq!(reply[3], 4, "expected host unreachable");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn port_checks_through_the_server() {
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let echo = echo_server().await;
+    let client = connect(&sshd.opts()).await.expect("connect");
+    let took = client
+        .check_port("127.0.0.1", echo, Duration::from_secs(5))
+        .await
+        .expect("open port");
+    assert!(took < Duration::from_secs(5));
+    match client
+        .check_port("127.0.0.1", free_port(), Duration::from_secs(5))
+        .await
+    {
+        Err(SshError::Tunnel(message)) => {
+            assert!(message.contains("could not connect"), "{message}")
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert!(client
+        .check_port("-oProxyCommand=x", 22, Duration::from_secs(5))
+        .await
+        .is_err());
+}

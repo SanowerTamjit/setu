@@ -1,0 +1,21 @@
+[package]
+name = "setu-net"
+description = "Network tools for Setu: port checks, DNS lookups and Wake-on-LAN"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["net", "time", "rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+
+[lints]
+workspace = true

@@ -389,7 +389,7 @@ impl Runner for SshRunner {
 
 /// Server output is shown as text in the run log: drop terminal escape
 /// sequences and control characters other than newlines and tabs.
-fn plain_text(s: &str) -> String {
+pub(crate) fn plain_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {

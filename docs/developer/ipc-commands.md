@@ -106,6 +106,17 @@ The web view talks to Rust only through Tauri commands, registered in `generate_
 | `tunnel_start` | Starts a tunnel **as saved on disk**, by id; connects like a workflow run (vault or agent only, never a prompt, host key must be trusted) and asks the access policy first |
 | `tunnel_stop` | Stops a tunnel and closes its connections |
 
+## Network tools (`nettools.rs`)
+
+Every host name is checked by `setu_net::check_target` first (letters, digits, `.`, `-`, `_`, `:`; no leading `-`; at most 253 characters), so it can be put into a fixed server command without quoting. `through` is a saved host's name; it logs in like a workflow run (vault or agent only, never a prompt, host key must be trusted, access policy asked first) and disconnects when done.
+
+| Command | What it does |
+|---|---|
+| `net_check_port` | TCP connections to `host:port`, 1-10 attempts (clamped), 5 s each. Here: `tokio` connect. Through a host: a `direct-tcpip` channel opened and closed at once; nothing runs on the server |
+| `net_lookup` | Addresses for a name. Here: the system resolver. Through a host: `getent ahosts NAME`, output capped at 16 KiB and only IP addresses kept |
+| `net_ping` | Through a host only: `ping -c 4 -W 2 NAME`, output capped at 16 KiB and stripped to plain text (no escape sequences) |
+| `net_wake` | A Wake-on-LAN packet for a checked MAC address, sent to UDP port 9 on 255.255.255.255 or a given IPv4 address that ends in `.255`; nothing else can be a destination |
+
 ## Adding a command
 
 See [How-to recipes](how-to.md#add-an-ipc-command).

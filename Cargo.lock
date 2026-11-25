@@ -4637,6 +4637,7 @@ dependencies = [
  "setu-core",
  "setu-hosts",
  "setu-memory",
+ "setu-net",
  "setu-pty",
  "setu-ssh",
  "setu-vault",
@@ -4669,6 +4670,15 @@ dependencies = [
  "setu-workflow",
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "setu-net"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

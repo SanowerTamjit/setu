@@ -614,6 +614,49 @@ impl SshClient {
         Ok((out, code))
     }
 
+    /// Whether the server can open a TCP connection to `host:port`, and
+    /// how long the round trip took: opens a forwarding channel and closes it
+    /// at once, sending nothing. `host` must be a host name or address.
+    pub async fn check_port(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> Result<Duration, SshError> {
+        crate::known_hosts::check_host(host).map_err(|_| {
+            SshError::Tunnel(format!("{host:?} is not a valid host name or address"))
+        })?;
+        let start = std::time::Instant::now();
+        let open = self
+            .handle
+            .channel_open_direct_tcpip(host, u32::from(port), "127.0.0.1", 0);
+        match tokio::time::timeout(timeout, open).await {
+            Ok(Ok(channel)) => {
+                let took = start.elapsed();
+                let _ = channel.close().await;
+                Ok(took)
+            }
+            // The server does not say why; ConnectFailed covers refused,
+            // no route and its own timeout.
+            Ok(Err(russh::Error::ChannelOpenFailure(russh::ChannelOpenFailure::ConnectFailed))) => {
+                Err(SshError::Tunnel(format!(
+                    "the server could not connect to {host}:{port} (nothing is listening, or a firewall refused it)"
+                )))
+            }
+            Ok(Err(russh::Error::ChannelOpenFailure(
+                russh::ChannelOpenFailure::AdministrativelyProhibited,
+            ))) => Err(SshError::Tunnel(
+                "the server does not allow forwarding (AllowTcpForwarding in its sshd_config)".into(),
+            )),
+            Ok(Err(e)) => Err(SshError::Tunnel(format!(
+                "the server could not connect to {host}:{port} ({e})"
+            ))),
+            Err(_) => Err(SshError::Tunnel(format!(
+                "no answer from {host}:{port} in time"
+            ))),
+        }
+    }
+
     /// Closes the connection.
     pub async fn disconnect(&self) -> Result<(), SshError> {
         self.handle

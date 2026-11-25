@@ -46,6 +46,10 @@ const PATHS = {
   // A tunnel portal over a road.
   tunnel: "M3 19v-7a9 9 0 0 1 18 0v7M7.5 19v-6.5a4.5 4.5 0 0 1 9 0V19M2.5 19h19",
   stop: "M7 7h10v10H7z",
+  // Three linked nodes: the network tools.
+  network: "M12 4.5a2 2 0 1 0 0 .01M5 17.5a2 2 0 1 0 0 .01M19 17.5a2 2 0 1 0 0 .01M11 6.3 6 15.7M13 6.3l5 9.4M7 19.5h10",
+  pulse: "M3 12h4l2.5-6 5 12 2.5-6h4",
+  power: "M12 3.5v8M7.2 6.6a7 7 0 1 0 9.6 0",
   workflow: "M3.5 4.5h6v5h-6zM14.5 4.5h6v5h-6zM9 17h6v4H9zM9.5 7h5M17.5 9.5v3.5H12V17M6.5 9.5v3.5H12",
 } as const;
 
