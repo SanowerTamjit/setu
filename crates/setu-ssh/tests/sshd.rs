@@ -836,7 +836,7 @@ async fn dynamic_forward_is_a_socks5_proxy() {
     tcp.write_all(&request).await.expect("request");
     let mut reply = [0u8; 10];
     tcp.read_exact(&mut reply).await.expect("reply");
-    assert_eq!(reply[1], 0, "SOCKS reply {reply:?}");
+    assert_eq!(reply[1], 0, "the SOCKS request was not granted");
     assert_eq!(round_trip(&mut tcp, "via-socks").await, "echo:via-socks\n");
 
     // A destination the server cannot reach gets "host unreachable".
@@ -916,5 +916,5 @@ async fn a_closed_connection_is_noticed() {
         .expect("request");
     let mut reply = [0u8; 12];
     tcp.read_exact(&mut reply).await.expect("reply");
-    assert_eq!(reply[3], 4, "host unreachable, got {reply:?}");
+    assert_eq!(reply[3], 4, "expected host unreachable");
 }
