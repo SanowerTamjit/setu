@@ -746,3 +746,47 @@ export const tunnelSave = (tunnel: Tunnel) => invoke<string>("tunnel_save", { tu
 export const tunnelDelete = (id: string) => invoke<void>("tunnel_delete", { id });
 export const tunnelStart = (id: string) => invoke<void>("tunnel_start", { id });
 export const tunnelStop = (id: string) => invoke<void>("tunnel_stop", { id });
+
+// ---- Network tools (src-tauri/src/nettools.rs, crates/setu-net) ----
+
+export type PortAttempt =
+  | { result: "open"; micros: number; address: string }
+  | { result: "refused"; address: string }
+  | { result: "timedOut" }
+  | { result: "failed"; reason: string };
+
+export interface PortSummary {
+  sent: number;
+  open: number;
+  minMs?: number | null;
+  avgMs?: number | null;
+  maxMs?: number | null;
+}
+
+export interface PortReport {
+  attempts: PortAttempt[];
+  summary: PortSummary;
+  /** "this computer" or the saved host it ran through. */
+  from: string;
+}
+
+export interface LookupReport {
+  addresses: string[];
+  from: string;
+}
+
+export interface PingReport {
+  /** What the server printed, as plain text. */
+  output: string;
+  ok: boolean;
+  from: string;
+}
+
+/** `through` is a saved host's name; empty or missing means this computer. */
+export const netCheckPort = (host: string, port: number, attempts: number, through?: string) =>
+  invoke<PortReport>("net_check_port", { host, port, attempts, through: through || null });
+export const netLookup = (name: string, through?: string) =>
+  invoke<LookupReport>("net_lookup", { name, through: through || null });
+export const netPing = (host: string, through: string) => invoke<PingReport>("net_ping", { host, through });
+export const netWake = (mac: string, broadcast?: string) =>
+  invoke<void>("net_wake", { mac, broadcast: broadcast || null });

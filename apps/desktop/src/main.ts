@@ -27,6 +27,7 @@ import { openJumpMap } from "./jump-map";
 import { HostsHome } from "./hosts-home";
 import { WorkflowsView } from "./workflows-view";
 import { TunnelsView } from "./tunnels-view";
+import { NetView } from "./net-view";
 import { memoryRecording, onMemoryChange, refreshMemoryState, registerMemorySnippets } from "./work-memory";
 import { memorySettings, memoryView } from "./ipc";
 import { enabled } from "./features";
@@ -361,8 +362,11 @@ const workflows = new WorkflowsView(workflowsEl, { hosts: () => hostsPanel.hosts
 const tunnelsEl = document.getElementById("tunnels")!;
 const tunnels = new TunnelsView(tunnelsEl, { hosts: () => hostsPanel.hosts, showHosts: () => showView("hosts") });
 
-// The hosts view, workflows, tunnels and the terminals share the space right of the rail.
-type View = "terminals" | "hosts" | "workflows" | "tunnels";
+const networkEl = document.getElementById("network")!;
+const network = new NetView(networkEl, { hosts: () => hostsPanel.hosts });
+
+// The hosts view, workflows, tunnels, network tools and the terminals share the space right of the rail.
+type View = "terminals" | "hosts" | "workflows" | "tunnels" | "network";
 let view: View = "terminals";
 let sidebarWanted = true;
 const railButtons = new Map<string, HTMLButtonElement>();
@@ -377,11 +381,12 @@ function showView(next: View) {
   hostsHomeEl.hidden = !hosts;
   workflowsEl.hidden = next !== "workflows";
   tunnelsEl.hidden = next !== "tunnels";
+  networkEl.hidden = next !== "network";
   terminalsEl.hidden = next !== "terminals";
   syncSidebar();
   sidebarButton.hidden = next !== "terminals";
   for (const [id, b] of railButtons) {
-    if (id === "hosts" || id === "terminals" || id === "workflows" || id === "tunnels") b.classList.toggle("current", id === next);
+    if (id === "hosts" || id === "terminals" || id === "workflows" || id === "tunnels" || id === "network") b.classList.toggle("current", id === next);
   }
   studio.render();
   if (hosts) {
@@ -391,6 +396,9 @@ function showView(next: View) {
     void workflows.refresh().then(() => workflows.focus());
   } else if (next === "tunnels") {
     void tunnels.refresh().then(() => tunnels.focus());
+  } else if (next === "network") {
+    network.refresh();
+    network.focus();
   } else {
     active?.refit();
     active?.focus();
@@ -421,6 +429,7 @@ function buildRail() {
     item("terminals", "terminal", "Terminals", () => showView("terminals")),
     ...(enabled("workflows") ? [item("workflows", "workflow", "Workflows", () => showView("workflows"))] : []),
     ...(enabled("tunnels") ? [item("tunnels", "tunnel", "Tunnels", () => showView("tunnels"))] : []),
+    ...(enabled("networkTools") ? [item("network", "network", "Network tools", () => showView("network"))] : []),
     item("keys", "key", "SSH keys and known hosts", () => void runCommand("keys.open")),
     item("snippets", "snippet", "Snippets", () => void showPalette("Snippet ")),
     item("vault", "vault", "Vault", () => void openVaultDialog().then(() => active?.focus())),
@@ -434,7 +443,10 @@ function buildRail() {
   rail.hidden = !isMainWindow;
 }
 buildRail();
-hostsPanel.onChange(() => hostsHome.render());
+hostsPanel.onChange(() => {
+  hostsHome.render();
+  network.refresh();
+});
 
 // ---- Layouts: Classic (rail + tab bar) and Studio (title bar + navigator) ----
 
@@ -464,6 +476,7 @@ const studio: Studio = new Studio({
   showView: (v) => showView(v),
   workflows: () => enabled("workflows"),
   tunnels: () => enabled("tunnels"),
+  network: () => enabled("networkTools"),
   palette: () => void showPalette(),
   run: (id) => void runCommand(id),
   can: (id) => {
@@ -696,6 +709,7 @@ for (const c of [
   { id: "view.terminals", title: "Go to terminals", category: "View", run: () => showView("terminals") },
   { id: "view.workflows", title: "Go to workflows", category: "View", keywords: "automation runbook pipeline flow", when: () => enabled("workflows"), run: () => showView("workflows") },
   { id: "view.tunnels", title: "Go to tunnels", category: "View", keywords: "port forward socks proxy -L -R -D", when: () => enabled("tunnels"), run: () => showView("tunnels") },
+  { id: "view.network", title: "Go to network tools", category: "View", keywords: "port check tcp ping dns lookup nslookup dig wake on lan wol", when: () => enabled("networkTools"), run: () => showView("network") },
   {
     id: "view.board",
     title: "Open the task board",

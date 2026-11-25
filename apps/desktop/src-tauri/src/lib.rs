@@ -10,6 +10,7 @@ mod files;
 mod hosts;
 mod keys;
 mod memory;
+mod nettools;
 mod packs;
 mod prompts;
 mod remote_edit;
@@ -189,6 +190,10 @@ pub fn run_with(extensions: Extensions) {
             tunnels::tunnel_delete,
             tunnels::tunnel_start,
             tunnels::tunnel_stop,
+            nettools::net_check_port,
+            nettools::net_lookup,
+            nettools::net_ping,
+            nettools::net_wake,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

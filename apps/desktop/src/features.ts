@@ -88,6 +88,15 @@ export const FLAGS = [
     default: true,
     since: "0.2.0",
   },
+  {
+    id: "networkTools",
+    title: "Network tools",
+    description:
+      "The Network view: port check (a TCP ping), DNS lookup, ping and Wake-on-LAN, from this computer or through a saved host. Off here hides the view.",
+    stage: "beta",
+    default: true,
+    since: "0.2.0",
+  },
 ] as const satisfies readonly FeatureFlag[];
 
 export type FlagId = (typeof FLAGS)[number]["id"];

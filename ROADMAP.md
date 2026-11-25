@@ -20,7 +20,7 @@ Phase 2 turns the MVP into a 1.0 that people can run every day: the networking, 
 | --- | --- | --- | --- |
 | 1 | Tunnel engine: local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`) forwarding in `setu-ssh` | 5 | Tested against a real `sshd` |
 | 2 | Tunnels screen: saved tunnel profiles per host, start and stop, live connection counts, auto-reconnect | 5 | Loopback only unless you choose otherwise |
-| 3 | Network tools: ping, DNS lookup, port check, TLS certificate check, Wake-on-LAN | 5 | Run from this computer or through a host |
+| 3 | Network tools: ping, DNS lookup, port check, TLS certificate check, Wake-on-LAN | 5 | Run from this computer or through a host. The TLS check follows on its own, since it needs a TLS library |
 | 4 | Monitoring: agentless live CPU, memory, disk and network for an SSH session, with threshold alerts | 8 | Reads `/proc` and standard tools; nothing installed on the server |
 | 5 | Server management: services (systemd) with logs, processes, disk usage, `authorized_keys` | 7 | Every change shows the exact command and asks first |
 | 6 | Problems and health panel: findings from checks across hosts in one list | 20 | Built on monitoring and workflow checks |

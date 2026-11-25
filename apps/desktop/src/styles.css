@@ -6576,3 +6576,127 @@ button.with-icon {
 :root[data-theme="high-contrast"] .tunnel-kind .icon {
   color: #000;
 }
+
+/* Network tools view (net-view.ts): tool cards reuse the hosts view's cards */
+.net-from {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+}
+
+.net-from-select {
+  height: 32px;
+  min-width: 190px;
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.net-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.net-card .card-name {
+  margin: 0;
+}
+
+.net-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.net-form .field {
+  margin: 0;
+  min-width: 0;
+}
+
+.net-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 70px;
+  gap: var(--space-2);
+}
+
+.net-row:has(> :nth-child(2):last-child) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.net-note {
+  line-height: 1.45;
+}
+
+.net-result {
+  padding: 10px 12px;
+  font-size: var(--fs-sm);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+}
+
+.net-result[hidden] {
+  display: none;
+}
+
+.net-result.good {
+  border-left-color: var(--success);
+}
+
+.net-result.bad {
+  border-left-color: var(--danger);
+}
+
+.net-result.mixed {
+  border-left-color: var(--warn-text);
+}
+
+.net-headline {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.net-result.bad .net-headline {
+  color: var(--danger-text);
+}
+
+.net-lines {
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.net-addresses {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.net-addresses code {
+  font-family: var(--mono);
+}
+
+.net-small {
+  margin: 6px 0 0;
+}
+
+.net-view .card-connect:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+:root[data-theme="high-contrast"] .net-result {
+  border-width: 2px 2px 2px 4px;
+}
