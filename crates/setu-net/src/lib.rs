@@ -285,7 +285,9 @@ mod tests {
         assert!(s.min_ms <= s.avg_ms && s.avg_ms <= s.max_ms);
 
         drop(listener);
-        let tries = check_port("127.0.0.1", open, 1, Duration::from_secs(2))
+        // Windows retries a refused connection for about two seconds before
+        // reporting it, so give the refusal more time than that.
+        let tries = check_port("127.0.0.1", open, 1, Duration::from_secs(8))
             .await
             .expect("check");
         assert!(matches!(tries[0], Attempt::Refused { .. }), "{tries:?}");
