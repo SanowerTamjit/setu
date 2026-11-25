@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HISTORY, History, alertText, bytes, level, parseLimit, pct, rate, sparkline, uptime } from "../src/monitor-model";
+import { HISTORY, History, alertText, bytes, level, parseLimit, pct, procCpu, rate, sparkline, uptime } from "../src/monitor-model";
 import type { Snapshot } from "../src/ipc";
 
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
@@ -8,6 +8,11 @@ const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   memTotalKb: 0,
   disks: [],
   alerts: [],
+  corePercents: [],
+  interfaces: [],
+  diskIo: [],
+  processes: [],
+  processCount: 0,
   ...over,
 });
 
@@ -63,5 +68,13 @@ describe("words and numbers", () => {
     expect(parseLimit("0", 90)).toBe(90);
     expect(parseLimit("150", 90)).toBe(90);
     expect(parseLimit("8.5", 90)).toBe(90);
+  });
+});
+
+describe("details", () => {
+  it("formats process CPU like top", () => {
+    expect(procCpu(null)).toBe("…");
+    expect(procCpu(3.25)).toBe("3.3%");
+    expect(procCpu(142.4)).toBe("142%");
   });
 });

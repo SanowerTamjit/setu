@@ -6,7 +6,7 @@
 import { el, errorText } from "./dom";
 import { icon } from "./icons";
 import { monitorStart, monitorStop, type Host, type MonitorEvent, type MonitorLimits, type Snapshot } from "./ipc";
-import { History, alertText, kb, level, parseLimit, pct, rate, sparkline, uptime } from "./monitor-model";
+import { DETAILS, History, alertText, kb, level, parseLimit, pct, procCpu, rate, sparkline, uptime, type Detail } from "./monitor-model";
 
 export interface MonitorActions {
   hosts: () => Host[];
@@ -58,6 +58,7 @@ class Panel {
   private readonly body: HTMLElement;
   private readonly message: HTMLElement;
   private last: Snapshot | null = null;
+  private detail: Detail | null = null;
 
   constructor(
     readonly host: Host,
@@ -212,7 +213,81 @@ class Panel {
           }),
         )
       : el("span", {});
-    this.body.replaceChildren(el("div", { className: "mon-tiles" }, cpu, mem, net), disks);
+    this.body.replaceChildren(el("div", { className: "mon-tiles" }, cpu, mem, net), disks, ...(s ? [this.details(s)] : []));
+  }
+
+  /** Tabs for a closer look: processes, each core, each interface, disk I/O. */
+  private details(s: Snapshot) {
+    const p = this.prefs();
+    const tabs = el("div", { className: "mon-detail-tabs", role: "tablist" });
+    tabs.setAttribute("aria-label", `Details for ${this.host.name}`);
+    for (const d of DETAILS) {
+      const b = el("button", { type: "button", className: `mon-detail-tab${this.detail === d.id ? " current" : ""}` }, d.label);
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(this.detail === d.id));
+      b.onclick = () => {
+        this.detail = this.detail === d.id ? null : d.id;
+        this.renderBody(this.last);
+      };
+      tabs.append(b);
+    }
+    // Text columns (names, commands) line up on the left, numbers on the right,
+    // and each header follows its column.
+    const table = (head: string[], rows: (string | HTMLElement)[][], cls = "") => {
+      const text = head.map((_, i) => rows.length > 0 && typeof rows[0][i] !== "string");
+      const align = (i: number) => (text[i] || i === 0 ? "" : "num");
+      return el(
+        "table",
+        { className: `mon-table ${cls}` },
+        el("thead", {}, el("tr", {}, ...head.map((h, i) => el("th", { className: align(i) }, h)))),
+        el("tbody", {}, ...rows.map((r) => el("tr", {}, ...r.map((c, i) => el("td", { className: align(i) }, c))))),
+      );
+    };
+    let content: HTMLElement | null = null;
+    switch (this.detail) {
+      case "processes":
+        content = el(
+          "div",
+          {},
+          table(
+            ["PID", "Command", "CPU", "Memory", ""],
+            s.processes.map((q) => [String(q.pid), el("code", {}, q.command), procCpu(q.cpuPercent), kb(q.rssKb), pct(q.memPercent)]),
+            "mon-procs",
+          ),
+          el("small", { className: "muted" }, `The ${s.processes.length} busiest of ${s.processCount} processes. CPU is like top: 100% is one whole core.`),
+        );
+        break;
+      case "cores":
+        content = s.corePercents.length
+          ? el(
+              "div",
+              { className: "mon-cores" },
+              ...s.corePercents.map((v, i) => {
+                const fill = el("span", { className: "mon-core-fill" });
+                fill.style.height = `${Math.min(100, Math.max(0, v)).toFixed(0)}%`;
+                const core = el("div", { className: `mon-core level-${level(v, p.cpu)}`, title: `CPU ${i}: ${pct(v)}` }, el("span", { className: "mon-core-bar" }, fill), el("small", {}, String(i)));
+                core.setAttribute("aria-label", `CPU ${i} at ${pct(v)}`);
+                return core;
+              }),
+            )
+          : el("small", { className: "muted" }, "Waiting for a second reading…");
+        break;
+      case "network":
+        content = table(
+          ["Interface", "Received", "Sent"],
+          s.interfaces.map((i) => [el("code", {}, i.name), rate(i.rxPerSec), rate(i.txPerSec)]),
+        );
+        break;
+      case "disks":
+        content = s.diskIo.length
+          ? table(
+              ["Device", "Read", "Written"],
+              s.diskIo.map((d) => [el("code", {}, d.device), rate(d.readPerSec), rate(d.writePerSec)]),
+            )
+          : el("small", { className: "muted" }, "This server does not report disk activity (often the case in containers).");
+        break;
+    }
+    return el("div", { className: "mon-details" }, tabs, ...(content ? [el("div", { className: "mon-detail" }, content)] : []));
   }
 }
 

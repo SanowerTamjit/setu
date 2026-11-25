@@ -17,7 +17,22 @@ Pick a saved host at the top right and press **Watch**. A panel appears and fill
 | **Network** | Bytes a second received (↓, solid line) and sent (↑, dashed line) on every interface except loopback. |
 | **Disks** | Each real file system (not `tmpfs`, `overlay` or snap loop devices): its mount point, a bar, and space used. |
 
-The panel's subtitle shows how long the server has been up. Watch as many as eight hosts at once; panels keep updating while you work in other views, and close a panel (✕) to stop watching that host.
+The panel's subtitle shows how long the server has been up.
+
+## Details
+
+Under the disks, four tabs open more detail (press the open tab again to close it):
+
+| Tab | Shows |
+|---|---|
+| **Processes** | The twelve busiest processes: process id, command name, CPU and memory. CPU counts like `top`, so 100% is one whole core and a busy process on a 4-CPU server can show up to 400%. The note under the table says how many processes the server runs. |
+| **CPU cores** | One bar per CPU, coloured like the tiles (amber near the limit, red at it), so you can tell one stuck process from a server that is busy all over. |
+| **Interfaces** | Bytes a second received and sent on each network interface, loopback included. |
+| **Disk activity** | Bytes a second read and written on each whole disk (partitions, loop and RAM disks are left out). Containers often do not report this, and the tab says so. |
+
+![The busiest processes on a host](images/monitoring-processes.png)
+
+Process names come from the server and are shown only as text, cut to 64 characters. Setu does not read command lines or arguments, which can hold passwords. Watch as many as eight hosts at once; panels keep updating while you work in other views, and close a panel (✕) to stop watching that host.
 
 ## Alerts
 
@@ -39,7 +54,7 @@ If the connection drops, the panel says **Reconnecting…** and tries again. Aft
 Each reading runs one fixed, read-only command, the same for every server:
 
 ```sh
-export LC_ALL=C; for f in stat meminfo loadavg uptime net/dev; do echo "@@$f"; cat /proc/$f 2>/dev/null; done; echo @@df; df -P -k 2>/dev/null
+export LC_ALL=C; for f in stat meminfo loadavg uptime net/dev diskstats; do echo "@@$f"; cat /proc/$f 2>/dev/null; done; echo @@df; df -P -k 2>/dev/null; echo @@pagesize; getconf PAGESIZE 2>/dev/null; echo @@procs; cat /proc/[0-9]*/stat 2>/dev/null | head -c 524288
 ```
 
-It takes nothing from you or from the host's settings. Setu reads only numbers from what comes back (and disk mount points, cleaned of control characters), keeps nothing on disk, and logs nothing. It works on Linux servers; other systems (macOS, BSD, Windows) are not supported yet.
+It takes nothing from you or from the host's settings. Setu reads only numbers from what comes back (and disk mount points, device, interface and process names, cleaned of control characters), keeps nothing on disk, and logs nothing. It works on Linux servers; other systems (macOS, BSD, Windows) are not supported yet.

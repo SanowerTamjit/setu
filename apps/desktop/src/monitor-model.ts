@@ -98,3 +98,18 @@ export function parseLimit(text: string, fallback: number): number {
   const n = Number(text.trim());
   return Number.isInteger(n) && n >= 1 && n <= 100 ? n : fallback;
 }
+
+export type Detail = "processes" | "cores" | "network" | "disks";
+
+export const DETAILS: { id: Detail; label: string }[] = [
+  { id: "processes", label: "Processes" },
+  { id: "cores", label: "CPU cores" },
+  { id: "network", label: "Interfaces" },
+  { id: "disks", label: "Disk activity" },
+];
+
+/** A process's CPU, like top: "142%" is one and a half cores. */
+export function procCpu(v: number | null | undefined): string {
+  if (v == null) return "…";
+  return v < 10 ? `${v.toFixed(1)}%` : `${Math.round(v)}%`;
+}
