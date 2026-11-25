@@ -2,8 +2,10 @@
 
 `setu` works on the same files as the desktop app: your saved hosts, the vault and `~/.ssh`. Use it to check a machine's SSH setup, or to list and import hosts from a terminal or a script.
 
+The nightly builds include the CLI for each platform (`setu-cli-…` archives on the [Releases page](https://github.com/SanowerTamjit/setu/releases/tag/nightly)); unpack it and put `setu` on your `PATH`. Or build it from source:
+
 ```sh
-cargo install --path crates/setu-cli    # until release builds ship it
+cargo install --path crates/setu-cli    # from a source checkout
 setu --help
 ```
 
@@ -17,6 +19,8 @@ Checks the things that make SSH fail in confusing ways, and says how to fix each
 | SSH keys | Every private key in `~/.ssh` (and every key named by a host or `IdentityFile`): not readable by other users (OpenSSH refuses those), loads, needs a passphrase or not, and whether ssh-agent already holds it; `~/.ssh` is not writable by others; `known_hosts` is readable |
 | ssh-agent | An agent is reachable (`SSH_AUTH_SOCK` on macOS and Linux; the OpenSSH agent service or Pageant on Windows) and which keys it holds. No agent is fine, unless you have passphrase keys it would save you typing for |
 | SSH config | `~/.ssh/config` is not writable by others (OpenSSH's "Bad owner or permissions"), reads cleanly, every `IdentityFile` exists, and how many hosts are not imported into Setu yet |
+
+![setu doctor finding a key other users can read](images/setu-doctor.png)
 
 Each line is marked ✓ (fine), · (for your information), ! (worth a look) or ✗ (SSH will fail), with a `fix:` line where there is something to do.
 

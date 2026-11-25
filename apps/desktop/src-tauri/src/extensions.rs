@@ -1,5 +1,5 @@
 //! The settings page a build with extensions may add (see
-//! `docs/extending.md`). The web view only draws the plain data it gets
+//! `docs/developer/extending.md`). The web view only draws the plain data it gets
 //! here; button presses come back by id.
 
 use serde::Serialize;

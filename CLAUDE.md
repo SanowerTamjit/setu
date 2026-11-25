@@ -16,7 +16,7 @@ Setu is an open-source (Apache-2.0) SSH client, terminal and ops workbench: a Ru
 | `crates/setu-cli` | The `setu` CLI and `setu doctor` |
 | `apps/desktop/src-tauri` | Tauri commands: the only bridge between UI and Rust |
 | `apps/desktop/src` | TypeScript UI (no framework), xterm.js |
-| `docs/` | User docs, ADRs (`docs/adr`), security docs (`docs/security`) |
+| `docs/` | User guide (`docs/user`), developer guide (`docs/developer`), ADRs (`docs/adr`), security docs (`docs/security`) |
 
 ## Commands
 
@@ -40,8 +40,8 @@ Linux needs `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`. Re-run only the t
 1. **Small pull requests**, one topic each, based on `master`. Branches `p1/<topic>` (or the branch you were given). Commits signed off (`git commit -s`, DCO) with an `area: summary` subject and a body that says why.
 2. **Tests with every change**, Rust or TypeScript. A bug fix comes with a test that fails without it.
 3. **User-visible change → `CHANGELOG.md`** under *Unreleased* (Added, Changed, Fixed, Security). Write for users, not for the code.
-4. **New or risky features go behind a flag** (`apps/desktop/src/features.ts`, `docs/feature-flags.md`). Security fixes never do.
-5. **Docs with the feature**: update the matching file in `docs/`. New IPC commands, files read or network calls also update `docs/security/threat-model.md`.
+4. **New or risky features go behind a flag** (`apps/desktop/src/features.ts`, `docs/developer/feature-flags.md`). Security fixes never do.
+5. **Docs with the feature**: update the matching page in `docs/user/` (what people see and do) or `docs/developer/` (how it is built); `docs/developer/docs-guide.md` says which. New IPC commands, files read or network calls also update `docs/security/threat-model.md`.
 6. **No new dependency** without a reason in the PR. Check its license is in `deny.toml`, it is maintained, and it has no advisories. Pin GitHub Actions to a commit SHA with the tag in a comment.
 7. **UI changes need screenshots** in the PR (all three themes when it is visual).
 8. `unsafe` is denied. No `unwrap`/`expect` outside tests (clippy warns).

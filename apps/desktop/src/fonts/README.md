@@ -5,7 +5,7 @@
 (`NerdFontsSymbolsOnly.zip`), converted from TTF to WOFF2 without other changes.
 It holds only icons (no letters) and Setu uses it as a fallback for icon code
 points, so prompt themes such as Powerlevel10k and Starship show their icons
-with any terminal font. See `docs/terminal.md`.
+with any terminal font. See `docs/user/appearance.md`.
 
 Licence: Nerd Fonts is MIT (`LICENSE-NerdFonts.txt`). The glyphs come from
 these icon sets, under their own licences, all of which allow redistribution:

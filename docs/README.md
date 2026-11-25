@@ -1,11 +1,17 @@
 # Setu documentation
 
+| | |
+|---|---|
+| **[User guide](user/README.md)** | Install Setu, connect to servers, manage hosts, copy files, keep passwords in the vault, automate with workflows. Start with [Getting started](user/getting-started.md). |
+| **[Developer guide](developer/README.md)** | Build and run Setu, how it is put together, testing, recipes for common changes, releases. Start with [Building and running](developer/setup.md). |
+
+Also here:
+
+- [Security](security/threat-model.md): the threat model and the [Phase 1 security review](security/phase1-review.md)
 - [Architecture decision records](adr/)
-- [Roadmap](../ROADMAP.md)
-- [Editions: free vs paid](../EDITIONS.md)
-- [Threat model](security/threat-model.md) and the [Phase 1 security review](security/phase1-review.md)
-- [Feature flags](feature-flags.md)
-- [How Setu is built (AI-assisted workflow)](development-workflow.md)
+- [Roadmap](../ROADMAP.md), [Editions: free vs paid](../EDITIONS.md), [What's new](../CHANGELOG.md)
+
+The docs describe what is on `master`, and change in the same pull request as the code. [Keeping the docs up to date](developer/docs-guide.md) says which page to update for which change.
 
 ## Architecture in one paragraph
 

@@ -4,7 +4,7 @@ name: Nightly
 # every night and publishes them as the rolling `nightly` pre-release.
 #
 # Signing switches on by itself when the secrets exist (see
-# docs/releasing.md). Without them the builds are still published:
+# docs/developer/releasing.md). Without them the builds are still published:
 # unsigned on Windows, ad-hoc signed on macOS, and every file carries a
 # GitHub build-provenance attestation and a SHA-256 checksum.
 
@@ -307,7 +307,7 @@ jobs:
             echo "Verify a download: \`sha256sum -c SHA256SUMS --ignore-missing\`, and"
             echo "\`gh attestation verify <file> --repo ${{ github.repository }}\` to check it was built here."
             echo "The \`.spdx.json\` file lists every dependency in this build (SBOM)."
-            echo "Install notes: docs/releasing.md."
+            echo "Install notes: docs/developer/releasing.md."
           } > notes.md
           gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
           gh release create nightly release-out/* \

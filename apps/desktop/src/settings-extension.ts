@@ -1,4 +1,4 @@
-// The settings page a build with extensions adds (docs/extending.md). The
+// The settings page a build with extensions adds (docs/developer/extending.md). The
 // Rust side sends plain data; this file only draws it. Nothing from the
 // extension is treated as HTML.
 

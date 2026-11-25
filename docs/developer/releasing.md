@@ -1,6 +1,6 @@
 # Nightly builds and signing
 
-Every night at 02:17 UTC, the [Nightly workflow](../.github/workflows/nightly.yml) builds `master` for macOS, Linux and Windows. It replaces the **`nightly`** pre-release on the [Releases page](https://github.com/SanowerTamjit/setu/releases/tag/nightly). If nothing changed since the last nightly, it skips the build. A maintainer can also run it by hand: **Actions → Nightly → Run workflow**.
+Every night at 02:17 UTC, the [Nightly workflow](../../.github/workflows/nightly.yml) builds `master` for macOS, Linux and Windows. It replaces the **`nightly`** pre-release on the [Releases page](https://github.com/SanowerTamjit/setu/releases/tag/nightly). If nothing changed since the last nightly, it skips the build. A maintainer can also run it by hand: **Actions → Nightly → Run workflow**.
 
 Nightlies are untested snapshots for trying new work. They are not for production machines.
 
@@ -82,7 +82,7 @@ Nightlies are snapshots; a versioned release (`v0.1.0`, …) is a promise. Befor
 
 1. Move everything under **Unreleased** in `CHANGELOG.md` to a new `## [0.1.0] - YYYY-MM-DD` heading. Sections, in this order: **Security**, **Added**, **Changed**, **Fixed**, **Removed**. Each line says what changed for users, in plain words.
 2. Bump `version` in `Cargo.toml` (`[workspace.package]`), `apps/desktop/package.json` and `apps/desktop/src-tauri/tauri.conf.json` together.
-3. Check that `audit.yml` (advisories) is green on the release commit, and that flags due to retire are removed (`docs/feature-flags.md`).
+3. Check that `audit.yml` (advisories) is green on the release commit, and that flags due to retire are removed (`docs/developer/feature-flags.md`).
 4. Tag the commit `vX.Y.Z`. The release notes are the version's `CHANGELOG.md` section, followed by GitHub's generated list of pull requests, grouped by label (`.github/release.yml`: `security`, `feature`, `bug`, `documentation`, `dependencies`; `no-changelog` hides a PR).
 5. Security fixes get a GitHub security advisory (Security → Advisories) published with the release, crediting the reporter.
 

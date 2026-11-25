@@ -1,6 +1,8 @@
-# Roles and packs
+# Snippets, roles and packs
 
 ## Your role
+
+![The role picker on first launch](images/role-picker.png)
 
 On first launch Setu asks what kind of work you do. **System administrator** turns on the built-in system administrator pack. DevOps, security operations, network and IT operations packs follow in later releases. Skip the question if you like; Settings → Packs → **Change role** asks again.
 
@@ -13,6 +15,8 @@ The system administrator pack has 25: disk and inode usage, largest folders and 
 ## Installing a pack from a file
 
 Settings → Packs → **Install from file** reads one `.json` file. Setu shows the pack's name, version, the permissions it asks for and the snippets it adds before anything is installed. Installed packs are kept in `packs/` in Setu's config folder (`setu paths` shows where); turn any pack off with its tick box, or remove it. A pack with the same id replaces the installed version.
+
+![Installing a pack: Setu shows what it adds first](images/pack-install.png)
 
 ## Pack format (version 1)
 

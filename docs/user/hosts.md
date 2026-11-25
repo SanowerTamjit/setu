@@ -10,7 +10,7 @@ Setu keeps your saved hosts in one plain TOML file, so you can back it up, diff 
 
 With `SETU_HOME` set (portable mode), the file is `$SETU_HOME/config/hosts.toml`.
 
-**No secrets are stored here.** Passwords are asked for when you connect, and keys stay in `~/.ssh`. Passwords and passphrases will be storable in the encrypted vault (`setu-vault`), never in this file.
+**No secrets are stored here.** Passwords are asked for when you connect, and keys stay in `~/.ssh`. Passwords and key passphrases can be saved in the encrypted [vault](vault.md), never in this file.
 
 ## The hosts view
 
@@ -20,6 +20,12 @@ The top button in the rail on the left opens the hosts view: each saved host as 
 - Type in the search box to filter by name, address, user, folder, jump host or tag; Enter connects to the first match. The tag chips under it show only hosts with that tag.
 - With a card focused, Enter connects, E or F2 edits, and the arrow keys move between cards.
 - **Jump-host map**, **Import** and **New host** are at the top right.
+
+![The hosts view](images/hosts-view.png)
+
+**New host**, or the pencil on a card, opens the host editor: name, address, port, user, how it signs in, key file, jump host, folder, tags and notes.
+
+![The host editor](images/host-editor.png)
 
 The sidebar next to the terminals (Ctrl+Shift+H) lists the same hosts as a tree, for connecting without leaving your tabs.
 
@@ -65,6 +71,10 @@ A file with a higher `version` than Setu understands is never overwritten.
 
 Hosts that are already saved show as **Saved** (same settings) or **Update** (the config has different settings). Importing an update changes only the connection settings and keeps your folder, tags and notes.
 
+![Importing hosts](images/hosts-import.png)
+
+The same import is available from a terminal: `setu hosts import` (see [the command line](cli.md)).
+
 ## Importing from other tools
 
 **Import** in the hosts sidebar (or `Import hosts` in the palette) asks where your hosts are now:
@@ -81,3 +91,5 @@ Saved passwords are never read, even where the other tool stores them. As with `
 ## Jump-host map
 
 `Jump-host map` in the palette draws how your saved hosts are reached: this computer on the left, then each bastion, then the hosts behind it. Jump hosts that are not saved hosts are drawn dashed. Click a host to connect.
+
+![The jump-host map](images/jump-host-map.png)

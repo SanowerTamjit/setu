@@ -54,11 +54,11 @@ UI logic has unit tests in `apps/desktop/test/` (Vitest); add one when you chang
 
 ### Feature flags
 
-New features that are not tested everywhere yet, or that change behaviour people rely on, ship behind a flag. See [docs/feature-flags.md](docs/feature-flags.md).
+New features that are not tested everywhere yet, or that change behaviour people rely on, ship behind a flag. See [docs/developer/feature-flags.md](docs/developer/feature-flags.md).
 
 ### Using AI assistants
 
-You are welcome to use them. [CLAUDE.md](CLAUDE.md) (read by Claude Code, and by other agents through [AGENTS.md](AGENTS.md)) has the project's rules and security checklist, and [docs/development-workflow.md](docs/development-workflow.md) describes how the project itself is built with them. You are responsible for every line you submit: read it, test it, and add a `Co-Authored-By:` trailer naming the assistant.
+You are welcome to use them. [CLAUDE.md](CLAUDE.md) (read by Claude Code, and by other agents through [AGENTS.md](AGENTS.md)) has the project's rules and security checklist, and [docs/developer/development-workflow.md](docs/developer/development-workflow.md) describes how the project itself is built with them. You are responsible for every line you submit: read it, test it, and add a `Co-Authored-By:` trailer naming the assistant.
 
 ### Security-sensitive code
 

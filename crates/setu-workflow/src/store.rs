@@ -28,7 +28,7 @@ pub struct WorkflowStore {
 }
 
 const HEADER: &str =
-    "# A Setu workflow. Edit it in Setu (Workflows) or by hand; see docs/workflows.md.\n";
+    "# A Setu workflow. Edit it in Setu (Workflows) or by hand; see docs/user/workflows.md.\n";
 
 /// Writes `data` to `path` through a temp file, 0600 on Unix.
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), WorkflowError> {
@@ -277,7 +277,7 @@ impl WorkflowStore {
 }
 
 const BOARD_HEADER: &str =
-    "# Setu task board. Edit it in Setu (Workflows → Board) or by hand; see docs/workflows.md.\n";
+    "# Setu task board. Edit it in Setu (Workflows → Board) or by hand; see docs/user/workflows.md.\n";
 
 impl WorkflowStore {
     /// The task board; a missing file is an empty board.

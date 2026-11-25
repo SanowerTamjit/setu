@@ -1,6 +1,6 @@
 //! Work memory: keeps the commands typed in terminals (on this device,
 //! secrets masked) and turns repeated work into snippet and workflow
-//! suggestions. See `setu-memory` and docs/work-memory.md.
+//! suggestions. See `setu-memory` and docs/user/work-memory.md.
 //!
 //! Remembering is off until the person turns it on, and the check lives
 //! here, not in the web view. Nothing is sent anywhere.
