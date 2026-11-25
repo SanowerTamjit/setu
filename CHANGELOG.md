@@ -17,6 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Tunnels**: save SSH port forwards and start them with one click: a local port that reaches a database or admin page inside a server's network (like `ssh -L`), a SOCKS proxy for browsing through a host (like `ssh -D`), or a port on the server that reaches your computer (like `ssh -R`). Each tunnel shows whether it is running and how many connections it carries, can start when Setu opens, and reconnects by itself when the connection drops. Tunnels listen only on your own computer unless you choose otherwise. See `docs/user/tunnels.md`.
 - Documentation: a **user guide** (`docs/user/`: getting started, every feature, keyboard shortcuts, settings and files, troubleshooting, with screenshots) and a **developer guide** (`docs/developer/`: building, architecture, IPC commands, testing, how-to recipes and how to keep the docs current). Start at `docs/README.md`.
 - Extension points for builds of Setu that add their own hooks: an audit trail (SSH logins, file copies, finished workflow runs, refused commands), a command policy checked before each workflow step runs on a host, an access policy checked before every SSH login, a session recorder for SSH terminals (the terminal always says when a session is recorded, and keystrokes are never given to it), and a settings page of their own that can open a sign-in page in your browser. The open-source app ships with none, so nothing changes for you. See `docs/developer/extending.md`.
 

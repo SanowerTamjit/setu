@@ -2,7 +2,7 @@
 //!
 //! The web view only renders. Shells, SSH sessions, saved hosts and the
 //! vault run in Rust and talk to the UI through the commands in [`terminals`],
-//! [`ssh`], [`files`], [`hosts`], [`vault`], [`workflows`], [`memory`] and [`session`].
+//! [`ssh`], [`files`], [`hosts`], [`vault`], [`workflows`], [`tunnels`], [`memory`] and [`session`].
 
 mod color_schemes;
 mod extensions;
@@ -16,6 +16,7 @@ mod remote_edit;
 mod session;
 mod ssh;
 mod terminals;
+mod tunnels;
 mod vault;
 mod windows;
 mod workflows;
@@ -68,6 +69,7 @@ pub fn run_with(extensions: Extensions) {
         .manage(ssh::OfferedKeys::default())
         .manage(workflows::Workflows::from_env())
         .manage(memory::Memory::from_env())
+        .manage(tunnels::Tunnels::from_env())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             if let Some(edition) = app.state::<Extensions>().edition() {
@@ -83,6 +85,12 @@ pub fn run_with(extensions: Extensions) {
             tauri::async_runtime::spawn_blocking(move || {
                 vault.startup_unlock();
                 let _ = handle.emit(vault::STATUS_EVENT, vault.status());
+                // Tunnels that start with Setu may need the vault's secrets.
+                handle.state::<tunnels::Tunnels>().start_auto(
+                    &handle.state::<hosts::Hosts>(),
+                    &vault,
+                    &handle.state::<Extensions>(),
+                );
             });
             Ok(())
         })
@@ -176,6 +184,11 @@ pub fn run_with(extensions: Extensions) {
             memory::memory_snippet_delete,
             memory::memory_workflow_draft,
             memory::memory_summary,
+            tunnels::tunnels_list,
+            tunnels::tunnel_save,
+            tunnels::tunnel_delete,
+            tunnels::tunnel_start,
+            tunnels::tunnel_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

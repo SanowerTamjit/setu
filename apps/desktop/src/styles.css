@@ -6463,3 +6463,116 @@ button.with-icon {
   font-size: var(--fs-sm);
   color: var(--info-text);
 }
+
+/* Tunnels view (tunnels-view.ts): reuses the hosts view's cards and buttons */
+.tunnel-intro {
+  max-width: 760px;
+  margin: calc(-1 * var(--space-2)) 0 0;
+  line-height: 1.5;
+}
+
+.tunnel-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-3);
+}
+
+.tunnel-list > .home-empty,
+.tunnel-list > .home-notice {
+  grid-column: 1 / -1;
+}
+
+.tunnel-card.phase-running {
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+}
+
+.tunnel-card.phase-failed {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+
+.tunnel-kind .icon {
+  color: var(--accent);
+}
+
+.tunnel-phase {
+  align-self: flex-start;
+  padding: 1px 8px;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  color: var(--muted);
+  background: var(--bg-hover);
+  border-radius: 10px;
+}
+
+.tunnel-phase.phase-running {
+  color: var(--success-text);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+
+.tunnel-phase.phase-connecting,
+.tunnel-phase.phase-reconnecting {
+  color: var(--warn-text);
+  background: color-mix(in srgb, var(--warn-text) 14%, transparent);
+}
+
+.tunnel-phase.phase-failed {
+  color: var(--danger-text);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.tunnel-summary {
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.tunnel-usage,
+.tunnel-message {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.tunnel-message.phase-failed {
+  color: var(--danger-text);
+}
+
+.tunnel-message.phase-reconnecting,
+.tunnel-message.phase-connecting {
+  color: var(--warn-text);
+}
+
+.tunnel-shared {
+  color: var(--warn-text);
+}
+
+.tunnels-view .card-connect.stop:hover {
+  color: #fff;
+  background: var(--danger-strong);
+  border-color: var(--danger-strong);
+}
+
+.tunnel-dialog > small {
+  margin-top: -6px;
+  line-height: 1.45;
+}
+
+.tunnel-warning {
+  color: var(--warn-text);
+}
+
+.tunnel-warning[hidden] {
+  display: none;
+}
+
+:root[data-theme="high-contrast"] .tunnel-phase {
+  border: 1px solid currentColor;
+}
+
+:root[data-theme="high-contrast"] .tunnel-kind .icon {
+  color: #000;
+}

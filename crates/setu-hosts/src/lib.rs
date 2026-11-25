@@ -27,6 +27,7 @@ mod model;
 pub mod sources;
 pub mod ssh_config;
 mod store;
+pub mod tunnels;
 
 pub use error::HostsError;
 pub use model::{Auth, Host, Inventory, FORMAT_VERSION};

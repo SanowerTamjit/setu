@@ -35,6 +35,9 @@ pub enum AuditAction {
     WorkflowRun,
     /// A command that a [`CommandPolicy`] refused to run.
     CommandBlocked,
+    /// A saved tunnel (port forward) that started, or could not start. The
+    /// detail is the forward as OpenSSH writes it (`-L 5433:db:5432`).
+    TunnelOpen,
 }
 
 impl AuditAction {
@@ -45,6 +48,7 @@ impl AuditAction {
             AuditAction::FileTransfer => "file.transfer",
             AuditAction::WorkflowRun => "workflow.run",
             AuditAction::CommandBlocked => "command.blocked",
+            AuditAction::TunnelOpen => "tunnel.open",
         }
     }
 }

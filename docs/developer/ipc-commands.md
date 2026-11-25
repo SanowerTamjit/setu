@@ -96,6 +96,16 @@ The web view talks to Rust only through Tauri commands, registered in `generate_
 | `memory_workflow_draft` | Rebuilds a suggested workflow in Rust from its id; not saved |
 | `memory_summary` | A Markdown summary of routine work, masked commands left out |
 
+## Tunnels (`tunnels.rs`)
+
+| Command | What it does |
+|---|---|
+| `tunnels_list` | Saved tunnels from `tunnels.toml` with each one's live status (state, message, listening address, connection counts); never a secret |
+| `tunnel_save` | Adds or changes a tunnel; the host must be a saved host, an id the window sends must already exist (new ids are made in Rust), and every field is checked (`setu_hosts::tunnels::Tunnel::validate`: ports 1-65535, addresses without spaces or option characters, no two tunnels on one local port) |
+| `tunnel_delete` | Stops a tunnel and removes it |
+| `tunnel_start` | Starts a tunnel **as saved on disk**, by id; connects like a workflow run (vault or agent only, never a prompt, host key must be trusted) and asks the access policy first |
+| `tunnel_stop` | Stops a tunnel and closes its connections |
+
 ## Adding a command
 
 See [How-to recipes](how-to.md#add-an-ipc-command).

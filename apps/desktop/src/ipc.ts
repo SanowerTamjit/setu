@@ -697,3 +697,52 @@ export interface DetectedPrompt {
 }
 
 export const promptDetect = () => invoke<DetectedPrompt[]>("prompt_detect");
+
+// ---- Tunnels (src-tauri/src/tunnels.rs, crates/setu-ssh/src/tunnel.rs) ----
+
+export type TunnelKind = "local" | "remote" | "dynamic";
+export type TunnelPhase = "stopped" | "connecting" | "running" | "reconnecting" | "failed";
+
+export interface TunnelStatus {
+  phase: TunnelPhase;
+  message?: string;
+  listening?: string;
+  active: number;
+  total: number;
+  failed: number;
+  reconnects: number;
+}
+
+export interface Tunnel {
+  /** Empty for a new tunnel. */
+  id: string;
+  name: string;
+  /** The saved host whose login carries it. */
+  host: string;
+  kind: TunnelKind;
+  bindAddress: string;
+  bindPort: number;
+  targetHost?: string | null;
+  targetPort?: number | null;
+  autoStart: boolean;
+}
+
+export interface TunnelEntry extends Tunnel {
+  status: TunnelStatus;
+  /** `-L 5433:127.0.0.1:5432`, as OpenSSH writes it. */
+  summary: string;
+  /** Listens on more than loopback. */
+  shared: boolean;
+}
+
+export interface TunnelsView {
+  tunnels: TunnelEntry[];
+  path: string;
+  problem?: string;
+}
+
+export const tunnelsList = () => invoke<TunnelsView>("tunnels_list");
+export const tunnelSave = (tunnel: Tunnel) => invoke<string>("tunnel_save", { tunnel });
+export const tunnelDelete = (id: string) => invoke<void>("tunnel_delete", { id });
+export const tunnelStart = (id: string) => invoke<void>("tunnel_start", { id });
+export const tunnelStop = (id: string) => invoke<void>("tunnel_stop", { id });

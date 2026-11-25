@@ -50,6 +50,7 @@ Crates do not know about Tauri. Anything a crate needs from the outside (the env
 | `vault.rs` | Creating, unlocking, locking the vault; the keychain option |
 | `session.rs` | `session.json` (tabs to restore) and `settings.json` |
 | `workflows.rs` | Workflows, runs, history and the task board |
+| `tunnels.rs` | Saved tunnels: start, stop, live status, reconnect after a drop |
 | `memory.rs` | Work memory |
 | `packs.rs`, `color_schemes.rs`, `prompts.rs` | Packs, colour scheme import, prompt tool detection |
 | `extensions.rs` | The settings page a build with extensions adds |
@@ -71,6 +72,7 @@ Plain TypeScript and DOM, no framework; Vite builds it and the Rust crate embeds
 | Files | `files-tab.ts`, `permissions-dialog.ts` |
 | Vault | `vault-dialog.ts` |
 | Workflows | `workflows-view.ts`, `board-view.ts`, `memory-view.ts`, `work-memory.ts` |
+| Tunnels | `tunnels-view.ts` (view and dialog), `tunnel-form.ts` (form checks and labels, tested in Node) |
 | Settings | `settings.ts` (the model, `sanitize`), `settings-dialog.ts` and one `settings-*.ts` per page, `features.ts`, `themes.ts`, `prompt-themes.ts`, `packs.ts` |
 | Shared | `ipc.ts` (typed wrappers for every Rust command), `dom.ts`, `icons.ts`, `styles.css` |
 
