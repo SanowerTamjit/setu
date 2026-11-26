@@ -5,8 +5,8 @@
 
 import { el, errorText } from "./dom";
 import { icon } from "./icons";
-import { monitorStart, monitorStop, type Host, type MonitorEvent, type MonitorLimits, type Snapshot } from "./ipc";
-import { DETAILS, History, alertText, kb, level, parseLimit, pct, procCpu, rate, sparkline, uptime, type Detail } from "./monitor-model";
+import { monitorStart, monitorStop, type ActiveAlert, type Host, type MonitorEvent, type MonitorLimits, type MonitorOptions, type Snapshot } from "./ipc";
+import { DEFAULT_HOLD, DETAILS, HOLDS, History, HourHistory, activeText, chartMinutes, durationWords, holdLabel, kb, level, parseLimit, pct, procCpu, rate, seriesPath, sparkline, uptime, type Detail } from "./monitor-model";
 
 export interface MonitorActions {
   hosts: () => Host[];
@@ -19,16 +19,23 @@ const PREFS = "setu.monitor";
 const W = 220;
 const H = 44;
 
-interface Prefs extends MonitorLimits {
+interface Prefs extends MonitorOptions {
   interval: number;
 }
 
 function loadPrefs(): Prefs {
-  const d: Prefs = { cpu: 90, mem: 90, disk: 90, interval: 2 };
+  const d: Prefs = { cpu: 90, mem: 90, disk: 90, interval: 2, hold: DEFAULT_HOLD, notify: true };
   try {
     const p = JSON.parse(localStorage.getItem(PREFS) ?? "{}") as Partial<Record<keyof Prefs, unknown>>;
     const n = (v: unknown, f: number) => parseLimit(String(v ?? ""), f);
-    return { cpu: n(p.cpu, d.cpu), mem: n(p.mem, d.mem), disk: n(p.disk, d.disk), interval: [2, 5, 10, 30].includes(Number(p.interval)) ? Number(p.interval) : 2 };
+    return {
+      cpu: n(p.cpu, d.cpu),
+      mem: n(p.mem, d.mem),
+      disk: n(p.disk, d.disk),
+      interval: [2, 5, 10, 30].includes(Number(p.interval)) ? Number(p.interval) : 2,
+      hold: HOLDS.includes(Number(p.hold)) ? Number(p.hold) : d.hold,
+      notify: typeof p.notify === "boolean" ? p.notify : d.notify,
+    };
   } catch {
     return d;
   }
@@ -52,6 +59,8 @@ class Panel {
   readonly root: HTMLElement;
   private id: string | null = null;
   private readonly history = new History();
+  private readonly hour = new HourHistory();
+  private active: ActiveAlert[] = [];
   private readonly status: HTMLElement;
   private readonly sub: HTMLElement;
   private readonly alerts: HTMLElement;
@@ -110,8 +119,9 @@ class Panel {
     void this.start();
   }
 
+  /** Alerts that have lasted the hold time. */
   get alertCount() {
-    return this.last?.alerts.length ?? 0;
+    return this.active.filter((a) => a.firing).length;
   }
 
   close() {
@@ -134,7 +144,9 @@ class Panel {
         this.message.hidden = true;
         this.setStatus("running", "Live");
         this.last = e.snapshot;
+        this.active = e.active;
         this.history.add(e.snapshot);
+        this.hour.add(Date.now(), e.snapshot);
         this.renderBody(e.snapshot);
         break;
       case "problem":
@@ -175,8 +187,20 @@ class Panel {
     const p = this.prefs();
     if (s) {
       this.sub.textContent = [`${this.host.user ? `${this.host.user}@` : ""}${this.host.host}`, uptime(s.uptimeSecs)].filter(Boolean).join(" · ");
-      this.alerts.hidden = s.alerts.length === 0;
-      this.alerts.replaceChildren(...s.alerts.map((a) => el("span", { className: "mon-alert" }, icon("spark", 12), alertText(a))));
+      this.alerts.hidden = this.active.length === 0;
+      this.alerts.replaceChildren(
+        ...this.active.map((a) =>
+          el(
+            "span",
+            {
+              className: `mon-alert${a.firing ? "" : " pending"}`,
+              title: a.firing ? `Over the limit for ${durationWords(a.secs)}` : `Over the limit; alerts once it has lasted ${durationWords(p.hold)}`,
+            },
+            icon("spark", 12),
+            activeText(a, p.hold),
+          ),
+        ),
+      );
     }
     const load = s?.load ? `load ${s.load.map((l) => l.toFixed(2)).join(" ")}` : "";
     const cpu = this.tile("CPU", pct(s?.cpuPercent), level(s?.cpuPercent, p.cpu), [s ? `${s.cpus} CPU${s.cpus === 1 ? "" : "s"}` : "", load].filter(Boolean).join(" · ") || "Waiting for figures…", [
@@ -217,6 +241,52 @@ class Panel {
   }
 
   /** Tabs for a closer look: processes, each core, each interface, disk I/O. */
+  /** CPU and memory over the last hour, with the alert limits. */
+  private hourChart(p: Prefs) {
+    const CW = 600;
+    const CH = 140;
+    const now = Date.now();
+    const kept = this.hour.span(now);
+    const minutes = chartMinutes(kept);
+    const { cpu, mem } = this.hour.buckets(now, 120, minutes * 60_000);
+    const svg = svgEl("svg", { viewBox: `0 0 ${CW} ${CH}`, preserveAspectRatio: "none", class: "mon-hour-chart", role: "img" });
+    svg.setAttribute("aria-label", `CPU and memory over the last ${minutes} minutes for ${this.host.name}`);
+    for (const y of [0.25, 0.5, 0.75]) svg.append(svgEl("path", { d: `M0 ${CH * y} H${CW}`, class: "mon-grid", "vector-effect": "non-scaling-stroke" }));
+    const limitAt = (v: number) => CH - (v / 100) * CH;
+    svg.append(svgEl("path", { d: `M0 ${limitAt(p.cpu)} H${CW}`, class: "mon-limit-line", "vector-effect": "non-scaling-stroke" }));
+    if (p.mem !== p.cpu) svg.append(svgEl("path", { d: `M0 ${limitAt(p.mem)} H${CW}`, class: "mon-limit-line second", "vector-effect": "non-scaling-stroke" }));
+    for (const [values, cls] of [
+      [mem, "mon-line second"],
+      [cpu, "mon-line"],
+    ] as const) {
+      const d = seriesPath(values, CW, CH, 100);
+      if (d) svg.append(svgEl("path", { d, class: cls, "vector-effect": "non-scaling-stroke" }));
+    }
+    const note =
+      minutes < 60
+        ? `Kept while this panel is open: ${durationWords(kept / 1000)} so far, up to an hour. Setu does not save it.`
+        : "Each point is the highest reading in 30 seconds, so short spikes still show. Setu does not save it.";
+    return el(
+      "div",
+      { className: "mon-hour" },
+      el(
+        "div",
+        { className: "mon-hour-legend" },
+        el("span", { className: "mon-key" }, el("i", { className: "mon-key-line" }), "CPU"),
+        el("span", { className: "mon-key" }, el("i", { className: "mon-key-line second" }), "Memory"),
+        el("span", { className: "mon-key" }, el("i", { className: "mon-key-limit" }), `Alert limits (CPU ${p.cpu}%${p.mem !== p.cpu ? `, memory ${p.mem}%` : ""})`),
+      ),
+      el(
+        "div",
+        { className: "mon-hour-plot" },
+        el("div", { className: "mon-hour-y muted" }, el("span", {}, "100%"), el("span", {}, "50%"), el("span", {}, "0%")),
+        svg as unknown as HTMLElement,
+      ),
+      el("div", { className: "mon-hour-x muted" }, el("span", {}, `${minutes} min ago`), el("span", {}, `${minutes / 2} min ago`), el("span", {}, "now")),
+      el("small", { className: "muted" }, note),
+    );
+  }
+
   private details(s: Snapshot) {
     const p = this.prefs();
     const tabs = el("div", { className: "mon-detail-tabs", role: "tablist" });
@@ -245,6 +315,9 @@ class Panel {
     };
     let content: HTMLElement | null = null;
     switch (this.detail) {
+      case "hour":
+        content = this.hourChart(p);
+        break;
       case "processes":
         content = el(
           "div",
@@ -322,6 +395,18 @@ export class MonitorView {
       };
       return el("label", { className: "mon-setting" }, el("span", { className: "muted" }, label), input, el("span", { className: "muted" }, "%"));
     };
+    const hold = el("select", {}, ...HOLDS.map((n) => el("option", { value: String(n), selected: n === this.prefs.hold }, holdLabel(n))));
+    hold.setAttribute("aria-label", "Alert once a reading has stayed over its limit");
+    hold.title = "A reading must stay over its limit this long before it alerts, so short spikes do not.";
+    hold.onchange = () => this.setPrefs({ hold: Number(hold.value) });
+    const notifyBox = el("input", { type: "checkbox", checked: this.prefs.notify });
+    notifyBox.onchange = () => this.setPrefs({ notify: notifyBox.checked });
+    const notify = el(
+      "label",
+      { className: "mon-setting mon-notify", title: "Show a desktop notification when an alert starts and when it clears." },
+      notifyBox,
+      el("span", {}, "Notify me"),
+    );
     const settings = el(
       "div",
       { className: "mon-settings" },
@@ -330,6 +415,8 @@ export class MonitorView {
       limit("cpu", "CPU"),
       limit("mem", "Memory"),
       limit("disk", "Disk"),
+      hold,
+      notify,
     );
 
     this.root.replaceChildren(

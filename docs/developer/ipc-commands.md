@@ -122,7 +122,7 @@ Every host name is checked by `setu_net::check_target` first (letters, digits, `
 
 | Command | What it does |
 |---|---|
-| `monitor_start` | Watches a saved host (looked up by name in Rust): logs in like a tunnel (vault or agent only, never a prompt, host key must be trusted, access policy first), then every `interval` seconds (clamped 2-60) runs the fixed `setu_monitor::COMMAND`, parses it in Rust and sends a `Snapshot` (numbers, plus cleaned mount points and device, interface and process names) on the window's channel. Alert limits are clamped to 1-100 %. At most 8 at once; stops when the window's channel closes, or after 10 failures in a row. Returns an id |
+| `monitor_start` | Watches a saved host (looked up by name in Rust): logs in like a tunnel (vault or agent only, never a prompt, host key must be trusted, access policy first), then every `interval` seconds (clamped 2-60) runs the fixed `setu_monitor::COMMAND`, parses it in Rust and sends a `Snapshot` (numbers, plus cleaned mount points and device, interface and process names) on the window's channel. Alert limits are clamped to 1-100 %. `hold` (seconds, clamped to 0-3600) is how long a reading must stay over its limit; each `sample` event also carries `active` (readings over a limit, with seconds so far and whether each is `firing`), from `setu_monitor::alerts::AlertTracker`. With `notify`, Rust shows a desktop notification when an alert starts or clears (`tauri-plugin-notification`, used from Rust only; no capability is granted to the window). At most 8 at once; stops when the window's channel closes, or after 10 failures in a row. Returns an id |
 | `monitor_stop` | Stops a monitor by id and disconnects |
 
 ## Adding a command

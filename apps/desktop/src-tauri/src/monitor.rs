@@ -7,6 +7,11 @@
 //! Logins never prompt, like tunnels and workflow runs. A monitor stops
 //! when the window asks, when the window goes away, or after the
 //! connection has failed too many times in a row.
+//!
+//! A reading over a limit becomes an alert once it has lasted the hold
+//! time (`setu_monitor::alerts`). When one starts or clears, Rust sends the
+//! desktop notification itself, so the window needs no permission to post
+//! notifications.
 
 use crate::hosts::Hosts;
 use crate::ssh::{check_access, connect_client, ConnectFailure, ConnectRequest, Login};
@@ -14,6 +19,7 @@ use crate::vault::VaultState;
 use serde::Serialize;
 use setu_core::extend::Extensions;
 use setu_hosts::Host;
+use setu_monitor::alerts::{cleared_notice, started_notice, ActiveAlert, AlertTracker};
 use setu_monitor::{Sample, Snapshot, Thresholds};
 use setu_ssh::SshClient;
 use std::collections::HashMap;
@@ -21,7 +27,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::watch;
 
 /// Most monitors open at once.
@@ -44,6 +51,8 @@ pub enum MonitorEvent {
     Connecting,
     Sample {
         snapshot: Box<Snapshot>,
+        /// Readings over a limit, and whether each has lasted the hold time.
+        active: Vec<ActiveAlert>,
     },
     /// Something went wrong; the monitor tries again unless `stopped`.
     Problem {
@@ -54,10 +63,13 @@ pub enum MonitorEvent {
 }
 
 /// Starts watching the saved host `host`; returns an id for `monitor_stop`.
-/// `interval` (seconds) is clamped to 2-60, thresholds to 1-100 %.
+/// `interval` (seconds) is clamped to 2-60, thresholds to 1-100 %, `hold`
+/// (seconds a reading must stay over a limit) to 0-3600. With `notify`,
+/// alerts that start or clear show a desktop notification.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn monitor_start(
+    app: AppHandle,
     monitors: State<'_, Monitors>,
     hosts: State<'_, Hosts>,
     vault: State<'_, VaultState>,
@@ -67,6 +79,8 @@ pub fn monitor_start(
     cpu: Option<f64>,
     mem: Option<f64>,
     disk: Option<f64>,
+    hold: Option<u64>,
+    notify: Option<bool>,
     on_event: Channel<MonitorEvent>,
 ) -> Result<String, String> {
     let host = hosts
@@ -104,6 +118,8 @@ pub fn monitor_start(
         extensions: extensions.inner().clone(),
         every: Duration::from_secs(u64::from(interval.clamp(2, 60))),
         limits,
+        alerts: AlertTracker::new(hold.unwrap_or(0)),
+        notify: notify.unwrap_or(false).then_some(app),
         events: on_event,
         stopped,
     };
@@ -124,6 +140,9 @@ struct Watcher {
     extensions: Extensions,
     every: Duration,
     limits: Thresholds,
+    alerts: AlertTracker,
+    /// Set when alerts should show desktop notifications.
+    notify: Option<AppHandle>,
     events: Channel<MonitorEvent>,
     stopped: watch::Receiver<bool>,
 }
@@ -132,6 +151,14 @@ impl Watcher {
     /// False once the window has gone away.
     fn send(&self, event: MonitorEvent) -> bool {
         self.events.send(event).is_ok()
+    }
+
+    /// Shows a desktop notification, if turned on. A desktop without a
+    /// notification service is not an error worth stopping for.
+    fn notice(&self, (title, body): (String, String)) {
+        if let Some(app) = &self.notify {
+            let _ = app.notification().builder().title(title).body(body).show();
+        }
     }
 
     /// Waits `d`; false if asked to stop meanwhile.
@@ -158,6 +185,7 @@ impl Watcher {
     }
 
     async fn run(mut self) {
+        let started = Instant::now();
         let mut failures = 0u32;
         'connect: loop {
             if !self.send(MonitorEvent::Connecting) {
@@ -197,7 +225,19 @@ impl Watcher {
                                 self.limits,
                             );
                             prev = Some((sample, at));
-                            if !self.send(MonitorEvent::Sample { snapshot: Box::new(snapshot) }) {
+                            let update = self
+                                .alerts
+                                .update(at.duration_since(started).as_secs(), &snapshot.alerts);
+                            for a in &update.started {
+                                self.notice(started_notice(&self.host.name, a));
+                            }
+                            for a in &update.cleared {
+                                self.notice(cleared_notice(&self.host.name, a));
+                            }
+                            if !self.send(MonitorEvent::Sample {
+                                snapshot: Box::new(snapshot),
+                                active: update.active,
+                            }) {
                                 break 'connect;
                             }
                             None

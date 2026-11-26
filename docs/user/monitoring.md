@@ -36,7 +36,27 @@ Process names come from the server and are shown only as text, cut to 64 charact
 
 ## Alerts
 
-Under **Alert above**, set the limits for CPU, memory and disk (90% by default). When a reading reaches a limit, the panel shows a red alert, such as *CPU at 100%* or *Disk /var is 93% full*, and the view's title counts the alerts. Figures within 15 points of a limit turn amber. **Every** sets how often Setu reads the server: 2, 5, 10 or 30 seconds. Changes apply to every watched host straight away, and Setu remembers them on this computer.
+Under **Alert above**, set the limits for CPU, memory and disk (90% by default), and how long a reading must stay over its limit before it counts as an alert: **right away**, or **for** 1, 2 (the default), 5 or 10 minutes. Waiting means a short spike, such as a build or a backup starting, does not alert anyone.
+
+- While a reading is over its limit but has not lasted that long, the panel shows an amber chip that says when it will alert, such as *CPU at 97% · alerts in 1 min*. Figures within 15 points of a limit also turn amber.
+- Once it has lasted, the chip turns red and says for how long, such as *Disk /var is 93% full · 12 min*. The view's title counts these alerts.
+- A reading that drops under its limit, even once, starts its wait again.
+
+![One alert waiting, one firing](images/monitoring-alerts.png)
+
+**Every** sets how often Setu reads the server: 2, 5, 10 or 30 seconds. Changes apply to every watched host straight away, and Setu remembers them on this computer.
+
+### Desktop notifications
+
+With **Notify me** ticked (the default), Setu shows a desktop notification when an alert starts, such as *db-01: CPU at 100%*, and another when it is back under the limit. You see them while you work in other apps, as long as Setu is open and the host is watched. Untick it to keep alerts inside the app.
+
+Notifications use your system's own notification centre, so its settings (do not disturb, sounds) apply. On macOS, allow notifications for Setu the first time it asks. On Linux, they need a notification service, which every desktop has.
+
+### The last hour
+
+The **Last hour** tab draws CPU and memory since you started watching the host, up to an hour, with the alert limits as dashed lines. The time scale grows with the readings (5, 15, 30, then 60 minutes), and each point is the highest reading in its slice, so a short spike still shows. The history is kept only while the panel is open and is never saved.
+
+![CPU over the last few minutes, with the alert limit](images/monitoring-hour.png)
 
 ## Logins and problems
 
