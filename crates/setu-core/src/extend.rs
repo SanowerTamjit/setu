@@ -38,6 +38,10 @@ pub enum AuditAction {
     /// A saved tunnel (port forward) that started, or could not start. The
     /// detail is the forward as OpenSSH writes it (`-L 5433:db:5432`).
     TunnelOpen,
+    /// A change made from server management (a service started, stopped,
+    /// restarted, reloaded, enabled or disabled). The detail is the exact
+    /// command that ran, which holds no secrets.
+    ServerChange,
 }
 
 impl AuditAction {
@@ -49,6 +53,7 @@ impl AuditAction {
             AuditAction::WorkflowRun => "workflow.run",
             AuditAction::CommandBlocked => "command.blocked",
             AuditAction::TunnelOpen => "tunnel.open",
+            AuditAction::ServerChange => "server.change",
         }
     }
 }
@@ -106,6 +111,9 @@ impl AuditSink for NoAudit {
 pub enum CommandOrigin<'a> {
     /// A command step of a workflow run.
     Workflow { workflow: &'a str, step: &'a str },
+    /// A change from server management, approved by the person after they
+    /// saw the exact command (`tool` is the screen, like `services`).
+    Server { tool: &'a str },
 }
 
 /// A command Setu is about to run on a host without a person typing it.
@@ -396,6 +404,7 @@ impl Extensions {
                     CommandOrigin::Workflow { workflow, step } => {
                         format!("workflow {workflow}, step {step}: {reason}")
                     }
+                    CommandOrigin::Server { tool } => format!("server {tool}: {reason}"),
                 },
             });
         }
@@ -474,6 +483,31 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_server_change_is_audited_with_its_tool() {
+        let rec = Arc::new(Recorder::default());
+        let ext = Extensions::default()
+            .with_audit(rec.clone())
+            .with_policy(Arc::new(NoReboot));
+        let change = |command| CommandCheck {
+            host: "web1",
+            command,
+            origin: CommandOrigin::Server { tool: "services" },
+        };
+        assert_eq!(
+            ext.check_command(&change("systemctl restart nginx.service")),
+            PolicyDecision::Allow
+        );
+        assert!(matches!(
+            ext.check_command(&change("sudo -n systemctl start reboot.target")),
+            PolicyDecision::Deny { .. }
+        ));
+        let events = rec.0.lock().expect("lock").clone();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, AuditAction::CommandBlocked);
+        assert_eq!(events[0].detail, "server services: rule `no-reboot`");
+    }
+
+    #[test]
     fn a_refused_login_is_audited() {
         let rec = Arc::new(Recorder::default());
         let ext = Extensions::default()
@@ -545,6 +579,7 @@ mod tests {
     #[test]
     fn names_are_stable() {
         assert_eq!(AuditAction::SshConnect.as_str(), "ssh.connect");
+        assert_eq!(AuditAction::ServerChange.as_str(), "server.change");
         assert_eq!(AuditOutcome::Blocked.as_str(), "blocked");
     }
 

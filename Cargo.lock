@@ -4749,6 +4749,7 @@ dependencies = [
  "setu-monitor",
  "setu-net",
  "setu-pty",
+ "setu-server",
  "setu-ssh",
  "setu-vault",
  "setu-workflow",
@@ -4813,6 +4814,14 @@ dependencies = [
  "serde",
  "setu-core",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "setu-server"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

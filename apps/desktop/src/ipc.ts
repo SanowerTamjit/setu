@@ -882,3 +882,61 @@ export interface TlsReport {
 
 export const netTls = (host: string, port: number, name?: string, through?: string) =>
   invoke<TlsReport>("net_tls", { host, port, name: name || null, through: through || null });
+
+// ---- Server management (src-tauri/src/server.rs, crates/setu-server) ----
+
+export interface Service {
+  name: string;
+  description: string;
+  /** loaded, not-found, masked… Empty when only the unit file is installed. */
+  load: string;
+  /** active, inactive, failed, activating… */
+  active: string;
+  /** running, exited, dead… */
+  sub: string;
+  /** enabled, disabled, static, masked… Empty without a unit file. */
+  startup: string;
+}
+
+export interface ServiceList {
+  services: Service[];
+  truncated: boolean;
+}
+
+export interface ServiceDetails extends Service {
+  mainPid: number | null;
+  since: string | null;
+  memoryBytes: number | null;
+  tasks: number | null;
+  restarts: number | null;
+  path: string | null;
+}
+
+export interface ServiceLogs {
+  text: string;
+  truncated: boolean;
+  command: string;
+}
+
+export type ServiceAction = "start" | "stop" | "restart" | "reload" | "enable" | "disable";
+export type LogLevel = "all" | "warnings" | "errors";
+
+export interface ActionResult {
+  command: string;
+  ok: boolean;
+  code: number | null;
+  output: string;
+  hint: string | null;
+}
+
+export const serverServices = (host: string) => invoke<ServiceList>("server_services", { host });
+export const serverServiceDetails = (host: string, unit: string, sudo: boolean) =>
+  invoke<ServiceDetails>("server_service_details", { host, unit, sudo });
+export const serverServiceLogs = (host: string, unit: string, lines: number, level: LogLevel, sudo: boolean) =>
+  invoke<ServiceLogs>("server_service_logs", { host, unit, lines, level, sudo });
+/** The exact command a change would run; nothing runs. */
+export const serverServiceCommand = (action: ServiceAction, unit: string, sudo: boolean) =>
+  invoke<string>("server_service_command", { action, unit, sudo });
+export const serverServiceAction = (host: string, action: ServiceAction, unit: string, sudo: boolean) =>
+  invoke<ActionResult>("server_service_action", { host, action, unit, sudo });
+export const serverDisconnect = (host: string) => invoke<void>("server_disconnect", { host });

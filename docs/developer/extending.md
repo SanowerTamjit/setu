@@ -32,13 +32,14 @@ The types live in `setu_core::extend`.
 | `ssh.connect` | a terminal tab logs in, fails to, or the access policy refuses the login (outcome `blocked`) | `user@host:port` | empty, a fixed reason (`host key changed`, `needs a password`, …), or `not allowed: <reason>` |
 | `file.transfer` | an SFTP copy ends | host | `upload <source> to <folder>` (or `download`), `(paused)` when paused |
 | `workflow.run` | a workflow run finishes | workflow id | name and run id |
-| `command.blocked` | the policy refuses a command | saved host | workflow, step and the policy's reason |
+| `command.blocked` | the policy refuses a command | saved host | workflow and step (or `server services`) and the policy's reason |
+| `server.change` | a change from server management ran (succeeded or failed) | `user@host:port` | the exact command, such as `sudo -n systemctl restart nginx.service` |
 
 Events never hold a password, passphrase, key or command output, and a failed login is described by a fixed reason, not the server's message. `record` is called on the thread doing the work, so return quickly: queue the event and write it elsewhere.
 
 ## Command policy: `CommandPolicy`
 
-`check(&CommandCheck)` is asked before each command a workflow step runs on a host, with the saved host's name, the command and where it came from (`CommandOrigin::Workflow { workflow, step }`). Return `PolicyDecision::Allow`, or `Deny { reason }`: the command is not run, that host fails with "blocked by policy: <reason>", and the refusal is recorded as `command.blocked`. Name the rule in the reason, not the command, because the reason is shown and recorded.
+`check(&CommandCheck)` is asked before each command a workflow step runs on a host, with the saved host's name, the command and where it came from (`CommandOrigin::Workflow { workflow, step }`), and before each change from server management (`CommandOrigin::Server { tool: "services" }`; the command is the exact `systemctl` line the person approved). Return `PolicyDecision::Allow`, or `Deny { reason }`: the command is not run, that host fails with "blocked by policy: <reason>" (server management shows "Your organization's policy does not allow this: <reason>"), and the refusal is recorded as `command.blocked`. Name the rule in the reason, not the command, because the reason is shown and recorded.
 
 Commands typed into a terminal are not checked: they are the person's own keystrokes.
 

@@ -243,7 +243,7 @@ pub fn local_user() -> String {
         .unwrap_or_else(|| "root".into())
 }
 
-fn user_or_local(user: &str) -> String {
+pub(crate) fn user_or_local(user: &str) -> String {
     match user.trim() {
         "" => local_user(),
         u => u.to_string(),
