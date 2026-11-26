@@ -6962,3 +6962,115 @@ button.with-icon {
 .net-chain li.expired dd:nth-of-type(2) {
   color: var(--danger-text);
 }
+
+/* Monitoring details (processes, cores, interfaces, disk activity) */
+.mon-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mon-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hosts-home .mon-detail-tab {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+}
+
+.hosts-home .mon-detail-tab.current {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.mon-detail small {
+  display: block;
+  margin-top: 6px;
+}
+
+.mon-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.mon-table th {
+  padding: 4px 8px;
+  text-align: left;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.mon-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  white-space: nowrap;
+}
+
+.mon-table .num {
+  text-align: right;
+}
+
+.mon-procs td:nth-child(2) {
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mon-table code {
+  font-family: var(--mono);
+}
+
+.mon-cores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mon-core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.mon-core-bar {
+  position: relative;
+  width: 14px;
+  height: 40px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.mon-core-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--accent);
+}
+
+.mon-core.level-warn .mon-core-fill {
+  background: var(--warn-text);
+}
+
+.mon-core.level-high .mon-core-fill {
+  background: var(--danger);
+}

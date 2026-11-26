@@ -43,7 +43,7 @@ pub struct Monitors {
 pub enum MonitorEvent {
     Connecting,
     Sample {
-        snapshot: Snapshot,
+        snapshot: Box<Snapshot>,
     },
     /// Something went wrong; the monitor tries again unless `stopped`.
     Problem {
@@ -197,7 +197,7 @@ impl Watcher {
                                 self.limits,
                             );
                             prev = Some((sample, at));
-                            if !self.send(MonitorEvent::Sample { snapshot }) {
+                            if !self.send(MonitorEvent::Sample { snapshot: Box::new(snapshot) }) {
                                 break 'connect;
                             }
                             None

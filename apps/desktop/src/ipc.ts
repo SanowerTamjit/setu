@@ -818,6 +818,13 @@ export interface Snapshot {
   netTxPerSec?: number | null;
   disks: DiskUse[];
   alerts: MonitorAlert[];
+  /** Each core, 0-100; empty for the first reading. */
+  corePercents: number[];
+  interfaces: { name: string; rxPerSec?: number | null; txPerSec?: number | null }[];
+  diskIo: { device: string; readPerSec?: number | null; writePerSec?: number | null }[];
+  /** The busiest processes: CPU like top (100 is one core). */
+  processes: { pid: number; command: string; cpuPercent?: number | null; rssKb: number; memPercent?: number | null }[];
+  processCount: number;
 }
 
 export type MonitorEvent =
