@@ -15,6 +15,7 @@
 //! every list is capped before it reaches the window.
 
 pub mod disk;
+pub mod keys;
 pub mod processes;
 pub mod services;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Service, ServiceDetails } from "../src/ipc";
-import { actionsFor, bytes, childPath, confirmText, counts, criticalProcess, crumbs, cutsAccess, elapsedWords, facts, filterProcesses, filterServices, fullness, parentPath, serviceState, shortName, signalText, startupLabel, usedPercent } from "../src/server-model";
+import { actionsFor, addKeyText, bytes, childPath, confirmText, counts, criticalProcess, crumbs, cutsAccess, elapsedWords, facts, filterKeys, filterProcesses, filterServices, fullness, optionWords, parentPath, removeKeyText, serviceState, shortName, signalText, startupLabel, usedPercent } from "../src/server-model";
 
 const svc = (name: string, active: string, sub: string, startup = "enabled", description = "", load = "loaded"): Service => ({ name, description, load, active, sub, startup });
 
@@ -156,5 +156,34 @@ describe("disk", () => {
       ["lib", "/var/lib"],
     ]);
     expect(crumbs("/")).toEqual([["/", "/"]]);
+  });
+});
+
+describe("authorized_keys", () => {
+  const keys = [
+    { kind: "ssh-ed25519", fingerprint: "SHA256:abc", comment: "alice@laptop" },
+    { kind: "ssh-rsa", fingerprint: "SHA256:XYZ", comment: "" },
+  ];
+
+  it("filters by comment, fingerprint or type", () => {
+    expect(filterKeys(keys, "ALICE")).toHaveLength(1);
+    expect(filterKeys(keys, "xyz")).toEqual([keys[1]]);
+    expect(filterKeys(keys, "rsa")).toEqual([keys[1]]);
+    expect(filterKeys(keys, " ")).toHaveLength(2);
+  });
+
+  it("puts options into words, keeping quoted commas whole", () => {
+    expect(optionWords('from="10.0.0.0/8,192.168.1.5",command="echo a,b",no-pty')).toEqual(["only from 10.0.0.0/8,192.168.1.5", "runs one fixed command", "no terminal"]);
+    expect(optionWords("")).toEqual([]);
+    expect(optionWords("restrict,expiry-time=\"20270101\"")).toEqual(["restricted", "expires 20270101"]);
+  });
+
+  it("warns harder before removing the last key", () => {
+    expect(removeKeyText(keys[0], 2, "web-01").warning).toContain("Check the fingerprint");
+    const last = removeKeyText(keys[1], 1, "web-01");
+    expect(last.warning).toContain("only key");
+    expect(last.what).toContain("SHA256:XYZ");
+    expect(removeKeyText(keys[0], 2, "web-01").title).toBe("Remove “alice@laptop”?");
+    expect(addKeyText(keys[0], "web-01").what).toContain("alice@laptop");
   });
 });

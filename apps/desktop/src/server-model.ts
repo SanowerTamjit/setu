@@ -242,3 +242,54 @@ export function crumbs(path: string): [string, string][] {
 export function kbText(kb: number): string {
   return bytes(kb * 1024);
 }
+
+// ---- authorized_keys ----
+
+export function filterKeys<T extends { kind: string; fingerprint: string; comment: string }>(list: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return list;
+  return list.filter((k) => k.comment.toLowerCase().includes(q) || k.fingerprint.toLowerCase().includes(q) || k.kind.toLowerCase().includes(q));
+}
+
+/** Short words for a key's options (`from="…"`, `command="…"`, …). */
+export function optionWords(options: string): string[] {
+  const out: string[] = [];
+  // Options are comma-separated, but quoted values may hold commas.
+  const parts = options.match(/(?:[^,"]|"(?:[^"\\]|\\.)*")+/g) ?? [];
+  for (const raw of parts) {
+    const [name, ...rest] = raw.split("=");
+    const key = name.trim().toLowerCase();
+    const value = rest.join("=").trim().replace(/^"|"$/g, "");
+    if (key === "from") out.push(`only from ${value}`);
+    else if (key === "command") out.push("runs one fixed command");
+    else if (key === "restrict") out.push("restricted");
+    else if (key === "no-pty") out.push("no terminal");
+    else if (key === "expiry-time") out.push(`expires ${value}`);
+    else if (key === "principals") out.push(`principals ${value}`);
+    else if (key === "cert-authority") out.push("certificate authority");
+    else if (key) out.push(key);
+  }
+  return out;
+}
+
+/** The words of the "remove this key?" dialog. */
+export function removeKeyText(k: { kind: string; fingerprint: string; comment: string }, keysLeft: number, host: string): { title: string; what: string; button: string; warning: string } {
+  const name = k.comment || k.fingerprint;
+  return {
+    title: `Remove ${k.comment ? `“${k.comment}”` : "this key"}?`,
+    what: `Removes ${name} from authorized_keys on ${host}. Whoever holds the matching private key can no longer log in with it. Sessions already open stay open.`,
+    button: "Remove",
+    warning:
+      keysLeft <= 1
+        ? `This is the only key in the file. Once it is gone, nobody can log in to ${host} as this user with a key, and that may include you.`
+        : `If this is the key you or Setu log in to ${host} with, that login stops working. Check the fingerprint first.`,
+  };
+}
+
+export function addKeyText(k: { kind: string; fingerprint: string; comment: string }, host: string): { title: string; what: string; button: string } {
+  return {
+    title: "Add this key?",
+    what: `Lets whoever holds the matching private key log in to ${host} as this user${k.comment ? ` (the key says it is “${k.comment}”)` : ""}.`,
+    button: "Add key",
+  };
+}
