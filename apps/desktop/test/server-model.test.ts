@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Service, ServiceDetails } from "../src/ipc";
-import { actionsFor, bytes, confirmText, counts, cutsAccess, facts, filterServices, serviceState, shortName, startupLabel } from "../src/server-model";
+import { actionsFor, bytes, childPath, confirmText, counts, criticalProcess, crumbs, cutsAccess, elapsedWords, facts, filterProcesses, filterServices, fullness, parentPath, serviceState, shortName, signalText, startupLabel, usedPercent } from "../src/server-model";
 
 const svc = (name: string, active: string, sub: string, startup = "enabled", description = "", load = "loaded"): Service => ({ name, description, load, active, sub, startup });
 
@@ -100,5 +100,61 @@ describe("facts", () => {
     ]);
     expect(bytes(512)).toBe("512 B");
     expect(bytes(20 * 1024 * 1024)).toBe("20 MB");
+  });
+});
+
+describe("processes", () => {
+  const procs = [
+    { pid: 812, user: "www-data", command: "nginx", cpu: 2, rssKb: 9000 },
+    { pid: 950, user: "postgres", command: "postgres", cpu: 40, rssKb: 500_000 },
+    { pid: 77, user: "root", command: "cron", cpu: 0, rssKb: 2000 },
+  ];
+
+  it("filters by name, user or id and sorts", () => {
+    expect(filterProcesses(procs, "", "cpu").map((p) => p.pid)).toEqual([950, 812, 77]);
+    expect(filterProcesses(procs, "", "mem").map((p) => p.pid)).toEqual([950, 812, 77]);
+    expect(filterProcesses(procs, "www", "cpu").map((p) => p.pid)).toEqual([812]);
+    expect(filterProcesses(procs, "77", "cpu").map((p) => p.pid)).toEqual([77]);
+    // The input is not changed.
+    expect(procs[0].pid).toBe(812);
+  });
+
+  it("says how long and warns before stopping what keeps the server up", () => {
+    expect(elapsedWords(42)).toBe("42s");
+    expect(elapsedWords(600)).toBe("10m");
+    expect(elapsedWords(3 * 3600 + 120)).toBe("3h 2m");
+    expect(elapsedWords(2 * 86400 + 3600)).toBe("2d 1h");
+    expect(criticalProcess("sshd")).toBe(true);
+    expect(criticalProcess("sshd-helper")).toBe(false);
+    const term = signalText("term", { pid: 812, command: "nginx" }, "web1");
+    expect(term.title).toBe("Stop nginx?");
+    expect(term.warning).toBeNull();
+    const kill = signalText("kill", { pid: 89, command: "sshd" }, "web1");
+    expect(kill.button).toBe("Kill");
+    expect(kill.warning).toContain("cut off your access");
+  });
+});
+
+describe("disk", () => {
+  it("rates how full a disk is", () => {
+    expect(usedPercent({ totalKb: 200, usedKb: 50 })).toBe(25);
+    expect(usedPercent({ totalKb: 0, usedKb: 50 })).toBe(0);
+    expect(fullness(79)).toBe("ok");
+    expect(fullness(85)).toBe("warn");
+    expect(fullness(90)).toBe("high");
+  });
+
+  it("walks folders", () => {
+    expect(childPath("/", "var")).toBe("/var");
+    expect(childPath("/var", "lib")).toBe("/var/lib");
+    expect(parentPath("/var/lib")).toBe("/var");
+    expect(parentPath("/var")).toBe("/");
+    expect(parentPath("/")).toBeNull();
+    expect(crumbs("/var/lib")).toEqual([
+      ["/", "/"],
+      ["var", "/var"],
+      ["lib", "/var/lib"],
+    ]);
+    expect(crumbs("/")).toEqual([["/", "/"]]);
   });
 });

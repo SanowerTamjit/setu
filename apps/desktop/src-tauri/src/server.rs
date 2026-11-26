@@ -1,14 +1,15 @@
 //! Server management: a saved host's systemd services, their status and
 //! logs, and changes to them (start, stop, restart, reload, enable,
-//! disable).
+//! disable); its processes, and stopping one; and its disk usage.
 //!
-//! Every command run on the server is built in `setu_server::services`
-//! from a checked unit name; the window never sends command text. A change
-//! is two steps: `server_service_command` returns the exact command for the
-//! window to show, and once the person agrees `server_service_action`
-//! builds the same command again from the same action and unit, asks the
-//! build's command policy, runs it and records it in the audit trail
-//! (`server.change`, the command, never its output).
+//! Every command run on the server is built in `setu_server` from a checked
+//! unit name, process id or folder; the window never sends command text. A
+//! change is two steps: `server_service_command` (or
+//! `server_process_command`) returns the exact command for the window to
+//! show, and once the person agrees `server_service_action` (or
+//! `server_process_signal`) builds the same command again from the same
+//! inputs, asks the build's command policy, runs it and records it in the
+//! audit trail (`server.change`, the command, never its output).
 //!
 //! Logins never prompt, like tunnels and monitoring. One connection per
 //! host is kept for a few minutes so moving between services is quick.
@@ -21,6 +22,8 @@ use setu_core::extend::{
     AuditAction, AuditEvent, AuditOutcome, CommandCheck, CommandOrigin, Extensions, PolicyDecision,
 };
 use setu_hosts::Host;
+use setu_server::disk::{self, Filesystem, FolderSizes};
+use setu_server::processes::{self, ProcessList, Signal};
 use setu_server::services::{
     self, ActionResult, LogLevel, ServiceAction, ServiceDetails, ServiceList, ServiceLogs,
 };
@@ -244,18 +247,40 @@ pub async fn server_service_action(
 ) -> Result<ActionResult, String> {
     let host = saved_host(&hosts, &host)?;
     let command = services::action_command(ServiceAction::parse(&action)?, &unit, sudo)?;
+    change(
+        &sessions,
+        &host,
+        &vault,
+        &extensions,
+        command,
+        "services",
+        sudo,
+    )
+    .await
+}
+
+/// Asks the command policy, runs an approved change and records it.
+async fn change(
+    sessions: &ServerSessions,
+    host: &Host,
+    vault: &VaultState,
+    extensions: &Extensions,
+    command: String,
+    tool: &str,
+    sudo: bool,
+) -> Result<ActionResult, String> {
     let audit = |outcome: AuditOutcome| {
         extensions.audit(AuditEvent {
             action: AuditAction::ServerChange,
             outcome,
-            target: target(&host),
+            target: target(host),
             detail: command.clone(),
         });
     };
     let check = CommandCheck {
         host: &host.name,
         command: &command,
-        origin: CommandOrigin::Server { tool: "services" },
+        origin: CommandOrigin::Server { tool },
     };
     if let PolicyDecision::Deny { reason } = extensions.check_command(&check) {
         return Err(format!(
@@ -264,9 +289,9 @@ pub async fn server_service_action(
     }
     match sessions
         .run(
-            &host,
-            &vault,
-            &extensions,
+            host,
+            vault,
+            extensions,
             &command,
             services::MAX_ACTION_OUTPUT,
             ACTION_TIMEOUT,
@@ -287,6 +312,125 @@ pub async fn server_service_action(
             Err(e)
         }
     }
+}
+
+/// The saved host's processes, busiest first (command names only).
+#[tauri::command]
+pub async fn server_processes(
+    sessions: State<'_, ServerSessions>,
+    hosts: State<'_, Hosts>,
+    vault: State<'_, VaultState>,
+    extensions: State<'_, Extensions>,
+    host: String,
+) -> Result<ProcessList, String> {
+    let host = saved_host(&hosts, &host)?;
+    let (out, _) = sessions
+        .run(
+            &host,
+            &vault,
+            &extensions,
+            processes::LIST_COMMAND,
+            processes::MAX_LIST_OUTPUT,
+            READ_TIMEOUT,
+        )
+        .await?;
+    processes::parse_list(&out)
+}
+
+/// The exact command that would signal a process. Nothing is run.
+#[tauri::command]
+pub fn server_process_command(signal: String, pid: u32, sudo: bool) -> Result<String, String> {
+    processes::signal_command(Signal::parse(&signal)?, pid, sudo)
+}
+
+/// Signals a process the person agreed to stop, with the command built
+/// again here exactly as `server_process_command` showed it.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn server_process_signal(
+    sessions: State<'_, ServerSessions>,
+    hosts: State<'_, Hosts>,
+    vault: State<'_, VaultState>,
+    extensions: State<'_, Extensions>,
+    host: String,
+    signal: String,
+    pid: u32,
+    sudo: bool,
+) -> Result<ActionResult, String> {
+    let host = saved_host(&hosts, &host)?;
+    let command = processes::signal_command(Signal::parse(&signal)?, pid, sudo)?;
+    change(
+        &sessions,
+        &host,
+        &vault,
+        &extensions,
+        command,
+        "processes",
+        sudo,
+    )
+    .await
+}
+
+/// The saved host's file systems and how full each is.
+#[tauri::command]
+pub async fn server_disks(
+    sessions: State<'_, ServerSessions>,
+    hosts: State<'_, Hosts>,
+    vault: State<'_, VaultState>,
+    extensions: State<'_, Extensions>,
+    host: String,
+) -> Result<Vec<Filesystem>, String> {
+    let host = saved_host(&hosts, &host)?;
+    let (out, _) = sessions
+        .run(
+            &host,
+            &vault,
+            &extensions,
+            disk::DF_COMMAND,
+            disk::MAX_DF_OUTPUT,
+            READ_TIMEOUT,
+        )
+        .await?;
+    let list = disk::parse_df(&out);
+    if list.is_empty() {
+        return Err(format!(
+            "{} did not report any disks (needs a Linux or Unix server with df)",
+            host.name
+        ));
+    }
+    Ok(list)
+}
+
+/// The folders in `path` on the saved host, biggest first. Reads only.
+#[tauri::command]
+pub async fn server_folder_sizes(
+    sessions: State<'_, ServerSessions>,
+    hosts: State<'_, Hosts>,
+    vault: State<'_, VaultState>,
+    extensions: State<'_, Extensions>,
+    host: String,
+    path: String,
+    sudo: bool,
+) -> Result<FolderSizes, String> {
+    let host = saved_host(&hosts, &host)?;
+    let path = disk::check_path(&path)?;
+    let command = disk::du_command(&path, sudo)?;
+    let timeout = Duration::from_secs(u64::from(disk::DU_SECONDS) + 15);
+    let (out, _) = sessions
+        .run(
+            &host,
+            &vault,
+            &extensions,
+            &command,
+            disk::MAX_DU_OUTPUT,
+            timeout,
+        )
+        .await?;
+    let shown = command
+        .split_once("; ")
+        .map_or(command.as_str(), |(_, c)| c)
+        .to_string();
+    Ok(disk::parse_du(&path, &out, shown))
 }
 
 /// Closes the kept connection to `host`, if any (the view moved on).

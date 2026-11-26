@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **Server management**: see a Linux server's systemd services (running, failed, stopped), open one to see its status and newest logs, and start, stop, restart, reload it or choose whether it starts at boot. Every change shows the exact command and asks first; **Use sudo** works where sudo needs no password, because Setu never types one into it. Stopping the service you log in with warns you first. See `docs/user/server-management.md`.
+- **Server processes and disks**: in the Server view, see a server's processes (busiest or biggest first) and stop one, gently or at once, after seeing the exact command; see how full each disk is and find the folders that fill it.
 - **Monitoring**: watch servers' CPU, memory, network traffic and disks live, with a two-minute history and alerts when a reading passes the limits you set. Setu reads Linux's own figures over SSH, so nothing is installed on the server. See `docs/user/monitoring.md`.
 - **Monitoring many hosts**: watch up to 24 hosts, start them all with **Watch all**, see them in one table with a health colour for each, and choose hosts that Setu starts watching each time it opens.
 - **Monitoring alerts that reach you**: an alert only once a reading has stayed over its limit for a while you choose (2 minutes by default), so short spikes stay quiet; a desktop notification when an alert starts and when it clears; and a chart of CPU and memory over the last hour.

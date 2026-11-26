@@ -940,3 +940,50 @@ export const serverServiceCommand = (action: ServiceAction, unit: string, sudo: 
 export const serverServiceAction = (host: string, action: ServiceAction, unit: string, sudo: boolean) =>
   invoke<ActionResult>("server_service_action", { host, action, unit, sudo });
 export const serverDisconnect = (host: string) => invoke<void>("server_disconnect", { host });
+
+export interface Process {
+  pid: number;
+  ppid: number;
+  user: string;
+  /** Percent of one CPU over its life, as ps counts it. */
+  cpu: number;
+  mem: number;
+  rssKb: number;
+  elapsedSecs: number;
+  state: string;
+  /** The command name only, never its arguments. */
+  command: string;
+}
+
+export interface ProcessList {
+  processes: Process[];
+  truncated: boolean;
+}
+
+export type ProcessSignal = "term" | "kill";
+
+export interface Filesystem {
+  device: string;
+  kind: string;
+  mount: string;
+  totalKb: number;
+  usedKb: number;
+  availableKb: number;
+}
+
+export interface FolderSizes {
+  path: string;
+  totalKb: number | null;
+  folders: { name: string; kb: number }[];
+  command: string;
+}
+
+export const serverProcesses = (host: string) => invoke<ProcessList>("server_processes", { host });
+/** The exact command that would signal a process; nothing runs. */
+export const serverProcessCommand = (signal: ProcessSignal, pid: number, sudo: boolean) =>
+  invoke<string>("server_process_command", { signal, pid, sudo });
+export const serverProcessSignal = (host: string, signal: ProcessSignal, pid: number, sudo: boolean) =>
+  invoke<ActionResult>("server_process_signal", { host, signal, pid, sudo });
+export const serverDisks = (host: string) => invoke<Filesystem[]>("server_disks", { host });
+export const serverFolderSizes = (host: string, path: string, sudo: boolean) =>
+  invoke<FolderSizes>("server_folder_sizes", { host, path, sudo });
