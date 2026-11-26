@@ -125,6 +125,19 @@ Every host name is checked by `setu_net::check_target` first (letters, digits, `
 | `monitor_start` | Watches a saved host (looked up by name in Rust): logs in like a tunnel (vault or agent only, never a prompt, host key must be trusted, access policy first), then every `interval` seconds (clamped 2-60) runs the fixed `setu_monitor::COMMAND`, parses it in Rust and sends a `Snapshot` (numbers, plus cleaned mount points and device, interface and process names) on the window's channel. Alert limits are clamped to 1-100 %. `hold` (seconds, clamped to 0-3600) is how long a reading must stay over its limit; each `sample` event also carries `active` (readings over a limit, with seconds so far and whether each is `firing`), from `setu_monitor::alerts::AlertTracker`. With `notify`, Rust shows a desktop notification when an alert starts or clears (`tauri-plugin-notification`, used from Rust only; no capability is granted to the window). At most 24 at once; stops when the window's channel closes, or after 10 failures in a row. Returns an id |
 | `monitor_stop` | Stops a monitor by id and disconnects |
 
+## Server management (`server.rs`)
+
+The window never sends command text. Every command is built in `setu_server::services` from a unit name that passed `check_unit` (letters, digits, `: _ . \ -`, one `@` at most, ending in `.service`; no spaces, quotes or shell characters) and is quoted when it holds a `\`. `sudo` is a flag that adds `sudo -n` (never a password). Hosts are looked up by name in Rust and logged in to like a tunnel (vault or agent only, never a prompt, host key must be trusted, access policy first); one connection per host is kept for 5 minutes (at most 8).
+
+| Command | What it does |
+|---|---|
+| `server_services` | Runs the fixed `setu_server::services::LIST_COMMAND` (`systemctl list-units` and `list-unit-files`, no input) and returns the services: names checked, texts cleaned and cut, at most 4000, 2 MiB of output read |
+| `server_service_details` | `systemctl show -p … UNIT`: state, main process, memory, tasks, restarts, unit file |
+| `server_service_logs` | `journalctl -u UNIT -n LINES [-p warning\|err] --no-pager -o short-iso`, with `lines` clamped to 10-5000; the text is stripped of escape and control characters and the newest 512 KiB kept. Returns the command shown beside the logs |
+| `server_service_command` | Returns the exact command a change would run (`[sudo -n ]systemctl start\|stop\|restart\|reload\|enable\|disable UNIT`) for the window to show. Runs nothing |
+| `server_service_action` | Builds that command again from the same action and unit, asks the command policy (`CommandOrigin::Server`), runs it (120 s at most) and returns whether it worked, the exit code, the cleaned output (16 KiB) and a plain hint for common failures. Recorded as `server.change` with the command, never the output |
+| `server_disconnect` | Closes the kept connection to a host |
+
 ## Adding a command
 
 See [How-to recipes](how-to.md#add-an-ipc-command).

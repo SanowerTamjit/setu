@@ -15,6 +15,7 @@ mod nettools;
 mod packs;
 mod prompts;
 mod remote_edit;
+mod server;
 mod session;
 mod ssh;
 mod terminals;
@@ -74,6 +75,7 @@ pub fn run_with(extensions: Extensions) {
         .manage(memory::Memory::from_env())
         .manage(tunnels::Tunnels::from_env())
         .manage(monitor::Monitors::default())
+        .manage(server::ServerSessions::default())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             if let Some(edition) = app.state::<Extensions>().edition() {
@@ -200,6 +202,12 @@ pub fn run_with(extensions: Extensions) {
             nettools::net_tls,
             monitor::monitor_start,
             monitor::monitor_stop,
+            server::server_services,
+            server::server_service_details,
+            server::server_service_logs,
+            server::server_service_command,
+            server::server_service_action,
+            server::server_disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

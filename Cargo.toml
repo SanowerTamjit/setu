@@ -21,6 +21,7 @@ setu-workflow = { path = "crates/setu-workflow", version = "0.0.1" }
 setu-memory = { path = "crates/setu-memory", version = "0.0.1" }
 setu-net = { path = "crates/setu-net", version = "0.0.1" }
 setu-monitor = { path = "crates/setu-monitor", version = "0.0.1" }
+setu-server = { path = "crates/setu-server", version = "0.0.1" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 

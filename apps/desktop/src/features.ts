@@ -106,6 +106,15 @@ export const FLAGS = [
     default: true,
     since: "0.2.0",
   },
+  {
+    id: "serverManagement",
+    title: "Server management",
+    description:
+      "The Server view: a saved Linux host's systemd services with their status and logs, and start, stop, restart, reload, enable and disable. Every change shows the exact command and asks first. Off here hides the view.",
+    stage: "beta",
+    default: true,
+    since: "0.2.0",
+  },
 ] as const satisfies readonly FeatureFlag[];
 
 export type FlagId = (typeof FLAGS)[number]["id"];
