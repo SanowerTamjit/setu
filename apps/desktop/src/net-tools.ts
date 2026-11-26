@@ -2,7 +2,7 @@
 // the words shown for each result. Kept apart so they can be tested in Node
 // (test/net-tools.test.ts). Rust checks every input again (crates/setu-net).
 
-import type { PortAttempt, PortReport } from "./ipc";
+import type { PortAttempt, PortReport, TlsReport } from "./ipc";
 import { parsePort } from "./tunnel-form";
 
 export { parsePort };
@@ -72,4 +72,40 @@ export function portHeadline(r: PortReport, target: string): string {
 /** Where a check runs from: "" is this computer, else a saved host's name. */
 export function fromLabel(through: string): string {
   return through ? `through ${through}` : "from this computer";
+}
+
+/** A date as YYYY-MM-DD (UTC), from seconds since 1970. */
+export function dateText(secs: number): string {
+  return new Date(secs * 1000).toISOString().slice(0, 10);
+}
+
+export function expiryWords(days: number): string {
+  if (days < 0) return `expired ${-days} day${days === -1 ? "" : "s"} ago`;
+  if (days === 0) return "expires today";
+  return `expires in ${days} day${days === 1 ? "" : "s"}`;
+}
+
+/** Soon means under three weeks: time to renew before people notice. */
+export const SOON_DAYS = 21;
+
+export type TlsVerdict = "good" | "mixed" | "bad";
+
+export function tlsVerdict(r: TlsReport): TlsVerdict {
+  const leaf = r.chain[0];
+  if (!r.trusted || !leaf || leaf.daysLeft < 0) return "bad";
+  return leaf.daysLeft < SOON_DAYS ? "mixed" : "good";
+}
+
+/** The headline, e.g. "Trusted for example.com · expires in 54 days (2027-01-18)". */
+export function tlsHeadline(r: TlsReport): string {
+  const leaf = r.chain[0];
+  const when = leaf ? ` · ${expiryWords(leaf.daysLeft)} (${dateText(leaf.notAfter)})` : "";
+  if (r.trusted) return `Trusted for ${r.name}${when}`;
+  return `Not trusted: ${r.problem ?? "unknown reason"}${when}`;
+}
+
+/** The short name of a certificate: its CN, else the whole subject. */
+export function commonName(subject: string): string {
+  const m = /(?:^|,)\s*CN=((?:\\,|[^,])+)/.exec(subject);
+  return m ? m[1].replace(/\\,/g, ",") : subject;
 }

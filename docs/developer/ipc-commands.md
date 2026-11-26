@@ -115,6 +115,7 @@ Every host name is checked by `setu_net::check_target` first (letters, digits, `
 | `net_check_port` | TCP connections to `host:port`, 1-10 attempts (clamped), 5 s each. Here: `tokio` connect. Through a host: a `direct-tcpip` channel opened and closed at once; nothing runs on the server |
 | `net_lookup` | Addresses for a name. Here: the system resolver. Through a host: `getent ahosts NAME`, output capped at 16 KiB and only IP addresses kept |
 | `net_ping` | Through a host only: `ping -c 4 -W 2 NAME`, output capped at 16 KiB and stripped to plain text (no escape sequences) |
+| `net_tls` | The certificate of `host:port`, checked for `name` (or the host). The handshake is made in Rust with rustls (ring) over a TCP connection, or through a host over a `direct-tcpip` channel; trust is checked against the system roots (`rustls-native-certs`), and a failed check is reported, not fatal. The chain (at most 8) is parsed with `x509-cert`; texts are cleaned and capped. Nothing is sent after the handshake |
 | `net_wake` | A Wake-on-LAN packet for a checked MAC address, sent to UDP port 9 on 255.255.255.255 or a given IPv4 address that ends in `.255`; nothing else can be a destination |
 
 ## Monitoring (`monitor.rs`)

@@ -944,3 +944,37 @@ async fn port_checks_through_the_server() {
         .await
         .is_err());
 }
+
+#[tokio::test]
+async fn tcp_streams_through_the_server() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let sshd = sshd_or_skip!();
+    sshd.trust().await;
+    let echo = echo_server().await;
+    let client = connect(&sshd.opts()).await.expect("connect");
+    let mut stream = client
+        .open_tcp("127.0.0.1", echo, Duration::from_secs(5))
+        .await
+        .expect("open");
+    stream.write_all(b"hello\n").await.expect("write");
+    let mut got = [0u8; 11];
+    tokio::time::timeout(Duration::from_secs(5), stream.read_exact(&mut got))
+        .await
+        .expect("in time")
+        .expect("read");
+    assert_eq!(&got, b"echo:hello\n");
+    match client
+        .open_tcp("127.0.0.1", free_port(), Duration::from_secs(5))
+        .await
+    {
+        Err(SshError::Tunnel(message)) => {
+            assert!(message.contains("nothing is listening"), "{message}")
+        }
+        Err(other) => panic!("expected a refusal, got {other:?}"),
+        Ok(_) => panic!("expected a refusal"),
+    }
+    assert!(client
+        .open_tcp("a b", 443, Duration::from_secs(5))
+        .await
+        .is_err());
+}
