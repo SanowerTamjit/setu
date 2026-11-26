@@ -987,3 +987,37 @@ export const serverProcessSignal = (host: string, signal: ProcessSignal, pid: nu
 export const serverDisks = (host: string) => invoke<Filesystem[]>("server_disks", { host });
 export const serverFolderSizes = (host: string, path: string, sudo: boolean) =>
   invoke<FolderSizes>("server_folder_sizes", { host, path, sudo });
+
+export interface AuthorizedKey {
+  /** Line number in the file, from 1. */
+  line: number;
+  kind: string;
+  fingerprint: string;
+  comment: string;
+  /** Options before the key (from=, command=…), as written. */
+  options: string;
+  /** The base64 key, which names it when removing. */
+  key: string;
+}
+
+export interface AuthorizedKeyList {
+  path: string;
+  keys: AuthorizedKey[];
+  /** Lines that are not keys, comments or blank. */
+  unreadable: number;
+  /** The file does not exist yet. */
+  missing: boolean;
+}
+
+export interface NewKey {
+  kind: string;
+  fingerprint: string;
+  comment: string;
+  line: string;
+}
+
+export const serverKeys = (host: string) => invoke<AuthorizedKeyList>("server_keys", { host });
+/** Checks a pasted public key; nothing is sent to the server. */
+export const serverKeyCheck = (key: string) => invoke<NewKey>("server_key_check", { key });
+export const serverKeyAdd = (host: string, key: string) => invoke<AuthorizedKeyList>("server_key_add", { host, key });
+export const serverKeyRemove = (host: string, line: number, key: string) => invoke<AuthorizedKeyList>("server_key_remove", { host, line, key });

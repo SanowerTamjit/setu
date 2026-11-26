@@ -1,6 +1,6 @@
 [package]
 name = "setu-server"
-description = "Server management for Setu: systemd services and their logs over SSH, with every change shown as the exact command first"
+description = "Server management for Setu: systemd services and their logs, processes, disk usage and authorized_keys over SSH, with every change shown first"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,9 @@ homepage.workspace = true
 authors.workspace = true
 
 [dependencies]
+base64 = "0.23"
 serde.workspace = true
+sha2 = "0.10"
 
 [dev-dependencies]
 serde_json = "1"

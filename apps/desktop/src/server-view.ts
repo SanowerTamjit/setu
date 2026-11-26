@@ -19,6 +19,7 @@ import {
   type ServiceAction,
   type ServiceDetails,
 } from "./ipc";
+import { KeysPane } from "./server-keys";
 import { DiskPane, ProcessesPane, confirmBody, resultBox } from "./server-panes";
 import { DEFAULT_LOG_LINES, LOG_LINES, actionsFor, confirmText, counts, facts, filterServices, serviceState, startupLabel, type ServiceFilter } from "./server-model";
 
@@ -30,11 +31,12 @@ export interface ServerActions {
 
 const PREFS = "setu.server";
 
-type Tab = "services" | "processes" | "disk";
+type Tab = "services" | "processes" | "disk" | "keys";
 const TABS: [Tab, string][] = [
   ["services", "Services"],
   ["processes", "Processes"],
   ["disk", "Disk"],
+  ["keys", "Keys"],
 ];
 
 interface Prefs {
@@ -75,6 +77,7 @@ export class ServerView {
   private readonly tabButtons = new Map<Tab, HTMLButtonElement>();
   private readonly processes: ProcessesPane;
   private readonly disk: DiskPane;
+  private readonly keys: KeysPane;
   /** The host the panes show; another one in the picker means start again. */
   private shownHost = "";
   private filter: ServiceFilter = "all";
@@ -110,11 +113,13 @@ export class ServerView {
     reload.onclick = () => {
       if (this.prefs.tab === "processes") void this.processes.load(true);
       else if (this.prefs.tab === "disk") void this.disk.load(true);
+      else if (this.prefs.tab === "keys") void this.keys.load(true);
       else void this.load();
     };
     const ctx = { host: () => this.host, sudo: () => this.sudoBox.checked };
     this.processes = new ProcessesPane(ctx);
     this.disk = new DiskPane(ctx);
+    this.keys = new KeysPane(ctx);
     const tabs = el("div", { className: "srv-tabs", role: "tablist" });
     tabs.setAttribute("aria-label", "Server");
     for (const [t, label] of TABS) {
@@ -161,7 +166,7 @@ export class ServerView {
         el(
           "p",
           { className: "muted tunnel-intro" },
-          "A Linux server's services (systemd) with their logs, its processes and what fills its disks. Every change shows the exact command and asks first. Setu logs in the way the host's tunnels and monitoring do.",
+          "A Linux server's services (systemd) with their logs, its processes, what fills its disks and who may log in with a key. Every change shows the exact command and asks first. Setu logs in the way the host's tunnels and monitoring do.",
         ),
         tabs,
         this.stage,
@@ -199,6 +204,7 @@ export class ServerView {
     this.shownHost = host;
     this.processes.reset();
     this.disk.reset();
+    this.keys.reset();
     this.showTab(this.prefs.tab);
   }
 
@@ -219,6 +225,9 @@ export class ServerView {
     } else if (t === "disk") {
       this.stage.replaceChildren(this.disk.root);
       void this.disk.load();
+    } else if (t === "keys") {
+      this.stage.replaceChildren(this.keys.root);
+      void this.keys.load();
     } else {
       this.stage.replaceChildren(this.body);
       if (this.loadedHost !== this.host) void this.load();

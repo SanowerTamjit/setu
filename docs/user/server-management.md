@@ -82,9 +82,27 @@ To find what fills a disk, press **What uses it**, or type a folder and press **
 
 ![What uses the space in /var](images/server-disk.png)
 
+## Keys
+
+The **Keys** tab shows who may log in to the server with an SSH key, as the user Setu logs in as: the keys in that user's `~/.ssh/authorized_keys`. Each key shows its comment (often who it belongs to), its type, its fingerprint (the same `SHA256:…` that `ssh-keygen -l` prints, so you can compare it with the key on someone's computer), its line in the file, and any limits on it in plain words (*only from 10.0.0.0/8*, *no terminal*, *runs one fixed command*). Type to filter by comment, fingerprint or type.
+
+![The keys allowed to log in to web-01](images/server-keys.png)
+
+**To add a key**, paste a public key (one line from a `.pub` file, like `ssh-ed25519 AAAA… sam@laptop`) under **Add a key**. Setu checks it on your computer first and shows its comment and fingerprint; it refuses anything that is not one well-formed public key, a key already in the file, and keys with options. If you paste a **private** key by mistake, Setu clears it at once and tells you: never paste a private key anywhere. Press **Add key…**, check the fingerprint in the confirmation, and agree.
+
+**To remove a key**, press **Remove…** beside it. The confirmation names the key and its fingerprint and warns you; if it is the only key in the file it says so, because nobody could log in as that user with a key afterwards, and that may include you. Sessions already open stay open.
+
+How Setu changes the file, so a change cannot lock you out halfway:
+
+- It writes the new file next to the old one, reads it back to make sure it arrived whole, and only then swaps it in. A dropped connection leaves the old file as it was.
+- Every other line (comments, blank lines, keys it cannot read) is kept exactly as written.
+- If the file changed on the server after Setu read it, a removal is refused ("authorized_keys changed since it was read") and the list is read again, so the wrong line is never removed.
+- The file keeps its permissions, without group or other write access (which would make sshd ignore it). If the user has no file yet, adding a key creates `~/.ssh` (0700) and the file (0600).
+
+Keys are read and written over SFTP as the login user. **Use sudo** does not apply here: to manage another user's keys, log in as that user. Setu manages `~/.ssh/authorized_keys` only; a server that keeps keys elsewhere (`AuthorizedKeysFile` in `sshd_config`) is not covered.
+
 ## Good to know
 
 - Logins work like tunnels and monitoring: the key, agent or saved password is used without asking, and the server's host key must already be trusted (connect once from **Hosts**). Setu keeps the connection for five minutes so moving between services is quick.
 - A build of Setu for an organization may refuse some changes by policy, and may record each change (who, which command, where, when and whether it worked; never the output).
 - Needs systemd. On a server without it, Setu says so.
-- Not yet: `authorized_keys` (coming next).
