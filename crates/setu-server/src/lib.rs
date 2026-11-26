@@ -1,17 +1,21 @@
-//! Server management over SSH: systemd services and their logs, for now.
+//! Server management over SSH: systemd services and their logs, processes
+//! and disk usage.
 //!
 //! Setu runs a small number of **fixed** commands on the server. The only
-//! input that ever reaches them is a unit name, and [`services::check_unit`]
-//! lets through only the characters systemd itself allows in unit names
-//! (no spaces, quotes or shell characters) before it is quoted anyway.
-//! Changes are never typed by the window: it asks for an action on a unit,
-//! and Rust builds the command with [`services::action_command`], the same
-//! function that built the text the person approved.
+//! inputs that ever reach them are checked first: a unit name
+//! ([`services::check_unit`]: only the characters systemd allows), a process
+//! id ([`processes::check_pid`]: a number) and a folder to measure
+//! ([`disk::check_path`]: absolute, no quotes, put in single quotes).
+//! Changes are never typed by the window: it asks for an action on a unit
+//! or a process, and Rust builds the command with the same function that
+//! built the text the person approved.
 //!
 //! Everything the server sends back is **untrusted**: it is stripped of
 //! control characters and terminal escapes, every field is shortened and
 //! every list is capped before it reaches the window.
 
+pub mod disk;
+pub mod processes;
 pub mod services;
 
 /// Removes terminal escape sequences and control characters (tabs and line

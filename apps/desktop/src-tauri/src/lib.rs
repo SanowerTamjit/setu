@@ -208,6 +208,11 @@ pub fn run_with(extensions: Extensions) {
             server::server_service_command,
             server::server_service_action,
             server::server_disconnect,
+            server::server_processes,
+            server::server_process_command,
+            server::server_process_signal,
+            server::server_disks,
+            server::server_folder_sizes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Setu desktop app");

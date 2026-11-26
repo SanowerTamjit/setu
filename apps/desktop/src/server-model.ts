@@ -169,3 +169,76 @@ export function bytes(n: number): string {
 function capital(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+// ---- Processes ----
+
+export type ProcessSort = "cpu" | "mem";
+
+/** Processes matching every word typed (command, user or pid), sorted. */
+export function filterProcesses<T extends { pid: number; user: string; command: string; cpu: number; rssKb: number }>(list: T[], query: string, sort: ProcessSort): T[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = list.filter((p) => {
+    const hay = `${p.command} ${p.user} ${p.pid}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+  return shown.sort((a, b) => (sort === "cpu" ? b.cpu - a.cpu || b.rssKb - a.rssKb : b.rssKb - a.rssKb || b.cpu - a.cpu));
+}
+
+/** How long a process has run, in short words. */
+export function elapsedWords(secs: number): string {
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
+  return `${Math.floor(secs / 86400)}d ${Math.floor((secs % 86400) / 3600)}h`;
+}
+
+/** Processes whose stopping could cut off access or bring the server down. */
+export function criticalProcess(command: string): boolean {
+  return /^(sshd|systemd|init|dbus-daemon|systemd-journal|systemd-logind|NetworkManager|systemd-network)$/.test(command);
+}
+
+/** The question asked before signalling a process. */
+export function signalText(signal: "term" | "kill", p: { pid: number; command: string }, host: string): { title: string; what: string; button: string; warning: string | null } {
+  const name = `${p.command} (${p.pid})`;
+  const warning = criticalProcess(p.command) ? `${p.command} keeps ${host} running or reachable. Stopping it could cut off your access or stop the server.` : null;
+  return signal === "term"
+    ? { title: `Stop ${p.command}?`, what: `Asks ${name} on ${host} to stop. It can finish what it is doing and clean up first.`, button: "Stop", warning }
+    : { title: `Kill ${p.command}?`, what: `Stops ${name} on ${host} at once, with no chance to clean up. Unsaved work in it is lost. Use this when Stop did not work.`, button: "Kill", warning };
+}
+
+// ---- Disk ----
+
+export function usedPercent(f: { totalKb: number; usedKb: number }): number {
+  return f.totalKb > 0 ? Math.min(100, (f.usedKb / f.totalKb) * 100) : 0;
+}
+
+/** warn from 80 %, high from 90 %. */
+export function fullness(percent: number): "ok" | "warn" | "high" {
+  return percent >= 90 ? "high" : percent >= 80 ? "warn" : "ok";
+}
+
+/** A path inside `base`, and the folder above a path (null at the top). */
+export function childPath(base: string, name: string): string {
+  return base === "/" ? `/${name}` : `${base}/${name}`;
+}
+
+export function parentPath(path: string): string | null {
+  if (path === "/") return null;
+  const i = path.lastIndexOf("/");
+  return i <= 0 ? "/" : path.slice(0, i);
+}
+
+/** The parts of a path for a breadcrumb: label and full path. */
+export function crumbs(path: string): [string, string][] {
+  const out: [string, string][] = [["/", "/"]];
+  let at = "";
+  for (const part of path.split("/").filter(Boolean)) {
+    at += `/${part}`;
+    out.push([part, at]);
+  }
+  return out;
+}
+
+export function kbText(kb: number): string {
+  return bytes(kb * 1024);
+}

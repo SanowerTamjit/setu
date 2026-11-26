@@ -137,6 +137,11 @@ The window never sends command text. Every command is built in `setu_server::ser
 | `server_service_command` | Returns the exact command a change would run (`[sudo -n ]systemctl start\|stop\|restart\|reload\|enable\|disable UNIT`) for the window to show. Runs nothing |
 | `server_service_action` | Builds that command again from the same action and unit, asks the command policy (`CommandOrigin::Server`), runs it (120 s at most) and returns whether it worked, the exit code, the cleaned output (16 KiB) and a plain hint for common failures. Recorded as `server.change` with the command, never the output |
 | `server_disconnect` | Closes the kept connection to a host |
+| `server_processes` | Runs the fixed `setu_server::processes::LIST_COMMAND` (`ps -eo pid=,ppid=,user=,pcpu=,pmem=,rss=,etimes=,stat=,comm= --sort=-pcpu`, no input): command names only (never arguments), at most 500, texts cleaned and cut |
+| `server_process_command` | Returns the exact command that would signal a process (`[sudo -n ]kill -TERM\|-KILL PID`). The pid must be 2 to 4194304. Runs nothing |
+| `server_process_signal` | Builds that command again from the same signal and pid, asks the command policy (`CommandOrigin::Server { tool: "processes" }`), runs it and returns the result; recorded as `server.change` |
+| `server_disks` | Runs the fixed `df -P -k -T` and returns real file systems (pseudo and loop file systems left out, at most 64) |
+| `server_folder_sizes` | `[sudo -n ]timeout 60 du -x -k -d 1 -- 'PATH' \| sort -rn \| head -n 41`. `PATH` must pass `setu_server::disk::check_path` (absolute, at most 1024 bytes, no `'`, control characters or bidi overrides) and is single-quoted; only lines directly inside `PATH` are kept. Reads only |
 
 ## Adding a command
 

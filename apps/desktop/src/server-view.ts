@@ -19,6 +19,7 @@ import {
   type ServiceAction,
   type ServiceDetails,
 } from "./ipc";
+import { DiskPane, ProcessesPane, confirmBody, resultBox } from "./server-panes";
 import { DEFAULT_LOG_LINES, LOG_LINES, actionsFor, confirmText, counts, facts, filterServices, serviceState, startupLabel, type ServiceFilter } from "./server-model";
 
 export interface ServerActions {
@@ -29,7 +30,15 @@ export interface ServerActions {
 
 const PREFS = "setu.server";
 
+type Tab = "services" | "processes" | "disk";
+const TABS: [Tab, string][] = [
+  ["services", "Services"],
+  ["processes", "Processes"],
+  ["disk", "Disk"],
+];
+
 interface Prefs {
+  tab: Tab;
   host: string;
   sudo: boolean;
   lines: number;
@@ -37,10 +46,11 @@ interface Prefs {
 }
 
 function loadPrefs(): Prefs {
-  const d: Prefs = { host: "", sudo: false, lines: DEFAULT_LOG_LINES, level: "all" };
+  const d: Prefs = { tab: "services", host: "", sudo: false, lines: DEFAULT_LOG_LINES, level: "all" };
   try {
     const p = JSON.parse(localStorage.getItem(PREFS) ?? "{}") as Partial<Record<keyof Prefs, unknown>>;
     return {
+      tab: TABS.some(([t]) => t === p.tab) ? (p.tab as Tab) : d.tab,
       host: typeof p.host === "string" ? p.host : d.host,
       sudo: typeof p.sudo === "boolean" ? p.sudo : d.sudo,
       lines: LOG_LINES.includes(Number(p.lines) as (typeof LOG_LINES)[number]) ? Number(p.lines) : d.lines,
@@ -61,6 +71,12 @@ export class ServerView {
   private readonly listNote: HTMLElement;
   private readonly detail: HTMLElement;
   private readonly body: HTMLElement;
+  private readonly stage: HTMLElement;
+  private readonly tabButtons = new Map<Tab, HTMLButtonElement>();
+  private readonly processes: ProcessesPane;
+  private readonly disk: DiskPane;
+  /** The host the panes show; another one in the picker means start again. */
+  private shownHost = "";
   private filter: ServiceFilter = "all";
   private services: Service[] = [];
   private selected: string | null = null;
@@ -76,7 +92,7 @@ export class ServerView {
     this.hostSelect.setAttribute("aria-label", "Server");
     this.hostSelect.onchange = () => {
       this.save({ host: this.hostSelect.value });
-      void this.load();
+      this.hostChanged();
     };
     this.sudoBox = el("input", { type: "checkbox", checked: this.prefs.sudo });
     this.sudoBox.onchange = () => {
@@ -89,9 +105,24 @@ export class ServerView {
       this.sudoBox,
       el("span", {}, "Use sudo"),
     );
-    const reload = el("button", { type: "button", className: "card-icon", title: "Refresh the list" }, icon("retry", 15));
-    reload.setAttribute("aria-label", "Refresh the list");
-    reload.onclick = () => void this.load();
+    const reload = el("button", { type: "button", className: "card-icon", title: "Read again" }, icon("retry", 15));
+    reload.setAttribute("aria-label", "Read again");
+    reload.onclick = () => {
+      if (this.prefs.tab === "processes") void this.processes.load(true);
+      else if (this.prefs.tab === "disk") void this.disk.load(true);
+      else void this.load();
+    };
+    const ctx = { host: () => this.host, sudo: () => this.sudoBox.checked };
+    this.processes = new ProcessesPane(ctx);
+    this.disk = new DiskPane(ctx);
+    const tabs = el("div", { className: "srv-tabs", role: "tablist" });
+    tabs.setAttribute("aria-label", "Server");
+    for (const [t, label] of TABS) {
+      const b = el("button", { type: "button", className: "srv-tab", role: "tab" }, label);
+      b.onclick = () => this.showTab(t);
+      this.tabButtons.set(t, b);
+      tabs.append(b);
+    }
     this.search = el("input", { type: "search", className: "srv-search", placeholder: "Filter services", spellcheck: false, autocomplete: "off" });
     this.search.oninput = () => this.renderList();
     const chips = el("div", { className: "srv-filters", role: "group" });
@@ -110,6 +141,7 @@ export class ServerView {
     this.list.onkeydown = (e) => this.onListKey(e);
     this.listNote = el("p", { className: "muted srv-list-note", hidden: true });
     this.detail = el("section", { className: "host-card srv-detail" });
+    this.stage = el("div", { className: "srv-stage" });
     this.body = el(
       "div",
       { className: "srv-body" },
@@ -129,12 +161,14 @@ export class ServerView {
         el(
           "p",
           { className: "muted tunnel-intro" },
-          "The services on a Linux server (systemd), with their status and logs. Every change shows the exact command and asks first. Setu logs in the way the host's tunnels and monitoring do.",
+          "A Linux server's services (systemd) with their logs, its processes and what fills its disks. Every change shows the exact command and asks first. Setu logs in the way the host's tunnels and monitoring do.",
         ),
-        this.body,
+        tabs,
+        this.stage,
       ),
     );
     this.renderDetail(null);
+    this.markTab();
   }
 
   focus() {
@@ -150,11 +184,45 @@ export class ServerView {
     this.hostSelect.disabled = !names.length;
     if (!names.length) {
       this.loadedHost = "";
+      this.shownHost = "";
       this.services = [];
       this.renderEmpty();
       return;
     }
-    if (keep !== this.loadedHost) void this.load();
+    if (keep !== this.shownHost) this.hostChanged();
+  }
+
+  /** Starts again for the host in the picker, on the open tab. */
+  private hostChanged() {
+    const host = this.host;
+    if (this.shownHost && this.shownHost !== host) void serverDisconnect(this.shownHost).catch(() => {});
+    this.shownHost = host;
+    this.processes.reset();
+    this.disk.reset();
+    this.showTab(this.prefs.tab);
+  }
+
+  private markTab() {
+    for (const [t, b] of this.tabButtons) {
+      b.classList.toggle("current", t === this.prefs.tab);
+      b.setAttribute("aria-selected", String(t === this.prefs.tab));
+    }
+  }
+
+  private showTab(t: Tab) {
+    this.save({ tab: t });
+    this.markTab();
+    if (!this.host) return;
+    if (t === "processes") {
+      this.stage.replaceChildren(this.processes.root);
+      void this.processes.load();
+    } else if (t === "disk") {
+      this.stage.replaceChildren(this.disk.root);
+      void this.disk.load();
+    } else {
+      this.stage.replaceChildren(this.body);
+      if (this.loadedHost !== this.host) void this.load();
+    }
   }
 
   private save(p: Partial<Prefs>) {
@@ -173,18 +241,14 @@ export class ServerView {
   private renderEmpty() {
     const add = el("button", { type: "button", className: "primary" }, "Add a host");
     add.onclick = () => this.actions.showHosts();
-    this.body.replaceChildren(el("div", { className: "home-empty" }, el("p", {}, "Save a host first: the Server view manages saved hosts."), add));
+    this.stage.replaceChildren(el("div", { className: "home-empty" }, el("p", {}, "Save a host first: the Server view manages saved hosts."), add));
   }
 
   private async load() {
     const host = this.host;
     if (!host) return;
-    if (this.loadedHost && this.loadedHost !== host) void serverDisconnect(this.loadedHost).catch(() => {});
     this.loadedHost = host;
     const gen = ++this.generation;
-    if (!this.body.contains(this.list)) {
-      this.body.replaceChildren(this.list.parentElement!, this.detail);
-    }
     this.services = [];
     this.list.replaceChildren(el("p", { className: "muted srv-loading" }, `Reading services on ${host}…`));
     this.renderDetail(null);
@@ -330,7 +394,7 @@ export class ServerView {
         el("span", { className: `srv-state big state-${st.kind}` }, loading ? "…" : st.label),
       ),
       ...(problem ? [el("p", { className: "srv-problem" }, problem)] : []),
-      ...(result ? [this.resultBox(result)] : []),
+      ...(result ? [resultBox(result)] : []),
       el("div", { className: "srv-buttons" }, ...buttons),
       factList,
       el("div", { className: "srv-logs-head" }, el("h3", {}, "Logs"), el("div", { className: "srv-logs-tools" }, lines, level, again)),
@@ -338,17 +402,6 @@ export class ServerView {
       ran,
     );
     if (!loading) readLogs();
-  }
-
-  private resultBox(r: ActionResult) {
-    return el(
-      "div",
-      { className: `net-result ${r.ok ? "good" : "bad"} srv-result`, role: "status" },
-      el("p", { className: "net-headline" }, r.ok ? "Done." : `It did not work${r.code !== null ? ` (exit code ${r.code})` : ""}.`),
-      el("code", { className: "srv-command small" }, r.command),
-      ...(r.hint ? [el("p", { className: "net-small" }, r.hint)] : []),
-      ...(r.output ? [el("pre", { className: "net-lines" }, r.output)] : []),
-    );
   }
 
   private async readLogs(unit: string, out: HTMLElement, ran: HTMLElement) {
@@ -380,15 +433,7 @@ export class ServerView {
       return;
     }
     const q = confirmText(action, d.name, host);
-    const body = el(
-      "div",
-      { className: "srv-confirm" },
-      el("p", {}, q.what),
-      el("p", { className: "muted" }, `Setu will run this on ${host}:`),
-      el("code", { className: "srv-command" }, command),
-      ...(sudo ? [el("p", { className: "muted net-small" }, "sudo -n fails instead of asking for a password: Setu never types one into sudo.")] : []),
-      ...(q.warning ? [el("p", { className: "srv-warning" }, q.warning)] : []),
-    );
+    const body = confirmBody(q.what, host, command, sudo, q.warning);
     const danger = action === "stop" || action === "disable" || q.warning !== null;
     if (!(await confirmDialog(q.title, body, q.button, danger, danger))) return;
     this.renderDetail(d, true);
