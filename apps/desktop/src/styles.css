@@ -7181,3 +7181,158 @@ button.with-icon {
 :root[data-theme="high-contrast"] .mon-alert.pending {
   border: 1px dashed currentColor;
 }
+
+/* Monitoring fleet table and layout switch (monitor-view.ts) */
+.mon-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.mon-layout {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+}
+
+.mon-layout[hidden],
+.mon-fleet-wrap[hidden],
+.mon-list[hidden] {
+  display: none;
+}
+
+.mon-layout .mon-layout-btn {
+  height: 28px;
+  border-radius: 0;
+  padding: 0 12px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.mon-layout .mon-layout-btn + .mon-layout-btn {
+  border-left: 1px solid var(--border);
+}
+
+.mon-layout .mon-layout-btn.current {
+  color: var(--text);
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+
+.mon-fleet-wrap {
+  overflow-x: auto;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+}
+
+.mon-fleet td {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.mon-fleet td.level-warn {
+  color: var(--warn-text);
+}
+
+.mon-fleet td.level-high {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.mon-fleet .mon-fleet-host {
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.mon-fleet .mon-fleet-host:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+.mon-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--success-text);
+}
+
+.mon-dot.level-warn {
+  background: var(--warn-text);
+}
+
+.mon-dot.level-high {
+  background: var(--danger-text);
+}
+
+.mon-dot.level-idle {
+  background: transparent;
+  border: 2px solid var(--muted);
+}
+
+.mon-fleet-state {
+  color: var(--muted);
+}
+
+.mon-fleet-state.phase-running {
+  color: var(--success-text);
+}
+
+.mon-fleet-state.phase-failed {
+  color: var(--danger-text);
+}
+
+.mon-fleet-state.phase-connecting,
+.mon-fleet-state.phase-reconnecting {
+  color: var(--warn-text);
+}
+
+.mon-fleet-alert {
+  color: var(--warn-text);
+}
+
+.mon-fleet-alert.firing {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.mon-startup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mon-startup input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+:root[data-theme="high-contrast"] .mon-dot {
+  outline: 1px solid var(--text);
+}
+
+.mon-fleet .mon-fleet-problem {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

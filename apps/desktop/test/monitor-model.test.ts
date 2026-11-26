@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HISTORY, HOUR_MS, History, HourHistory, activeText, chartMinutes, durationWords, holdLabel, seriesPath, alertText, bytes, level, parseLimit, pct, procCpu, rate, sparkline, uptime } from "../src/monitor-model";
+import { HISTORY, HOUR_MS, History, HourHistory, activeText, chartMinutes, fullestDisk, health, startupHosts, withName, durationWords, holdLabel, seriesPath, alertText, bytes, level, parseLimit, pct, procCpu, rate, sparkline, uptime } from "../src/monitor-model";
 import type { Snapshot } from "../src/ipc";
 
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
@@ -137,5 +137,34 @@ describe("seriesPath", () => {
     expect(seriesPath([0, 100, null, 50, null], 40, 10, 100)).toBe("M0.0 10.0 L10.0 0.0 M30.0 5.0 h0.1");
     expect(seriesPath([], 40, 10, 100)).toBe("");
     expect(seriesPath([200], 40, 10, 100)).toBe("M0.0 0.0 h0.1");
+  });
+});
+
+describe("fleet", () => {
+  const limits = { cpu: 90, mem: 90, disk: 90 };
+  const disk = (mount: string, percent: number) => ({ mount, percent, totalKb: 100, usedKb: percent });
+
+  it("rates a host's health from alerts first, then figures", () => {
+    expect(health(null, [], limits)).toBe("ok");
+    expect(health(snap({ cpuPercent: 20, memPercent: 30 }), [], limits)).toBe("ok");
+    expect(health(snap({ cpuPercent: 80 }), [], limits)).toBe("warn");
+    expect(health(snap({ disks: [disk("/", 95)] }), [], limits)).toBe("high");
+    expect(health(snap({ cpuPercent: 99 }), [{ kind: "cpu", percent: 99, secs: 5, firing: false }], limits)).toBe("warn");
+    expect(health(snap(), [{ kind: "cpu", percent: 99, secs: 200, firing: true }], limits)).toBe("high");
+  });
+
+  it("finds the fullest disk", () => {
+    expect(fullestDisk(null)).toBeNull();
+    expect(fullestDisk(snap())).toBeNull();
+    expect(fullestDisk(snap({ disks: [disk("/", 40), disk("/var", 91), disk("/srv", 12)] }))?.mount).toBe("/var");
+  });
+
+  it("keeps only saved hosts that still exist, once each, capped", () => {
+    expect(startupHosts(["db", "gone", "db", 3, "web"], ["db", "web"])).toEqual(["db", "web"]);
+    expect(startupHosts("db", ["db"])).toEqual([]);
+    expect(startupHosts(["a", "b", "c"], ["a", "b", "c"], 2)).toEqual(["a", "b"]);
+    expect(withName(["a"], "b", true)).toEqual(["a", "b"]);
+    expect(withName(["a", "b"], "a", false)).toEqual(["b"]);
+    expect(withName(["a"], "a", true)).toEqual(["a"]);
   });
 });

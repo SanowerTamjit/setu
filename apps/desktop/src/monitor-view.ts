@@ -6,12 +6,14 @@
 import { el, errorText } from "./dom";
 import { icon } from "./icons";
 import { monitorStart, monitorStop, type ActiveAlert, type Host, type MonitorEvent, type MonitorLimits, type MonitorOptions, type Snapshot } from "./ipc";
-import { DEFAULT_HOLD, DETAILS, HOLDS, History, HourHistory, activeText, chartMinutes, durationWords, holdLabel, kb, level, parseLimit, pct, procCpu, rate, seriesPath, sparkline, uptime, type Detail } from "./monitor-model";
+import { DEFAULT_HOLD, DETAILS, HOLDS, MAX_WATCHED, History, fullestDisk, health, startupHosts, withName, HourHistory, activeText, chartMinutes, durationWords, holdLabel, kb, level, parseLimit, pct, procCpu, rate, seriesPath, sparkline, uptime, type Detail } from "./monitor-model";
 
 export interface MonitorActions {
   hosts: () => Host[];
   /** Opens the hosts view, for an empty inventory. */
   showHosts: () => void;
+  /** Whether this window starts the hosts marked "Watch when Setu opens" (the main window only). */
+  autostart: boolean;
 }
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -21,10 +23,14 @@ const H = 44;
 
 interface Prefs extends MonitorOptions {
   interval: number;
+  /** Hosts watched when Setu opens. */
+  startup: string[];
+  /** Panels, or one table row per host. */
+  layout: "panels" | "table";
 }
 
 function loadPrefs(): Prefs {
-  const d: Prefs = { cpu: 90, mem: 90, disk: 90, interval: 2, hold: DEFAULT_HOLD, notify: true };
+  const d: Prefs = { cpu: 90, mem: 90, disk: 90, interval: 2, hold: DEFAULT_HOLD, notify: true, startup: [], layout: "panels" };
   try {
     const p = JSON.parse(localStorage.getItem(PREFS) ?? "{}") as Partial<Record<keyof Prefs, unknown>>;
     const n = (v: unknown, f: number) => parseLimit(String(v ?? ""), f);
@@ -35,6 +41,8 @@ function loadPrefs(): Prefs {
       interval: [2, 5, 10, 30].includes(Number(p.interval)) ? Number(p.interval) : 2,
       hold: HOLDS.includes(Number(p.hold)) ? Number(p.hold) : d.hold,
       notify: typeof p.notify === "boolean" ? p.notify : d.notify,
+      startup: Array.isArray(p.startup) ? p.startup.filter((n): n is string => typeof n === "string").slice(0, MAX_WATCHED) : [],
+      layout: p.layout === "table" ? "table" : "panels",
     };
   } catch {
     return d;
@@ -74,7 +82,11 @@ class Panel {
     private readonly prefs: () => Prefs,
     private readonly onClose: (p: Panel) => void,
     private readonly onChange: () => void,
+    startup: { get: () => boolean; set: (on: boolean) => void },
   ) {
+    const auto = el("input", { type: "checkbox", checked: startup.get() });
+    auto.onchange = () => startup.set(auto.checked);
+    const autoLabel = el("label", { className: "mon-startup muted", title: `Start watching ${host.name} each time Setu opens` }, auto, el("span", {}, "Watch when Setu opens"));
     this.status = el("span", { className: "tunnel-phase phase-connecting" }, "Connecting…");
     this.sub = el("span", { className: "card-address" }, `${host.user ? `${host.user}@` : ""}${host.host}`);
     const close = el("button", { type: "button", className: "card-icon", title: `Stop watching ${host.name}` }, icon("close", 15));
@@ -92,6 +104,7 @@ class Panel {
         { className: "card-top" },
         el("span", { className: "avatar tunnel-kind" }, icon("pulse", 18)),
         el("div", { className: "card-heading" }, el("h2", { className: "card-name" }, host.name), this.sub),
+        autoLabel,
         this.status,
         close,
       ),
@@ -117,6 +130,24 @@ class Panel {
     if (this.id) void monitorStop(this.id);
     this.id = null;
     void this.start();
+  }
+
+  get snapshot() {
+    return this.last;
+  }
+
+  get activeAlerts() {
+    return this.active;
+  }
+
+  /** What went wrong, while the panel says so. */
+  get problem(): string {
+    return this.message.hidden ? "" : (this.message.textContent ?? "");
+  }
+
+  /** "Live", "Reconnecting…", "Stopped" and so on, and its phase for colour. */
+  get state(): { text: string; phase: string } {
+    return { text: this.status.textContent ?? "", phase: this.status.className.replace(/.*phase-/, "") };
   }
 
   /** Alerts that have lasted the hold time. */
@@ -370,7 +401,11 @@ export class MonitorView {
   private readonly count: HTMLSpanElement;
   private readonly pick: HTMLSelectElement;
   private readonly watch: HTMLButtonElement;
+  private readonly watchAll: HTMLButtonElement;
+  private readonly layoutBar: HTMLElement;
+  private readonly fleet: HTMLElement;
   private prefs: Prefs = loadPrefs();
+  private autostarted = false;
 
   constructor(
     private readonly root: HTMLElement,
@@ -382,6 +417,28 @@ export class MonitorView {
     this.watch = el("button", { type: "button", className: "primary with-icon" }, icon("plus", 15), "Watch");
     this.watch.onclick = () => this.add(this.pick.value);
     this.list = el("div", { className: "mon-list" });
+    this.fleet = el("div", { className: "mon-fleet-wrap", hidden: true });
+    this.watchAll = el("button", { type: "button", className: "with-icon", title: `Watch every saved host (up to ${MAX_WATCHED})` }, "Watch all");
+    this.watchAll.onclick = () => {
+      for (const h of this.actions.hosts()) {
+        if (this.panels.length >= MAX_WATCHED) break;
+        if (!this.panels.some((p) => p.host.name === h.name)) this.add(h.name, false);
+      }
+    };
+    this.layoutBar = el("div", { className: "mon-layout", role: "group" });
+    this.layoutBar.setAttribute("aria-label", "Show watched hosts as");
+    for (const [id, label] of [
+      ["panels", "Panels"],
+      ["table", "Table"],
+    ] as const) {
+      const b = el("button", { type: "button", className: "mon-layout-btn" }, label);
+      b.dataset.layout = id;
+      b.onclick = () => {
+        this.remember({ layout: id });
+        this.render();
+      };
+      this.layoutBar.append(b);
+    }
 
     const every = el("select", {}, ...[2, 5, 10, 30].map((n) => el("option", { value: String(n), selected: n === this.prefs.interval }, `${n} s`)));
     every.onchange = () => this.setPrefs({ interval: Number(every.value) });
@@ -427,14 +484,15 @@ export class MonitorView {
           "header",
           { className: "home-header" },
           el("div", { className: "home-title" }, el("h1", {}, "Monitoring"), this.count),
-          el("div", { className: "home-actions net-from" }, this.pick, this.watch),
+          el("div", { className: "home-actions net-from" }, this.pick, this.watch, this.watchAll),
         ),
         el(
           "p",
           { className: "muted tunnel-intro" },
           "Live CPU, memory, network and disk use for your servers. Setu reads Linux's own figures over SSH, so nothing is installed on the server. Panels keep updating while you work in other views.",
         ),
-        settings,
+        el("div", { className: "mon-toolbar" }, settings, this.layoutBar),
+        this.fleet,
         this.list,
       ),
     );
@@ -451,16 +509,20 @@ export class MonitorView {
     this.pick.replaceChildren(...names.map((n) => el("option", { value: n }, n)));
     if (names.includes(keep)) this.pick.value = keep;
     this.pick.disabled = names.length === 0;
+    if (this.actions.autostart && !this.autostarted && names.length) {
+      this.autostarted = true;
+      for (const n of startupHosts(this.prefs.startup, names)) this.add(n, false);
+    }
     this.render();
   }
 
   /** Starts watching a saved host, or brings its panel into view. */
-  add(name: string) {
+  add(name: string, show = true) {
     const host = this.actions.hosts().find((h) => h.name === name);
     if (!host) return;
     const open = this.panels.find((p) => p.host.name === name);
     if (open) {
-      open.root.scrollIntoView({ block: "nearest" });
+      if (show) this.show(open);
       return;
     }
     const panel = new Panel(
@@ -470,7 +532,11 @@ export class MonitorView {
         this.panels.splice(this.panels.indexOf(p), 1);
         this.render();
       },
-      () => this.updateCount(),
+      () => this.changed(),
+      {
+        get: () => this.prefs.startup.includes(host.name),
+        set: (on) => this.remember({ startup: withName(this.prefs.startup, host.name, on) }),
+      },
     );
     this.panels.push(panel);
     this.render();
@@ -478,9 +544,69 @@ export class MonitorView {
   }
 
   private setPrefs(change: Partial<Prefs>) {
+    this.remember(change);
+    for (const p of this.panels) p.restart();
+  }
+
+  /** Saves a choice that needs no restart. */
+  private remember(change: Partial<Prefs>) {
     this.prefs = { ...this.prefs, ...change };
     savePrefs(this.prefs);
-    for (const p of this.panels) p.restart();
+  }
+
+  /** Shows one host's panel, from the table. */
+  private show(p: Panel) {
+    if (this.prefs.layout === "table") {
+      this.remember({ layout: "panels" });
+      this.render();
+    }
+    p.root.scrollIntoView({ block: "start" });
+  }
+
+  private changed() {
+    this.updateCount();
+    if (this.prefs.layout === "table" && this.panels.length) this.renderFleet();
+  }
+
+  /** One row per watched host: health, state and the figures that matter. */
+  private renderFleet() {
+    const p = this.prefs;
+    const rows = this.panels.map((panel) => {
+      const s = panel.snapshot;
+      const active = panel.activeAlerts;
+      const st = panel.state;
+      const live = st.phase === "running";
+      const h = live ? health(s, active, p) : st.phase === "failed" ? "high" : "idle";
+      const name = el("button", { type: "button", className: "mon-fleet-host" }, el("span", { className: `mon-dot level-${h}`, "aria-hidden": "true" }), panel.host.name);
+      name.title = `Show ${panel.host.name}'s panel`;
+      name.onclick = () => this.show(panel);
+      const disk = fullestDisk(s);
+      const cell = (text: string, lvl = "ok", title = "") => el("td", { className: `num level-${lvl}`, title }, text);
+      const firing = active.filter((a) => a.firing);
+      const alertWords = firing.length ? activeText(firing[0], p.hold) + (firing.length > 1 ? ` +${firing.length - 1}` : "") : active.length ? `${active.length} waiting` : "";
+      return el(
+        "tr",
+        { className: `level-${h}` },
+        el("td", {}, name),
+        el("td", { className: `mon-fleet-state phase-${st.phase}` }, st.text),
+        cell(live && s ? pct(s.cpuPercent) : "", level(s?.cpuPercent, p.cpu)),
+        cell(live && s ? pct(s.memPercent) : "", level(s?.memPercent, p.mem)),
+        cell(live && disk ? `${pct(disk.percent)}` : "", disk ? level(disk.percent, p.disk) : "ok", disk ? disk.mount : ""),
+        cell(live && s ? `↓ ${rate(s.netRxPerSec)} ↑ ${rate(s.netTxPerSec)}` : ""),
+        panel.problem && !alertWords
+          ? el("td", { className: "mon-fleet-problem muted", title: panel.problem }, panel.problem)
+          : el("td", { className: `mon-fleet-alert${firing.length ? " firing" : ""}` }, alertWords),
+      );
+    });
+    const head = ["Host", "State", "CPU", "Memory", "Fullest disk", "Network", "Alerts"];
+    this.fleet.replaceChildren(
+      el(
+        "table",
+        { className: "mon-table mon-fleet" },
+        el("thead", {}, el("tr", {}, ...head.map((t, i) => el("th", { className: i >= 2 && i <= 5 ? "num" : "" }, t)))),
+        el("tbody", {}, ...rows),
+      ),
+    );
   }
 
   private updateCount() {
@@ -493,7 +619,20 @@ export class MonitorView {
 
   private render() {
     this.updateCount();
-    this.watch.disabled = this.actions.hosts().length === 0;
+    const hosts = this.actions.hosts();
+    this.watch.disabled = hosts.length === 0;
+    this.watchAll.hidden = hosts.length < 2 || hosts.every((h) => this.panels.some((p) => p.host.name === h.name));
+    this.watchAll.disabled = this.panels.length >= MAX_WATCHED;
+    this.layoutBar.hidden = this.panels.length === 0;
+    for (const b of this.layoutBar.querySelectorAll<HTMLButtonElement>("button")) {
+      const on = b.dataset.layout === this.prefs.layout;
+      b.classList.toggle("current", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    const table = this.prefs.layout === "table" && this.panels.length > 0;
+    this.fleet.hidden = !table;
+    this.list.hidden = table;
+    if (table) this.renderFleet();
     if (this.panels.length === 0) {
       const hosts = this.actions.hosts().length > 0;
       const go = el("button", { type: "button", className: "primary" }, hosts ? "Watch a host" : "Add a host first");
