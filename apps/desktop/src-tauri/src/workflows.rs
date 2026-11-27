@@ -67,6 +67,11 @@ impl Workflows {
         self.store.as_ref().map_err(Clone::clone)
     }
 
+    /// Past runs, newest first (empty when there is no config folder).
+    pub fn history(&self) -> Vec<RunRecord> {
+        self.store().map(WorkflowStore::history).unwrap_or_default()
+    }
+
     /// The ids of saved workflows, so a new draft does not take one.
     pub fn ids(&self) -> Vec<String> {
         self.store()

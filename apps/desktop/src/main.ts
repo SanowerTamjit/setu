@@ -30,6 +30,7 @@ import { TunnelsView } from "./tunnels-view";
 import { NetView } from "./net-view";
 import { MonitorView } from "./monitor-view";
 import { ServerView } from "./server-view";
+import { ProblemsView } from "./problems-view";
 import { memoryRecording, onMemoryChange, refreshMemoryState, registerMemorySnippets } from "./work-memory";
 import { memorySettings, memoryView } from "./ipc";
 import { enabled } from "./features";
@@ -373,8 +374,50 @@ const monitor = new MonitorView(monitorEl, { hosts: () => hostsPanel.hosts, show
 const serverEl = document.getElementById("server")!;
 const server = new ServerView(serverEl, { hosts: () => hostsPanel.hosts, showHosts: () => showView("hosts") });
 
+const problemsEl = document.getElementById("problems")!;
+const problems = new ProblemsView(problemsEl, {
+  hosts: () => hostsPanel.hosts,
+  showHosts: () => showView("hosts"),
+  open: (a) => {
+    if (a.kind === "service" || a.kind === "disk") {
+      showView("server");
+      server.open(a.host, a.kind === "service" ? "services" : "disk", a.kind === "service" ? a.unit : undefined);
+    } else if (a.kind === "monitor") {
+      showView("monitor");
+      monitor.add(a.host, true);
+    } else if (a.kind === "workflow") {
+      showView("workflows");
+      void workflows.show(a.workflow, a.run);
+    } else {
+      const host = hostsPanel.hosts.find((h) => h.name === a.host);
+      if (host) {
+        showView("terminals");
+        connectHost(host);
+      }
+    }
+  },
+  badge: (text) => setBadge("problems", text),
+});
+
+/** The count of errors and warnings on the Problems button, in both layouts. */
+function setBadge(id: "problems", text: string) {
+  const b = railButtons.get(id);
+  if (b) {
+    let badge = b.querySelector<HTMLElement>(".rail-badge");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "rail-badge";
+      b.append(badge);
+    }
+    badge.textContent = text;
+    badge.hidden = !text;
+    b.title = text ? `Problems (${text})` : "Problems";
+  }
+  studio.badge(id, text);
+}
+
 // The hosts view, workflows, tunnels, network tools and the terminals share the space right of the rail.
-type View = "terminals" | "hosts" | "workflows" | "tunnels" | "network" | "monitor" | "server";
+type View = "terminals" | "hosts" | "workflows" | "tunnels" | "network" | "monitor" | "server" | "problems";
 let view: View = "terminals";
 let sidebarWanted = true;
 const railButtons = new Map<string, HTMLButtonElement>();
@@ -392,11 +435,12 @@ function showView(next: View) {
   networkEl.hidden = next !== "network";
   monitorEl.hidden = next !== "monitor";
   serverEl.hidden = next !== "server";
+  problemsEl.hidden = next !== "problems";
   terminalsEl.hidden = next !== "terminals";
   syncSidebar();
   sidebarButton.hidden = next !== "terminals";
   for (const [id, b] of railButtons) {
-    if (id === "hosts" || id === "terminals" || id === "workflows" || id === "tunnels" || id === "network" || id === "monitor" || id === "server") b.classList.toggle("current", id === next);
+    if (id === "hosts" || id === "terminals" || id === "workflows" || id === "tunnels" || id === "network" || id === "monitor" || id === "server" || id === "problems") b.classList.toggle("current", id === next);
   }
   studio.render();
   if (hosts) {
@@ -415,6 +459,8 @@ function showView(next: View) {
   } else if (next === "server") {
     server.refresh();
     server.focus();
+  } else if (next === "problems") {
+    void problems.refresh().then(() => problems.focus());
   } else {
     active?.refit();
     active?.focus();
@@ -448,6 +494,7 @@ function buildRail() {
     ...(enabled("networkTools") ? [item("network", "network", "Network tools", () => showView("network"))] : []),
     ...(enabled("monitoring") ? [item("monitor", "pulse", "Monitoring", () => showView("monitor"))] : []),
     ...(enabled("serverManagement") ? [item("server", "server", "Server management", () => showView("server"))] : []),
+    ...(enabled("problems") ? [item("problems", "problems", "Problems", () => showView("problems"))] : []),
     item("keys", "key", "SSH keys and known hosts", () => void runCommand("keys.open")),
     item("snippets", "snippet", "Snippets", () => void showPalette("Snippet ")),
     item("vault", "vault", "Vault", () => void openVaultDialog().then(() => active?.focus())),
@@ -466,6 +513,7 @@ hostsPanel.onChange(() => {
   network.refresh();
   monitor.refresh();
   if (view === "server") server.refresh();
+  if (view === "problems") void problems.refresh();
 });
 
 // ---- Layouts: Classic (rail + tab bar) and Studio (title bar + navigator) ----
@@ -499,6 +547,7 @@ const studio: Studio = new Studio({
   network: () => enabled("networkTools"),
   monitor: () => enabled("monitoring"),
   server: () => enabled("serverManagement"),
+  problems: () => enabled("problems"),
   palette: () => void showPalette(),
   run: (id) => void runCommand(id),
   can: (id) => {
@@ -508,6 +557,14 @@ const studio: Studio = new Studio({
   },
   shortcut: (id) => shortcut(id),
 });
+// The Problems badge: findings from Monitoring and workflows change without
+// a check, so read the (local, cheap) list now and then.
+if (isMainWindow && enabled("problems")) {
+  void problems.refresh();
+  window.setInterval(() => {
+    if (!document.hidden) void problems.refresh();
+  }, 20_000);
+}
 {
   const app = document.getElementById("app")!;
   app.append(studio.titlebar, studio.navigator);
@@ -733,6 +790,7 @@ for (const c of [
   { id: "view.tunnels", title: "Go to tunnels", category: "View", keywords: "port forward socks proxy -L -R -D", when: () => enabled("tunnels"), run: () => showView("tunnels") },
   { id: "view.network", title: "Go to network tools", category: "View", keywords: "port check tcp ping dns lookup nslookup dig wake on lan wol", when: () => enabled("networkTools"), run: () => showView("network") },
   { id: "view.monitor", title: "Go to monitoring", category: "View", keywords: "cpu memory ram disk usage load network top metrics", when: () => enabled("monitoring"), run: () => showView("monitor") },
+  { id: "view.problems", title: "Go to problems", category: "View", keywords: "health check failed services disk full alerts diagnostics issues reboot clock ntp", when: () => enabled("problems"), run: () => showView("problems") },
   { id: "view.server", title: "Go to server management", category: "View", keywords: "systemd systemctl services service journal logs journalctl start stop restart reload enable disable", when: () => enabled("serverManagement"), run: () => showView("server") },
   {
     id: "view.board",

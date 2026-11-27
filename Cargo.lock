@@ -4744,6 +4744,7 @@ dependencies = [
  "serde",
  "serde_json",
  "setu-core",
+ "setu-health",
  "setu-hosts",
  "setu-memory",
  "setu-monitor",
@@ -4761,6 +4762,18 @@ dependencies = [
  "tokio",
  "toml 1.2.1+spec-1.1.0",
  "zeroize",
+]
+
+[[package]]
+name = "setu-health"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "setu-monitor",
+ "setu-server",
+ "setu-workflow",
+ "tempfile",
 ]
 
 [[package]]

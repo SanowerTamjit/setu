@@ -2,7 +2,7 @@
 //!
 //! The web view only renders. Shells, SSH sessions, saved hosts and the
 //! vault run in Rust and talk to the UI through the commands in [`terminals`],
-//! [`ssh`], [`files`], [`hosts`], [`vault`], [`workflows`], [`tunnels`], [`memory`] and [`session`].
+//! [`ssh`], [`files`], [`hosts`], [`vault`], [`workflows`], [`tunnels`], [`monitor`], [`server`], [`problems`], [`memory`] and [`session`].
 
 mod color_schemes;
 mod extensions;
@@ -13,6 +13,7 @@ mod memory;
 mod monitor;
 mod nettools;
 mod packs;
+mod problems;
 mod prompts;
 mod remote_edit;
 mod server;
@@ -76,6 +77,7 @@ pub fn run_with(extensions: Extensions) {
         .manage(tunnels::Tunnels::from_env())
         .manage(monitor::Monitors::default())
         .manage(server::ServerSessions::default())
+        .manage(problems::Problems::from_env())
         .setup(|app| {
             use tauri::{Emitter, Manager};
             if let Some(edition) = app.state::<Extensions>().edition() {
@@ -202,6 +204,10 @@ pub fn run_with(extensions: Extensions) {
             nettools::net_tls,
             monitor::monitor_start,
             monitor::monitor_stop,
+            problems::problems_list,
+            problems::problems_check,
+            problems::problems_snooze,
+            problems::problems_unsnooze,
             server::server_services,
             server::server_service_details,
             server::server_service_logs,

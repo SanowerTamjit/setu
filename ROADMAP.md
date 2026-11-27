@@ -23,7 +23,7 @@ Phase 2 turns the MVP into a 1.0 that people can run every day: the networking, 
 | 3 | Network tools: ping, DNS lookup, port check, TLS certificate check, Wake-on-LAN | 5 | Run from this computer or through a host |
 | 4 | Monitoring: agentless live CPU, memory, disk and network for an SSH session, with threshold alerts | 8 | Reads `/proc` and standard tools; nothing installed on the server |
 | 5 | Server management: services (systemd) with logs, processes, disk usage, `authorized_keys` | 7 | Every change shows the exact command and asks first |
-| 6 | Problems and health panel: findings from checks across hosts in one list | 20 | Built on monitoring and workflow checks |
+| 6 | Problems and health panel: findings from checks across hosts in one list | 20 | Built on monitoring and workflow checks; read-only check over SSH |
 | 7 | AI assistant (opt-in, off by default, bring your own model) with secret redaction | 23 | Never runs a command without you |
 | 8 | Package format v1 and `setu://install` links for packs | 21, 24 | Data only, signed |
 | 9 | Stable release channel and auto-update | — | Signed builds on all three platforms |

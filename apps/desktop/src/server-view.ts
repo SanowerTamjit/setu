@@ -180,6 +180,28 @@ export class ServerView {
     (this.services.length ? this.search : this.hostSelect).focus();
   }
 
+  /** Opens a saved host on a tab, with a service selected (from Problems). */
+  open(host: string, tab: Tab, unit?: string) {
+    this.refresh();
+    if (![...this.hostSelect.options].some((o) => o.value === host)) return;
+    if (unit) {
+      this.selected = unit;
+      this.filter = "all";
+      this.search.value = "";
+    }
+    this.save({ tab, host });
+    this.hostSelect.value = host;
+    if (host !== this.shownHost) {
+      this.hostChanged();
+      return;
+    }
+    this.showTab(tab);
+    if (tab === "services" && unit && this.loadedHost === host) {
+      this.renderList();
+      void this.select(unit);
+    }
+  }
+
   /** Fills the host list; loads services when the host changed. */
   refresh() {
     const names = this.actions.hosts().map((h) => h.name);
@@ -327,6 +349,8 @@ export class ServerView {
       const on = r.dataset.unit === unit;
       r.classList.toggle("current", on);
       r.setAttribute("aria-selected", String(on));
+      // Opened from Problems, the service can be far down the list.
+      if (on) r.scrollIntoView({ block: "nearest" });
     }
     const host = this.host;
     const gen = this.generation;

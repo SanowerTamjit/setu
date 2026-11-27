@@ -147,6 +147,15 @@ The window never sends command text. Every command is built in `setu_server::ser
 | `server_key_add` | Checks the key again, reads the file, refuses a key already there, asks the command policy (`CommandOrigin::Server { tool: "keys" }`, with `add to PATH: TYPE FINGERPRINT (COMMENT)` as the command), writes `authorized_keys.setu-new` (mode kept without group/other write, else 0600), reads it back, renames the old file to `.setu-old`, the new one into place and removes the old one (putting it back if the swap fails). Creates `~/.ssh` at 0700 when missing. Recorded as `server.change` with that description |
 | `server_key_remove` | Same safe write, removing the line `line` only if it still holds `key` (the base64 blob as listed); every other line is kept byte for byte. Refuses with "authorized_keys changed since it was read" otherwise |
 
+## Problems (`problems.rs`)
+
+| Command | What it does |
+|---|---|
+| `problems_list` | Joins the last health check of each saved host (kept in memory since Setu started; hosts no longer saved are dropped), the firing alerts of running monitors and the latest failed run of each workflow (`setu_health::sources`), stamps when each was first seen, sorts them and puts snoozed ones aside. Reads nothing from a server |
+| `problems_check` | Checks the named saved hosts (every saved host when `names` is empty, at most 500; names are looked up in Rust), six at a time, 30 s each: logs in like monitoring (vault or agent only, never a prompt, host key must be trusted, access policy first), runs the fixed `setu_health::check::COMMAND` (no input; `systemctl list-units --state=failed`, `df -P -k -T`, `df -P -i -T`, `/var/run/reboot-required`, `timedatectl show -p NTPSynchronized`), reads at most 256 KiB, disconnects and parses the output into findings. A host that cannot be checked becomes one finding with the reason. Progress (`started`, `host`, `finished`) comes over the window's channel. One check at a time |
+| `problems_snooze` | Hides a finding id (one line, at most 600 characters) for 1 minute to 90 days; saved in `problems.json` (0600, atomic, at most 1000 entries) |
+| `problems_unsnooze` | Shows a snoozed finding again |
+
 ## Adding a command
 
 See [How-to recipes](how-to.md#add-an-ipc-command).
