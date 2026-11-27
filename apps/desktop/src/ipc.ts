@@ -1021,3 +1021,68 @@ export const serverKeys = (host: string) => invoke<AuthorizedKeyList>("server_ke
 export const serverKeyCheck = (key: string) => invoke<NewKey>("server_key_check", { key });
 export const serverKeyAdd = (host: string, key: string) => invoke<AuthorizedKeyList>("server_key_add", { host, key });
 export const serverKeyRemove = (host: string, line: number, key: string) => invoke<AuthorizedKeyList>("server_key_remove", { host, line, key });
+
+// ---- Problems (src-tauri/src/problems.rs) ----
+
+export type Severity = "error" | "warning" | "info";
+export type ProblemSource = "check" | "monitor" | "workflow";
+
+/** What can be opened to look into a problem. */
+export type ProblemAction =
+  | { kind: "service"; host: string; unit: string }
+  | { kind: "disk"; host: string }
+  | { kind: "monitor"; host: string }
+  | { kind: "workflow"; workflow: string; run: string }
+  | { kind: "connect"; host: string };
+
+export interface Finding {
+  /** Stable from one check to the next, e.g. "unit:web1:nginx.service". */
+  id: string;
+  severity: Severity;
+  source: ProblemSource;
+  host?: string;
+  title: string;
+  detail: string;
+  /** When Setu first saw it (ms since 1970). */
+  sinceMs?: number;
+  action?: ProblemAction;
+}
+
+export interface SnoozedFinding extends Finding {
+  untilMs: number;
+}
+
+export interface ProblemCounts {
+  errors: number;
+  warnings: number;
+  infos: number;
+}
+
+export interface ProblemsList {
+  findings: Finding[];
+  snoozed: SnoozedFinding[];
+  counts: ProblemCounts;
+  /** Saved hosts checked since Setu started. */
+  checked: number;
+  /** When the oldest of those checks ran. */
+  checkedAtMs?: number;
+  checking: boolean;
+}
+
+export type CheckEvent =
+  | { kind: "started"; total: number }
+  | { kind: "host"; host: string; done: number; problems: number; ok: boolean }
+  | { kind: "finished" };
+
+export const problemsList = () => invoke<ProblemsList>("problems_list");
+
+/** Checks the named saved hosts (all of them when empty); resolves when done. */
+export function problemsCheck(names: string[], onEvent: (e: CheckEvent) => void) {
+  const channel = new Channel<CheckEvent>();
+  channel.onmessage = onEvent;
+  return invoke<void>("problems_check", { names, onEvent: channel });
+}
+
+/** Hides a problem for `minutes`; resolves to when it shows again (ms). */
+export const problemsSnooze = (id: string, minutes: number) => invoke<number>("problems_snooze", { id, minutes });
+export const problemsUnsnooze = (id: string) => invoke<void>("problems_unsnooze", { id });

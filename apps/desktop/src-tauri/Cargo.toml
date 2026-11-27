@@ -28,6 +28,7 @@ setu-memory.workspace = true
 setu-net.workspace = true
 setu-monitor.workspace = true
 setu-server.workspace = true
+setu-health.workspace = true
 setu-vault = { workspace = true, features = ["os-keychain"] }
 serde.workspace = true
 serde_json = "1"

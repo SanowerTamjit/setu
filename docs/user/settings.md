@@ -54,6 +54,7 @@ Everything is a plain file in one folder, so you can back it up, copy it to anot
 | `session.json` | The tabs to reopen after a restart: hosts, users, ports, key paths | No |
 | `workflows/*.toml`, `workflow-runs.json` | Workflows and their run history ([format](workflows.md#files)) | No |
 | `tunnels.toml` | Saved tunnels ([format](tunnels.md#files)) | No |
+| `problems.json` | Snoozed problems: problem names and when each comes back ([Problems](problems.md#snoozing)) | No |
 | `board.toml` | The task board ([format](workflows.md#task-board)) | No |
 | `work-memory.json` | Commands remembered, if you turned work memory on ([details](work-memory.md)) | Masked |
 | `packs/` | Packs you installed | No |

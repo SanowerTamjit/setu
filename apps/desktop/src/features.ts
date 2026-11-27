@@ -115,6 +115,15 @@ export const FLAGS = [
     default: true,
     since: "0.2.0",
   },
+  {
+    id: "problems",
+    title: "Problems",
+    description:
+      "The Problems view: failed services, full disks, pending restarts and clock drift found by a read-only check of your saved hosts, with Monitoring alerts and failed workflows, in one list you can filter and snooze. Off here hides the view.",
+    stage: "beta",
+    default: true,
+    since: "0.2.0",
+  },
 ] as const satisfies readonly FeatureFlag[];
 
 export type FlagId = (typeof FLAGS)[number]["id"];

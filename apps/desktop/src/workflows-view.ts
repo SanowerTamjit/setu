@@ -309,6 +309,14 @@ export class WorkflowsView {
   }
 
   /** Opens a saved workflow from a board card. */
+  /** Opens a saved workflow by id and shows one of its runs (from Problems), once the list is read. */
+  async show(id: string, runId?: string) {
+    await this.refresh();
+    await this.openById(id);
+    const run = runId ? this.history.find((r) => r.id === runId && r.workflow === id) : undefined;
+    if (run && (this.savedId ?? this.current?.id) === id) this.showRecord(run);
+  }
+
   private async openById(id: string) {
     const w = this.data?.workflows.find((x) => x.id === id);
     if (!w) return;

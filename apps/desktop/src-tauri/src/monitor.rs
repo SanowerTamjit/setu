@@ -11,7 +11,8 @@
 //! A reading over a limit becomes an alert once it has lasted the hold
 //! time (`setu_monitor::alerts`). When one starts or clears, Rust sends the
 //! desktop notification itself, so the window needs no permission to post
-//! notifications.
+//! notifications. The alerts in force are also kept here for the Problems
+//! view (`problems.rs`), which lists them with other findings.
 
 use crate::hosts::Hosts;
 use crate::ssh::{check_access, connect_client, ConnectFailure, ConnectRequest, Login};
@@ -24,7 +25,7 @@ use setu_monitor::{Sample, Snapshot, Thresholds};
 use setu_ssh::SshClient;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
@@ -38,10 +39,38 @@ const MAX_FAILURES: u32 = 10;
 /// Longest a single sample may take.
 const SAMPLE_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Each running monitor's host and the alerts it has right now, by
+/// monitor id.
+type AlertBoard = Arc<Mutex<HashMap<String, (String, Vec<ActiveAlert>)>>>;
+
 #[derive(Default)]
 pub struct Monitors {
     running: Mutex<HashMap<String, watch::Sender<bool>>>,
     next: AtomicU64,
+    alerts: AlertBoard,
+}
+
+impl Monitors {
+    /// Every watched host's alerts right now (pending ones included), one
+    /// entry per host even when two windows watch it.
+    pub fn alerts(&self) -> Vec<(String, Vec<ActiveAlert>)> {
+        let Ok(board) = self.alerts.lock() else {
+            return Vec::new();
+        };
+        let mut by_host: HashMap<&str, &Vec<ActiveAlert>> = HashMap::new();
+        for (host, alerts) in board.values() {
+            let e = by_host.entry(host.as_str()).or_insert(alerts);
+            if alerts.len() > e.len() {
+                *e = alerts;
+            }
+        }
+        let mut out: Vec<_> = by_host
+            .into_iter()
+            .map(|(h, a)| (h.to_string(), a.clone()))
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
 }
 
 /// What a monitor tells the window.
@@ -113,6 +142,8 @@ pub fn monitor_start(
     let (stop, stopped) = watch::channel(false);
     running.insert(id.clone(), stop);
     let watcher = Watcher {
+        id: id.clone(),
+        board: Arc::clone(&monitors.alerts),
         host,
         vault: vault.inner().clone(),
         extensions: extensions.inner().clone(),
@@ -135,6 +166,9 @@ pub fn monitor_stop(monitors: State<'_, Monitors>, id: String) {
 }
 
 struct Watcher {
+    id: String,
+    /// Where the alerts in force are kept for the Problems view.
+    board: AlertBoard,
     host: Host,
     vault: VaultState,
     extensions: Extensions,
@@ -184,7 +218,24 @@ impl Watcher {
         }
     }
 
-    async fn run(mut self) {
+    /// Keeps this monitor's alerts for the Problems view.
+    fn post(&self, alerts: &[ActiveAlert]) {
+        if let Ok(mut board) = self.board.lock() {
+            board.insert(self.id.clone(), (self.host.name.clone(), alerts.to_vec()));
+        }
+    }
+
+    async fn run(self) {
+        let id = self.id.clone();
+        let board = Arc::clone(&self.board);
+        self.watch().await;
+        // However the monitor ended, its alerts no longer hold.
+        if let Ok(mut b) = board.lock() {
+            b.remove(&id);
+        };
+    }
+
+    async fn watch(mut self) {
         let started = Instant::now();
         let mut failures = 0u32;
         'connect: loop {
@@ -228,6 +279,7 @@ impl Watcher {
                             let update = self
                                 .alerts
                                 .update(at.duration_since(started).as_secs(), &snapshot.alerts);
+                            self.post(&update.active);
                             for a in &update.started {
                                 self.notice(started_notice(&self.host.name, a));
                             }

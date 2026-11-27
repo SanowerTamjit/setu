@@ -13,6 +13,7 @@ Setu is an open-source (Apache-2.0) SSH client, terminal and ops workbench: a Ru
 | `crates/setu-vault` | Encrypted vault, OS keychain |
 | `crates/setu-workflow` | Workflows: model, checks, scheduler, runner engine, files and run history |
 | `crates/setu-server` | Server management over SSH: systemd services and logs, processes, disk usage (fixed commands, checked inputs), `authorized_keys` text |
+| `crates/setu-health` | Problems: the read-only health check over SSH and findings from checks, monitoring alerts and failed workflows |
 | `crates/setu-memory` | Work memory: commands kept (opt-in, secrets masked) and the snippet/workflow suggestions made from them |
 | `crates/setu-cli` | The `setu` CLI and `setu doctor` |
 | `apps/desktop/src-tauri` | Tauri commands: the only bridge between UI and Rust |
